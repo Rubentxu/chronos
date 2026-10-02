@@ -650,6 +650,7 @@ mod tests {
     use crate::output::{CapabilitiesInput, SessionStartAction, SessionStartInput, TargetSpec};
     use chronos_domain::capability::CapabilityUnavailable;
     use chronos_domain::ports::uprobe::UprobeInjector;
+    use chronos_domain::{EventData, EventType, MonotonicNs, SourceLocation, TraceEvent};
     use chronos_store::{SessionMetadata, SessionStore};
 
     /// Always-unavailable uprobe injector used by the session-lifecycle
@@ -745,18 +746,40 @@ mod tests {
             as std::sync::Arc<dyn chronos_domain::ports::lifecycle_store::LifecycleStore>
     }
 
+    /// Saves a session that really holds five events. `SessionStore` records
+    /// the count it stored, so a helper that claimed five over an empty
+    /// event list would make every `event_count` assertion here a test of the
+    /// claim rather than of the snapshot.
     fn save_meta(store: &SessionStore, id: &str) {
+        let events: Vec<TraceEvent> = (0..5)
+            .map(|i| {
+                TraceEvent::new(
+                    i + 1,
+                    MonotonicNs::from((i + 1) * 100),
+                    1,
+                    EventType::FunctionEntry,
+                    SourceLocation::new("test.rs", 10, "main", 0x1000 + i + 1),
+                    EventData::Function {
+                        name: "main".to_string(),
+                        signature: None,
+                        symbol_id: None,
+                        invocation_id: None,
+                        parent_invocation_id: None,
+                    },
+                )
+            })
+            .collect();
         let meta = SessionMetadata {
             session_id: id.to_string(),
             created_at: 1000,
             language: "native".to_string(),
             target: "/bin/test".to_string(),
-            event_count: 5,
+            event_count: events.len(),
             duration_ms: 250,
             tail_sealed: false,
             sealed_at: None,
         };
-        store.save_session(meta, &[]).unwrap();
+        store.save_session(meta, &events).unwrap();
     }
 
     // ---- session_start ----

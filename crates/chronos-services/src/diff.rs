@@ -401,29 +401,63 @@ mod tests {
     /// short one.
     #[test]
     fn compare_refuses_a_session_whose_events_are_fewer_than_it_declares() {
+        // `SessionStore::save_session` records the count it stored, and
+        // `load_session` now refuses to hand back fewer, so the store can no
+        // longer be asked for this state. The guard still owns a real case:
+        // the port admits other implementations, and one of them may return
+        // a short list. So the guard is exercised through the port.
+        struct ShortReader {
+            inner: std::sync::Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
+            metadata: SessionMetadata,
+            events: Vec<TraceEvent>,
+        }
+        impl chronos_domain::ports::session_reader::SessionReader for ShortReader {
+            fn load_session(
+                &self,
+                session_id: &str,
+            ) -> Result<
+                (SessionMetadata, Vec<TraceEvent>),
+                chronos_domain::ports::session_reader::SessionReaderError,
+            > {
+                if session_id == self.metadata.session_id {
+                    return Ok((self.metadata.clone(), self.events.clone()));
+                }
+                self.inner.load_session(session_id)
+            }
+        }
+
         let store = empty_arc_store();
-        // Stores three events but claims ninety-nine.
-        store
-            .save_session(
-                SessionMetadata {
-                    session_id: "truncated-a".to_string(),
-                    created_at: 0,
-                    language: "native".to_string(),
-                    target: "/bin/test".to_string(),
-                    event_count: 99,
-                    duration_ms: 100,
-                    tail_sealed: false,
-                    sealed_at: None,
-                },
-                &[
-                    make_event(0, "main"),
-                    make_event(1, "main"),
-                    make_event(2, "helper"),
-                ],
-            )
-            .unwrap();
         save_session(&store, "intact-b", &["main", "main", "helper"]);
-        let ctx = make_ctx_with_arc(std::sync::Arc::clone(&store));
+
+        let truncated = std::sync::Arc::new(ShortReader {
+            inner: std::sync::Arc::new(
+                chronos_store::session_reader_adapter::SessionStoreBackedSessionReader::new(
+                    std::sync::Arc::clone(&store),
+                ),
+            )
+                as std::sync::Arc<dyn chronos_domain::ports::session_reader::SessionReader>,
+            metadata: SessionMetadata {
+                session_id: "truncated-a".to_string(),
+                created_at: 0,
+                language: "native".to_string(),
+                target: "/bin/test".to_string(),
+                event_count: 99,
+                duration_ms: 100,
+                tail_sealed: false,
+                sealed_at: None,
+            },
+            events: vec![
+                make_event(0, "main"),
+                make_event(1, "main"),
+                make_event(2, "helper"),
+            ],
+        })
+            as std::sync::Arc<dyn chronos_domain::ports::session_reader::SessionReader>;
+        let ctx = DiffContext {
+            reader: truncated,
+            engine: std::sync::Arc::new(chronos_store::diff_engine_adapter::Blake3DiffEngine)
+                as std::sync::Arc<dyn chronos_domain::ports::diff::DiffEngine>,
+        };
 
         match ChronosDiffService::compare_sessions(
             &ctx,
@@ -441,9 +475,9 @@ mod tests {
                 assert_eq!(declared, 99);
                 assert_eq!(loaded, 3);
             }
-            other => panic!(
-                "a session missing events must not be compared as if whole, got {other:?}"
-            ),
+            other => {
+                panic!("a session missing events must not be compared as if whole, got {other:?}")
+            }
         }
 
         // Control: the two sessions carry the same three events, so with an
@@ -451,7 +485,7 @@ mod tests {
         // could be passing because the sessions simply differ.
         save_session(&store, "intact-a", &["main", "main", "helper"]);
         let ok = ChronosDiffService::compare_sessions(
-            &ctx,
+            &make_ctx_with_arc(std::sync::Arc::clone(&store)),
             CompareSessionsInput {
                 session_a: "intact-a".into(),
                 session_b: "intact-b".into(),
@@ -493,7 +527,10 @@ mod tests {
                 session_b: "empty-b".into(),
             },
         ) {
-            Err(ServiceError::NothingToCompare { session_a, session_b }) => {
+            Err(ServiceError::NothingToCompare {
+                session_a,
+                session_b,
+            }) => {
                 assert_eq!(session_a, "empty-a");
                 assert_eq!(session_b, "empty-b");
             }

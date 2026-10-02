@@ -52,6 +52,27 @@ pub enum StoreError {
         found: u64,
     },
 
+    /// The events read back for a session are not the ones that were written.
+    ///
+    /// A session's metadata records how many events it holds, so a short read
+    /// is not an answer — it is damage. Without this arm a content hash whose
+    /// CAS entry was gone was skipped and the session came back `Ok` holding
+    /// fewer events than it declares, which is the truncated trace presented
+    /// as a complete one. It also let two consumers of the same store
+    /// disagree: one reports `metadata.event_count` and the other the events
+    /// actually reconstructed, so a damaged session answered two different
+    /// counts. `expected` is what the metadata declares, `found` is what could
+    /// actually be read.
+    #[error("session {session_id} declares {expected} event(s) but only {found} could be read")]
+    SessionEventsIncomplete {
+        /// The session whose events are short.
+        session_id: String,
+        /// How many events the session metadata declares.
+        expected: usize,
+        /// How many events could actually be read.
+        found: usize,
+    },
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

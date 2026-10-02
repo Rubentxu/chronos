@@ -190,6 +190,13 @@ impl SessionStore {
     /// Save all events for a session. Stores events in CAS and records metadata.
     /// Returns the list of content hashes.
     ///
+    /// `metadata.event_count` is overwritten with the number of events
+    /// actually stored. The store is the only party that knows it, and a
+    /// caller's copy is only a claim: persisting the claim made
+    /// `metadata.event_count` and the events a session actually holds two
+    /// different numbers, and the consumers of this store read one or the
+    /// other, so a session answered two different counts.
+    ///
     /// m9-74 (closes `FIND-M9-73-CAS-PUT-ONE-WRITE-TRANSACTION-PER-EVENT`): the
     /// CAS side is written with `ContentStore::put_many`, so a session costs one
     /// write transaction for its events plus one for its metadata, no matter how
@@ -209,13 +216,15 @@ impl SessionStore {
     ) -> Result<Vec<String>, StoreError> {
         // Validate session_id contains no path separators
         if metadata.session_id.contains('/') || metadata.session_id.contains('\\') {
-            return Err(StoreError::InvalidSessionId(metadata.session_id.clone()));
+            return Err(StoreError::InvalidSessionId(metadata.session_id));
         }
 
         // Store all events in one CAS write transaction.
         let hashes = self.cas.put_many(events)?;
 
         // Serialize metadata
+        let mut metadata = metadata;
+        metadata.event_count = hashes.len();
         let meta_bytes =
             bincode::serialize(&metadata).map_err(|e| StoreError::Serialization(e.to_string()))?;
 
@@ -306,6 +315,22 @@ impl SessionStore {
             if let Some(evt) = self.cas.get(h)? {
                 events.push(evt);
             }
+        }
+
+        // The session declares how many events it holds, so a short read is
+        // damage rather than an answer. The bundle read path already fails
+        // closed on exactly this condition (`BundleEventsIncomplete`); a
+        // session that does not is the same truncation with the same
+        // consequence — a consumer gets a well-formed session holding fewer
+        // events than it says, and the two consumers of this store answer
+        // different counts for it.
+        let found = events.len();
+        if found != metadata.event_count {
+            return Err(StoreError::SessionEventsIncomplete {
+                session_id: session_id.to_string(),
+                expected: metadata.event_count,
+                found,
+            });
         }
 
         Ok((metadata, events))
@@ -531,6 +556,103 @@ mod tests {
 
         let sessions = store.list_sessions().unwrap();
         assert_eq!(sessions.len(), 2);
+    }
+
+    /// `save_session` records how many events it actually stored, not the
+    /// count the caller claimed. A session saved with the wrong number used
+    /// to persist that number, and the two consumers of this store read
+    /// different fields, so the same session answered two different counts.
+    #[test]
+    fn test_save_session_records_the_event_count_it_stored() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![
+            make_event(1, "main"),
+            make_event(2, "helper"),
+            make_event(3, "tail"),
+        ];
+        let mut meta = session_meta("s1");
+        meta.event_count = 99; // a claim, not a fact
+
+        store
+            .save_session(meta, &events)
+            .expect("save must succeed");
+
+        assert_eq!(
+            store.list_sessions().unwrap()[0].event_count,
+            3,
+            "the stored metadata must say what was stored, not what was claimed"
+        );
+        let (loaded_meta, loaded) = store.load_session("s1").expect("load must succeed");
+        assert_eq!(loaded_meta.event_count, 3);
+        assert_eq!(
+            loaded.len(),
+            loaded_meta.event_count,
+            "the two must agree, or the session is reporting two counts"
+        );
+    }
+
+    /// A session whose metadata declares more events than the store can
+    /// return is damage, not a short answer. `save_session` confirms the CAS
+    /// before writing the hash list, so nothing in-crate can produce this —
+    /// but a file-level restore, a partial copy or a second writer can, and
+    /// the response would otherwise be a well-formed session that silently
+    /// holds fewer events than it claims.
+    #[test]
+    fn test_load_session_fails_closed_when_cas_entry_is_gone() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![make_event(1, "main"), make_event(2, "helper")];
+        let hashes = store
+            .save_session(session_meta("s1"), &events)
+            .expect("save must succeed");
+
+        // Drop one content-addressed row behind the store's back, the way a
+        // partial restore would. The table is named rather than imported so
+        // this test does not widen `cas::CAS_TABLE` beyond its module.
+        let cas: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::new("cas");
+        {
+            let tx = store.db().begin_write().unwrap();
+            let mut table = tx.open_table(cas).unwrap();
+            table.remove(hashes[0].as_bytes()).unwrap();
+            drop(table);
+            tx.commit().unwrap();
+        }
+
+        let err = match store.load_session("s1") {
+            Ok((meta, events)) => panic!(
+                "expected an incomplete-session error, got Ok with {} of {} events \
+                 (metadata says {})",
+                events.len(),
+                hashes.len(),
+                meta.event_count
+            ),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(
+                err,
+                StoreError::SessionEventsIncomplete {
+                    expected: 2,
+                    found: 1,
+                    ..
+                }
+            ),
+            "expected SessionEventsIncomplete {{ expected: 2, found: 1 }}, got {err:?}"
+        );
+    }
+
+    /// Control: the common path is untouched — a session whose events are
+    /// all present still loads, with the count the metadata declares.
+    #[test]
+    fn test_load_session_returns_every_declared_event() {
+        let store = SessionStore::in_memory().unwrap();
+        let events = vec![make_event(1, "main"), make_event(2, "helper")];
+        store
+            .save_session(session_meta("s1"), &events)
+            .expect("save must succeed");
+
+        let (meta, loaded) = store.load_session("s1").expect("load must succeed");
+        assert_eq!(meta.event_count, 2);
+        assert_eq!(loaded.len(), 2, "both events come back");
     }
 
     /// REQ-ListSkipsUnreadableRecord: one record whose value cannot be
