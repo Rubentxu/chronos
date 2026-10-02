@@ -342,10 +342,22 @@ pub fn align_sessions<'a>(
         if b_consumed.contains(&AlignmentKey::Invocation(*key)) {
             continue;
         }
-        // Try trace fallback.
+        // Skip the invocation that the A loop matched *by trace*.
+        //
+        // The consumption it must recognise is keyed by trace bytes, not by
+        // invocation, because that is what the A loop inserts. The guard
+        // therefore has to check the trace key **and** that the B invocation
+        // that trace matched is this one. `index_by_trace` keeps only the
+        // first invocation per trace, so when B holds two invocations under
+        // one trace, checking the trace key alone skipped both: the first was
+        // already accounted for, and the second vanished from the report
+        // entirely. It then appeared in no bucket, and `is_clean_equivalent`
+        // — which reads only the buckets — called the sessions equivalent.
         if let Some(trace_bytes) = trace_id_bytes(iwe.invocation) {
-            if let Some((b_key, _b_iwe)) = b_by_trace.get_key_value(&trace_bytes) {
-                if b_consumed.contains(&AlignmentKey::Trace(b_key.clone())) {
+            if let Some((consumed_trace, matched_iwe)) = b_by_trace.get_key_value(&trace_bytes) {
+                if b_consumed.contains(&AlignmentKey::Trace(consumed_trace.clone()))
+                    && matched_iwe.invocation.invocation_id == iwe.invocation.invocation_id
+                {
                     continue;
                 }
             }

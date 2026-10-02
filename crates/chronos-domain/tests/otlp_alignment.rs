@@ -313,6 +313,54 @@ fn report_counts_invariant_every_invocation_accounted_for() {
 }
 
 #[test]
+fn two_b_invocations_sharing_a_trace_both_appear_in_the_report() {
+    // A holds one invocation under trace T. B holds two, also under trace T:
+    // the second is a *different* invocation that merely shares the trace.
+    let trace = [0xaa; 16];
+    let e_shared = vec![ev(0, "p", vec![("k", EventField::Int(1))])];
+    let e_other = vec![ev(1, "p", vec![("k", EventField::Int(2))])];
+
+    let a_rec = rec_with_external(OtlpInvocationId::new(), trace);
+    let b_rec1 = rec_with_external(OtlpInvocationId::new(), trace);
+    let b_rec2 = rec_with_external(OtlpInvocationId::new(), trace);
+
+    let mut a = Session::new();
+    a.push(InvocationWithEvents::new(&a_rec, e_shared.clone()));
+
+    let mut b = Session::new();
+    b.push(InvocationWithEvents::new(&b_rec1, e_shared.clone()));
+    b.push(InvocationWithEvents::new(&b_rec2, e_other));
+
+    let report = align_sessions(a, b, &equivalence_spec_default()).unwrap();
+
+    // The trace fallback indexes B by trace with `or_insert`, so only the
+    // first B invocation with that trace can ever be matched. The second was
+    // being dropped by a `continue` on the grounds that "the trace was
+    // already consumed" — true of a *different* invocation's key. It then
+    // appeared in no bucket at all, and `is_clean_equivalent`, which only
+    // looks at the buckets, called the sessions equivalent.
+    assert_eq!(
+        report.only_in_b_count(),
+        1,
+        "B's second invocation shares a trace but is not the same invocation, \
+         so it must be reported rather than vanish; B's first is matched, not extra"
+    );
+    // Two entries cover the two invocations B contributed: the one paired by
+    // trace and the one that is genuinely extra. Anything else means one was
+    // counted twice or not at all.
+    assert_eq!(
+        report.matched_count() + report.mismatched_count() + report.only_in_b_count(),
+        2,
+        "every B invocation must land in exactly one bucket"
+    );
+    assert!(
+        !report.is_clean_equivalent(),
+        "an invocation that is present in B and absent from the report is drift, \
+         not a clean equivalence"
+    );
+}
+
+#[test]
 fn delta_event_count_nonzero_signals_drift() {
     let inv1 = OtlpInvocationId::new();
     let rec = rec_with_inv(inv1);
