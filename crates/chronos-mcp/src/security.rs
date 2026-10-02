@@ -89,6 +89,42 @@ pub fn sanitize_session_id(id: &str) -> Result<String, SecurityError> {
     Ok(id.to_string())
 }
 
+/// Validate a path the server will **write** to.
+///
+/// Two rules, the same ones `validate_program_path` applies and that this
+/// crate already treats as mandatory:
+/// - no `..` as a path component
+/// - the path must be absolute
+///
+/// `..` is matched as a whole component, not as a substring, so a filename
+/// that merely contains two dots (`session..json`) is still a legitimate
+/// destination. `validate_program_path` matches the substring; for a
+/// program that costs nothing, but here it would reject exports a caller
+/// had every right to ask for.
+///
+/// Deliberately **not** a containment boundary, for the same reason
+/// `validate_program_path` is not one (see `ALLOWED_PREFIXES`): an absolute
+/// path with no `..` can still name any location the process can write to,
+/// and the export lands there. Deciding where a session bundle may be
+/// written is a product question — the answer needs a base directory, and
+/// inventing one here would change what the tool can do for every caller.
+/// What this function removes is the traversal, which needs no product
+/// decision to reject.
+///
+/// The path is **not** canonicalized and is **not** required to exist: an
+/// output path names a file that is about to be created, so requiring
+/// existence (as `validate_program_path` does for programs) would reject
+/// every legitimate export.
+pub fn validate_output_path(path: &str) -> Result<PathBuf, SecurityError> {
+    if path.split('/').any(|component| component == "..") {
+        return Err(SecurityError::PathTraversal(path.to_string()));
+    }
+    if !path.starts_with('/') {
+        return Err(SecurityError::NonAbsolutePath(path.to_string()));
+    }
+    Ok(PathBuf::from(path))
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SecurityError {
     #[error("Path traversal detected in: {0}")]
@@ -113,6 +149,67 @@ pub enum SecurityError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `session_export` writes wherever `output_path` says, and the write
+    /// path (`fs::rename`, then `fs::copy` as fallback) overwrites whatever
+    /// is already there. A caller-supplied path with no checks is arbitrary
+    /// file write; these are the two checks that close the traversal.
+    #[test]
+    fn test_validate_output_path_rejects_traversal_and_relative_paths() {
+        assert!(
+            matches!(
+                validate_output_path("/tmp/../etc/passwd"),
+                Err(SecurityError::PathTraversal(_))
+            ),
+            "a path with .. must be rejected, not normalized away"
+        );
+        assert!(matches!(
+            validate_output_path("../etc/passwd"),
+            Err(SecurityError::PathTraversal(_))
+        ));
+        assert!(
+            matches!(
+                validate_output_path("/var/data/../../root/.ssh/authorized_keys"),
+                Err(SecurityError::PathTraversal(_))
+            ),
+            "a traversal in the middle of an absolute path must be caught too"
+        );
+        assert!(
+            matches!(
+                validate_output_path("/var/data/out/.."),
+                Err(SecurityError::PathTraversal(_))
+            ),
+            "a trailing .. is still a component"
+        );
+        assert!(
+            matches!(
+                validate_output_path("relative/out.json"),
+                Err(SecurityError::NonAbsolutePath(_))
+            ),
+            "a relative path resolves against the server's cwd, which the \
+             caller does not control"
+        );
+    }
+
+    /// Control: the path an export is actually asked for must keep working,
+    /// including one that does not exist yet, and including `..` as a
+    /// substring of a legitimate filename (which is not a traversal).
+    #[test]
+    fn test_validate_output_path_accepts_a_plain_absolute_destination() {
+        for ok in [
+            "/tmp/chronos-export/session.json",
+            "/var/data/exports/out.json",
+            // Does not exist yet: that is the normal case for an output.
+            "/tmp/chronos-export/never-created-dir/session.json",
+            // A `..` inside a name is not a path component.
+            "/tmp/chronos..export/session.json",
+        ] {
+            assert!(
+                validate_output_path(ok).is_ok(),
+                "{ok} must remain a valid export destination"
+            );
+        }
+    }
 
     #[test]
     fn test_validate_program_path_rejects_dotdot() {

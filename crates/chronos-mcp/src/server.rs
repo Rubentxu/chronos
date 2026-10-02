@@ -1071,10 +1071,7 @@ impl ChronosServer {
                 // serde refuse. The other handlers in this file already use
                 // the `map_err(..)?` form.
                 let value = serde_json::to_value(&out).map_err(|e| {
-                    rmcp::ErrorData::internal_error(
-                        format!("query serialize: {e}"),
-                        None,
-                    )
+                    rmcp::ErrorData::internal_error(format!("query serialize: {e}"), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&value)))
             }
@@ -1131,10 +1128,7 @@ impl ChronosServer {
                 // serde refuse. The other handlers in this file already use
                 // the `map_err(..)?` form.
                 let value = serde_json::to_value(&out).map_err(|e| {
-                    rmcp::ErrorData::internal_error(
-                        format!("query serialize: {e}"),
-                        None,
-                    )
+                    rmcp::ErrorData::internal_error(format!("query serialize: {e}"), None)
                 })?;
                 Ok(CallToolResult::success(json_content(&value)))
             }
@@ -3363,7 +3357,10 @@ further would be a Silent Lie."
             }
         };
 
-        let output_path = std::path::PathBuf::from(&params.output_path);
+        let output_path = match crate::security::validate_output_path(&params.output_path) {
+            Ok(p) => p,
+            Err(e) => return Ok(CallToolResult::error(text_content(e.to_string()))),
+        };
         let ctx = chronos_services::session_export::SessionExportContext {
             engines: &self.engines,
         };
