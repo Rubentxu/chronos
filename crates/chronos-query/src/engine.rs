@@ -141,11 +141,12 @@ impl QueryEngine {
 
     /// Merge new events into the engine and rebuild all indices.
     ///
-    /// New events are appended after the existing set. Events whose
-    /// `event_id` already exists in the engine are deduplicated (the
-    /// existing entry wins). After appending, the shadow, temporal,
-    /// causality, and performance indices are fully rebuilt so queries
-    /// reflect the union of old + new events.
+    /// Events whose `event_id` already exists in the engine are
+    /// deduplicated (the existing entry wins). New events may carry ids
+    /// below the current maximum; the merged set is left sorted in
+    /// ascending `event_id` order, which `get_event_by_id` requires. The
+    /// shadow, temporal, causality, and performance indices are fully
+    /// rebuilt so queries reflect the union of old + new events.
     pub fn merge(&mut self, new_events: Vec<TraceEvent>) {
         if new_events.is_empty() {
             return;
@@ -157,6 +158,16 @@ impl QueryEngine {
                 .into_iter()
                 .filter(|e| existing_ids.insert(e.event_id)),
         );
+        // The extend above is a pure append, so the order is broken
+        // whenever an incoming id is not greater than the current
+        // maximum. That happens in practice when a second capture run
+        // reusing the same session id re-mints ids from 1: ids the
+        // stored run dropped are absent here, so they are backfilled
+        // below the maximum. Unsorted, `get_event_by_id`'s binary search
+        // returns None for events that exist — no panic, just a missing
+        // answer. Re-sort before rebuilding the indices (which scan the
+        // vec linearly and are therefore order-independent).
+        self.events.sort_by_key(|e| e.event_id);
         self.rebuild_indices();
     }
 
@@ -172,8 +183,10 @@ impl QueryEngine {
 
     /// Get an event by its ID using binary search.
     ///
-    /// Requires events to be sorted by event_id (which is the case when
-    /// events are ingested in order from the tracer).
+    /// Requires events to be sorted by event_id. `merge` restores that
+    /// order after every merge, so an engine grown through it is always
+    /// sorted; an engine built by `new`/`with_indices` inherits the
+    /// caller's order.
     pub fn get_event_by_id(&self, event_id: u64) -> Option<&TraceEvent> {
         self.events
             .binary_search_by_key(&event_id, |e| e.event_id)
@@ -2011,5 +2024,71 @@ mod tests {
         engine.merge(vec![]);
         let after = engine.events().to_vec();
         assert_eq!(before, after);
+    }
+
+    // Regression: a merge that backfills a gap BELOW the current maximum
+    // must leave `events` in ascending event_id order. A pure append makes
+    // `get_event_by_id`'s binary search miss an event that exists, and it
+    // does so silently (None, no panic). The gapped base set is the shape
+    // the MCP path stores: noise filtering drops some ids, and a second
+    // capture run on the same session re-mints ids from 1, so a dropped id
+    // arrives later and lands under the current maximum.
+    #[test]
+    fn test_engine_merge_backfills_lower_gap_keeps_order() {
+        let mut engine = QueryEngine::new(vec![
+            make_event(0, 100, 1, EventType::FunctionEntry, "gap_main", 0x1000),
+            make_event(2, 200, 1, EventType::FunctionEntry, "gap_helper", 0x2000),
+            make_event(4, 300, 1, EventType::FunctionExit, "gap_helper", 0x2000),
+            make_event(6, 400, 2, EventType::FunctionEntry, "gap_worker", 0x4000), // thread 2
+            make_event(8, 500, 1, EventType::FunctionExit, "gap_main", 0x1000),
+        ]);
+        assert_eq!(engine.event_count(), 5);
+
+        // id 3 is absent from the base set and lower than the maximum (8).
+        engine.merge(vec![make_event(
+            3,
+            250,
+            1,
+            EventType::SyscallEnter,
+            "backfilled",
+            0x3000,
+        )]);
+        assert_eq!(engine.event_count(), 6);
+
+        // The backfilled event is the discriminating lookup: with a pure
+        // append the vec is [0, 2, 4, 6, 8, 3] and id 3 is unreachable.
+        // Probe the whole id space at once so a regression reports every
+        // id the binary search lost, not just the first one asserted.
+        let missing: Vec<u64> = [0u64, 1, 2, 3, 4, 6, 8]
+            .iter()
+            .copied()
+            .filter(|id| engine.get_event_by_id(*id).is_none())
+            .collect();
+        assert_eq!(
+            missing,
+            vec![1],
+            "id 1 was never stored; every other probed id must be findable"
+        );
+
+        let backfilled = engine.get_event_by_id(3).unwrap();
+        assert_eq!(backfilled.timestamp_ns, MonotonicNs::from(250));
+        assert_eq!(backfilled.thread_id, 1);
+        assert_eq!(backfilled.location.function.as_deref(), Some("backfilled"));
+
+        // Pre-existing events stay reachable and unchanged, so the fix did
+        // not trade one missing lookup for another.
+        assert_eq!(
+            engine.get_event_by_id(2).map(|e| e.timestamp_ns),
+            Some(MonotonicNs::from(200))
+        );
+        assert_eq!(engine.get_event_by_id(6).map(|e| e.thread_id), Some(2));
+        assert_eq!(
+            engine.get_event_by_id(8).map(|e| e.timestamp_ns),
+            Some(MonotonicNs::from(500))
+        );
+
+        // The documented invariant: events are ordered by event_id.
+        let ids: Vec<u64> = engine.events().iter().map(|e| e.event_id).collect();
+        assert_eq!(ids, vec![0, 2, 3, 4, 6, 8]);
     }
 }
