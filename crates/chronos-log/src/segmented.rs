@@ -222,11 +222,28 @@ pub fn manifest_path(dir: &std::path::Path) -> PathBuf {
     dir.join(MANIFEST_FILE_NAME)
 }
 
+/// fsync a directory so that a rename into it is durable.
+///
+/// A rename is atomic, but the directory entry it creates is not durable
+/// until the directory itself is synced. Reporting a failed sync is what
+/// lets the caller learn the rename may not survive a crash; dropping it
+/// turns a durability guarantee into an assumption, which is what the
+/// two call sites below used to do.
+fn sync_dir(dir: &std::path::Path) -> Result<(), LogError> {
+    let d = std::fs::File::open(dir)
+        .map_err(|e| LogError::Backend(format!("open dir {:?} for fsync: {e}", dir)))?;
+    d.sync_all()
+        .map_err(|e| LogError::Backend(format!("fsync dir {:?}: {e}", dir)))
+}
+
 /// Persist `manifest` atomically: tmp file -> fsync -> rename -> fsync(dir).
 ///
 /// The order matters for crash safety: the watermark must be committed BEFORE
 /// any physical reclamation, so a crash can only ever leave "present on disk but
-/// logically retired", never "deleted without a record of why".
+/// logically retired", never "deleted without a record of why". The final
+/// `fsync(dir)` is part of that promise, not a courtesy: a rename is atomic
+/// but its directory entry is not durable until the directory is synced, so
+/// the sync is reported rather than dropped.
 pub fn write_manifest_atomic(
     dir: &std::path::Path,
     manifest: &ExecutionLogManifest,
@@ -248,9 +265,7 @@ pub fn write_manifest_atomic(
         LogError::Backend(format!("rename {:?} -> {:?}: {e}", tmp_path, final_path))
     })?;
     // fsync the directory so the rename itself is durable.
-    if let Ok(d) = std::fs::File::open(dir) {
-        let _ = d.sync_all();
-    }
+    sync_dir(dir)?;
     Ok(())
 }
 
@@ -598,10 +613,11 @@ impl SegmentedExecutionLog {
                 }
             )));
         }
-        // 3. Make the last rename durable.
-        if let Ok(d) = std::fs::File::open(&self.config.segment_dir) {
-            let _ = d.sync_all();
-        }
+        // 3. Make the last rename durable. A failure here means the seal
+        // would claim a tail whose segment may not survive a crash, so it
+        // is reported instead of sealed over: steps 4 and 5 exist to record
+        // a tail that is already on disk.
+        sync_dir(&self.config.segment_dir)?;
         // 4. Capture the durable tail.
         let tail = self.tail_seq();
         // 5. Persist the seal, preserving everything else in the manifest.

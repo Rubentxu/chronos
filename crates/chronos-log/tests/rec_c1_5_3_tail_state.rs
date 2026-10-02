@@ -371,3 +371,44 @@ fn tail_11_12_retention_preserves_tail_state_and_created_at() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&dir2);
 }
+
+/// Control for REC-C1.5.3 step 3, which the seal ordering depends on: the
+/// directory fsync now reports a failure instead of being dropped, so this
+/// pins that a healthy directory still seals and still records the tail.
+///
+/// It is deliberately a control rather than a discriminante. An `fsync`
+/// failure cannot be induced deterministically from a test -- a directory
+/// that syncs cleanly is the only kind a normal test can create -- so
+/// there is no executable test that fails while the sync result is
+/// discarded. The justification for the change is the asymmetry inside
+/// `write_manifest_atomic` itself: the data fsync twenty lines above the
+/// directory fsync was already mapped to `LogError::Backend`, and the
+/// second one was the only durability step in the function whose result
+/// was thrown away. What this test proves is the other half: that
+/// reporting the failure did not turn the normal path into a failure.
+#[test]
+fn a_healthy_directory_still_seals_and_records_the_tail() {
+    let dir = tmpdir("sync-ok");
+    let session = SessionId::new("sync-ok");
+    let log = SegmentedExecutionLog::open(session.clone(), config(&dir, 1)).expect("open");
+    append_n(&log, &session, 8);
+
+    let sealed = log.seal().expect("a healthy directory must still seal");
+
+    assert_eq!(sealed.tail_seq, Some(EventSeq::new(7)));
+    match log.tail_state() {
+        TailState::Sealed { tail_seq, .. } => assert_eq!(tail_seq, Some(EventSeq::new(7))),
+        other => panic!("expected Sealed, got {other:?}"),
+    }
+    // The manifest the seal wrote must be readable back, which is only
+    // possible if the rename completed.
+    let manifest = chronos_log::segmented::read_manifest(&dir)
+        .expect("read manifest")
+        .expect("manifest present");
+    assert!(matches!(
+        manifest.tail_state,
+        Some(TailState::Sealed { .. })
+    ));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
