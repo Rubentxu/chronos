@@ -912,12 +912,28 @@ pub struct PotentialIssue {
 }
 
 /// Response from get_execution_summary.
+///
+/// Mirrors `chronos_domain::query::ExecutionSummary` field for field.
+/// `total_function_calls` is the whole-trace call census and is the correct
+/// denominator for any share computed against this summary; `top_functions`
+/// is a truncated ranking, not a census.
+///
+/// The census is `Option`, not a plain `u64` with a zero default. Zero is a
+/// reachable, legitimate value of this field: the engine sums the resolved
+/// `FunctionEntry` events, and a trace with none of them sums to zero. A
+/// plain default would therefore make "this server never sent the field"
+/// indistinguishable from "this trace genuinely had zero calls", which is
+/// the same class of defect this census was added to remove. `None` keeps
+/// the two states apart; a caller doing arithmetic must handle the absence
+/// explicitly instead of silently dividing by a fabricated zero.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionSummaryResponse {
     pub session_id: String,
     pub duration_ns: u64,
     pub total_events: u64,
     pub event_counts_by_type: Vec<EventCountByType>,
+    #[serde(default)]
+    pub total_function_calls: Option<u64>,
     pub top_functions: Vec<TopFunction>,
     pub thread_count: u64,
     pub potential_issues: Vec<PotentialIssue>,

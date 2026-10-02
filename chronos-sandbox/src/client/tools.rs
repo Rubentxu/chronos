@@ -938,9 +938,15 @@ impl McpSession {
         let response = self.rpc_client.call_tool("execution_query", params).await?;
 
         // v2 ExecutionQueryOutput::ExecutionSummary flattens
-        // {duration_ns, total_events, event_counts_by_type, top_functions,
-        // thread_count, potential_issues}. v1 ExecutionSummaryResponse has
-        // the same fields — serde ignores the `kind` discriminator.
+        // {duration_ns, total_events, event_counts_by_type,
+        // total_function_calls, top_functions, thread_count,
+        // potential_issues}. ExecutionSummaryResponse mirrors the same seven
+        // fields — serde ignores the `kind` discriminator.
+        //
+        // `total_function_calls` is an `Option` on the mirror so this call
+        // keeps working against a server that predates it, and so a missing
+        // field stays distinguishable from a legitimate zero census. The
+        // server type deliberately has neither: see the type's doc.
         let mut result: ExecutionSummaryResponse = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
         result.session_id = session_id.to_string();
