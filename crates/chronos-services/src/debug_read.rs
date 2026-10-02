@@ -348,7 +348,10 @@ impl DebugReadService {
 
     /// Full audit trail for a specific address — all writes with calling context.
     ///
-    /// Results are sorted by timestamp and truncated to `limit`.
+    /// Results are sorted by timestamp, newest first (the order declared by
+    /// [`MemoryAudit::writes`]), and truncated to `limit`. Because the sort is
+    /// descending, the truncation keeps the `limit` most recent writes, not the
+    /// oldest ones.
     pub async fn forensic_audit(
         session_id: &str,
         address: u64,
@@ -399,7 +402,7 @@ impl DebugReadService {
             }
         }
 
-        writes.sort_by_key(|w| w.timestamp_ns);
+        writes.sort_by_key(|w| std::cmp::Reverse(w.timestamp_ns));
         writes.truncate(limit);
 
         Ok(MemoryAudit {
@@ -780,5 +783,100 @@ mod tests {
         let engines = Mutex::new(map);
         let result = DebugReadService::forensic_audit("missing", 0x1000, 10, &engines).await;
         assert!(matches!(result, Err(ServiceError::SessionNotFound(_))));
+    }
+
+    // --- forensic_audit: ordering contract ---
+
+    /// Three writes to the same address, inserted out of timestamp order so
+    /// that "newest first" cannot be satisfied by insertion order either.
+    /// (event_id, timestamp_ns) pairs: (1, 100), (2, 300), (3, 200).
+    fn audit_engine() -> HashMap<String, QueryEngine> {
+        let events = vec![
+            trace_event(
+                1,
+                100,
+                1,
+                EventType::MemoryWrite,
+                EventData::Memory {
+                    address: 0x1000,
+                    size: 1,
+                    data: Some(vec![0x11]),
+                },
+            ),
+            trace_event(
+                2,
+                300,
+                1,
+                EventType::MemoryWrite,
+                EventData::Memory {
+                    address: 0x1000,
+                    size: 1,
+                    data: Some(vec![0x33]),
+                },
+            ),
+            trace_event(
+                3,
+                200,
+                1,
+                EventType::MemoryWrite,
+                EventData::Memory {
+                    address: 0x1000,
+                    size: 1,
+                    data: Some(vec![0x22]),
+                },
+            ),
+        ];
+        HashMap::from([("s4".to_string(), QueryEngine::new(events))])
+    }
+
+    fn audit_pairs(audit: &crate::output::MemoryAudit) -> Vec<(u64, u64)> {
+        audit
+            .writes
+            .iter()
+            .map(|w| (w.event_id, w.timestamp_ns))
+            .collect()
+    }
+
+    /// `MemoryAudit::writes` is documented as "sorted by timestamp, newest
+    /// first". A client that reads `writes[0]` must get the most recent write
+    /// of the session, never the oldest one.
+    #[tokio::test]
+    async fn forensic_audit_writes_are_newest_first() {
+        let engines = Mutex::new(audit_engine());
+
+        let audit = DebugReadService::forensic_audit("s4", 0x1000, 10, &engines)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            audit_pairs(&audit),
+            vec![(2, 300), (3, 200), (1, 100)],
+            "writes must be newest first, so writes[0] is the most recent write"
+        );
+        assert!(
+            audit
+                .writes
+                .windows(2)
+                .all(|pair| pair[0].timestamp_ns > pair[1].timestamp_ns),
+            "consecutive timestamps must be strictly decreasing, got {:?}",
+            audit_pairs(&audit)
+        );
+    }
+
+    /// The ordering above is what makes `truncate(limit)` mean "the most recent
+    /// `limit` writes" instead of "the oldest `limit` writes".
+    #[tokio::test]
+    async fn forensic_audit_limit_keeps_the_most_recent_writes() {
+        let engines = Mutex::new(audit_engine());
+
+        let audit = DebugReadService::forensic_audit("s4", 0x1000, 2, &engines)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            audit_pairs(&audit),
+            vec![(2, 300), (3, 200)],
+            "limit=2 must keep the two most recent writes, newest first"
+        );
     }
 }
