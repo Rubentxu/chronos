@@ -781,17 +781,31 @@ impl ChronosServer {
         Ok(meta)
     }
 
-    /// REC-C1.7: gate a query by projection meta. Returns the meta iff
-    /// the projection is Full; otherwise returns the appropriate error.
+    /// REC-C1.7: gate a query by projection meta. Returns the meta iff the
+    /// projection is readable; otherwise returns the appropriate error.
     /// This is the wrapper-side gate that keeps the dual-truth divergence
     /// closed. The services themselves do not gate — they accept any
     /// session_id so existing tests can call them directly. Only the MCP
     /// wire enforces the projection invariant.
+    ///
+    /// Two error cases, both fail-closed:
+    /// - no `ExecutionLog` for the session -> `ExecutionLogUnavailable`, which
+    ///   names the session and says why. Not `SessionNotFound`: a session
+    ///   loaded from the session store exists but has no log yet, so calling
+    ///   it "not found" would be false.
+    /// - a `Truncated` projection -> `EvidenceUnavailableDueToRetention`,
+    ///   because the engine would otherwise answer as if retired history had
+    ///   never existed. An `Empty` projection is accepted: a session with no
+    ///   records has no history to be missing.
+    ///
+    /// `gate_projection_for_wire` wraps either into a single
+    /// `internal_error` whose message carries the variant, so the distinction
+    /// reaches the caller as text rather than as a separate JSON-RPC code.
     async fn gate_projection(&self, session_id: &str) -> Result<ProjectionMeta, ServiceError> {
         // If the session is not in projection_meta yet, run the
         // projection build (covers load_session and bootstrap). If the
-        // session has no log, return SessionNotFound so the wire
-        // surfaces isError:true with the standard error envelope.
+        // session has no log, the registry answers ExecutionLogUnavailable,
+        // which the wire surfaces as isError:true.
         let meta = self.ensure_projection(session_id).await?;
         projection::meta_is_full(&meta).map(|()| meta)
     }
@@ -4603,6 +4617,186 @@ mod tests {
     /// Positive control for the neighbouring map: a projection entry for a
     /// *different* session must survive another session's cleanup. Without
     /// this, the guard above could be satisfied by clearing the whole map.
+    // --- REC-C1.7 projection gate ---
+    //
+    // `ensure_projection` is the only writer of `projection_meta`, and before
+    // these tests nothing in the workspace called it. It is not a cold path:
+    // `execution_query`, `state_query` and `trace_slice` all go through
+    // `gate_projection_for_wire` on every request, so the gate that keeps
+    // TRUTH-001 closed — the QueryEngine is a reconstructible projection of
+    // the log, never a second authority — had no coverage at all.
+    //
+    // Each test below registers a real but empty `SessionExecutionLog`, so
+    // `projection::build_engine` answers `ProjectionCompleteness::Empty`.
+    // That is a truthful answer rather than a stub: an empty log really does
+    // describe a session with no records, and `meta_is_full` deliberately
+    // accepts it. Only `Truncated` is refused, because there the engine would
+    // silently miss retired history.
+    //
+    // The fixture is inlined rather than extracted into a helper: this module
+    // is not cfg-gated, so a helper used only by `#[tokio::test]` functions
+    // reads as dead code in the ordinary build, and silencing that would mean
+    // adding an `#[allow(dead_code)]` like the ones already in this file.
+
+    #[tokio::test]
+    async fn ensure_projection_registers_the_session_in_both_maps() {
+        let sid = "rec-c1-7-both-maps";
+        let server = ChronosServer::new();
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-7-both-maps-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        server
+            .execution_logs
+            .register(
+                chronos_services::session_log::SessionExecutionLog::create_for_tests(
+                    &log_dir,
+                    chronos_log::SessionId::new(sid),
+                )
+                .expect("test execution log"),
+            )
+            .expect("register the test log");
+
+        let meta = server
+            .ensure_projection(sid)
+            .await
+            .expect("a session with a log must project");
+
+        assert_eq!(
+            meta.completeness,
+            projection::ProjectionCompleteness::Empty,
+            "an empty log must project as Empty, not as Full"
+        );
+        assert!(
+            server.engines.lock().await.contains_key(sid),
+            "a projection without a registered engine is unreachable by the \
+             services that read `engines`"
+        );
+        assert!(
+            server.projection_meta.lock().await.contains_key(sid),
+            "the gate reads `projection_meta` first; an entry that is not there \
+             cannot be gated"
+        );
+    }
+
+    /// Discriminante for the claim that eviction is safe.
+    ///
+    /// `cleanup_session_memory` drops the `projection_meta` entry, and the
+    /// justification recorded there is that a cache miss is the normal path and
+    /// rebuilds from the log. That justification was a comment and nothing
+    /// else, which is the same failure mode as the leak it was written to
+    /// justify: an invariant asserted in prose with no test behind it.
+    ///
+    /// Here the cache entry is dropped while the log stays registered. If a
+    /// missing meta were ever treated as "not projected, refuse", this would
+    /// fail instead of rebuilding.
+    #[tokio::test]
+    async fn ensure_projection_rebuilds_after_the_cache_entry_is_dropped() {
+        let sid = "rec-c1-7-rebuild-on-miss";
+        let server = ChronosServer::new();
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-7-rebuild-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        server
+            .execution_logs
+            .register(
+                chronos_services::session_log::SessionExecutionLog::create_for_tests(
+                    &log_dir,
+                    chronos_log::SessionId::new(sid),
+                )
+                .expect("test execution log"),
+            )
+            .expect("register the test log");
+
+        let first = server
+            .ensure_projection(sid)
+            .await
+            .expect("first projection");
+        assert!(server.projection_meta.lock().await.contains_key(sid));
+
+        // Drop only the cache, keeping the log: a miss must rebuild.
+        server.projection_meta.lock().await.remove(sid);
+        assert!(!server.projection_meta.lock().await.contains_key(sid));
+
+        let rebuilt = server
+            .ensure_projection(sid)
+            .await
+            .expect("a cache miss must rebuild from the log, not report not-found");
+
+        assert_eq!(rebuilt.completeness, first.completeness);
+        assert!(
+            server.projection_meta.lock().await.contains_key(sid),
+            "the rebuild must repopulate the cache, not answer without it"
+        );
+        assert!(
+            server.engines.lock().await.contains_key(sid),
+            "the rebuild must repopulate the engine as well; inserting only the \
+             meta would break the mirror in the other direction"
+        );
+    }
+
+    /// The gate accepts a genuinely empty projection and refuses only a
+    /// truncated one. Pinned because the distinction is easy to get backwards:
+    /// refusing `Empty` would break every query against an idle session, and
+    /// accepting `Truncated` would let a query answer as if retired history
+    /// had never existed.
+    #[tokio::test]
+    async fn gate_projection_accepts_an_empty_projection() {
+        let sid = "rec-c1-7-empty-accepted";
+        let server = ChronosServer::new();
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-7-empty-accepted-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        server
+            .execution_logs
+            .register(
+                chronos_services::session_log::SessionExecutionLog::create_for_tests(
+                    &log_dir,
+                    chronos_log::SessionId::new(sid),
+                )
+                .expect("test execution log"),
+            )
+            .expect("register the test log");
+
+        let meta = server
+            .gate_projection(sid)
+            .await
+            .expect("an empty session is a real answer, not a gate failure");
+        assert_eq!(meta.completeness, projection::ProjectionCompleteness::Empty);
+    }
+
+    /// A session with no log never gets a projection.
+    ///
+    /// The error is `ExecutionLogUnavailable`, not `SessionNotFound`, and that
+    /// distinction is deliberate: a session loaded from the session store
+    /// exists but has no `ExecutionLog` registered yet, so reporting
+    /// "session not found" would be false. The variant carries the reason, so
+    /// the wire message says which of the two situations occurred.
+    ///
+    /// An empty success here would be worse than either: it would be
+    /// indistinguishable from a real empty session, which *is* a valid answer.
+    #[tokio::test]
+    async fn gate_projection_reports_an_unavailable_log_for_a_session_without_one() {
+        let server = ChronosServer::new();
+
+        let err = server
+            .gate_projection("session-that-was-never-registered")
+            .await
+            .expect_err("a session with no log must not project");
+
+        match err {
+            ServiceError::ExecutionLogUnavailable { session_id, .. } => {
+                assert_eq!(session_id, "session-that-was-never-registered");
+            }
+            other => panic!("expected ExecutionLogUnavailable, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn test_cleanup_session_memory_keeps_other_sessions_projections() {
         let server = ChronosServer::new();
