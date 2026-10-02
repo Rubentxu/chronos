@@ -96,7 +96,17 @@ impl PerformanceIndex {
         let entry = self
             .function_stats
             .entry(address)
-            .or_insert_with(|| FunctionPerf::new(address, name));
+            .or_insert_with(|| FunctionPerf::new(address, name.clone()));
+        // The first call for an address can arrive before its symbol is
+        // resolved. `or_insert_with` never overwrites, so without this the
+        // entry would keep `name: None` for its whole lifetime and the
+        // hotspot report would show an unnamed function even though later
+        // calls for the same address carried the name.
+        if entry.name.is_none() {
+            if let Some(resolved) = name {
+                entry.name = Some(resolved);
+            }
+        }
         entry.call_count += 1;
         if let Some(c) = cycles {
             entry.total_cycles += c;
@@ -149,6 +159,37 @@ impl PerformanceIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The first call for an address can arrive before its symbol resolves.
+    /// `or_insert_with` never overwrites, so the name used to be frozen at
+    /// whatever the first call carried — including nothing — and the hotspot
+    /// report showed an unnamed function for the rest of the session.
+    #[test]
+    fn name_from_a_later_call_fills_in_an_unresolved_first_call() {
+        let mut idx = PerformanceIndex::new();
+
+        idx.record_call(0x1000, None, None);
+        idx.record_call(0x1000, Some("resolved_later".to_string()), None);
+
+        let perf = idx.function_perf(0x1000).unwrap();
+        assert_eq!(
+            perf.name.as_deref(),
+            Some("resolved_later"),
+            "a name observed on a later call must not be discarded"
+        );
+        assert_eq!(perf.call_count, 2, "the call count must be unaffected");
+    }
+
+    /// The already-correct case: the first call carries the name.
+    #[test]
+    fn first_call_name_is_kept() {
+        let mut idx = PerformanceIndex::new();
+        idx.record_call(0x2000, Some("first".to_string()), None);
+        idx.record_call(0x2000, Some("second".to_string()), None);
+
+        let perf = idx.function_perf(0x2000).unwrap();
+        assert_eq!(perf.name.as_deref(), Some("first"));
+    }
 
     #[test]
     fn test_record_call_and_read_counters() {
