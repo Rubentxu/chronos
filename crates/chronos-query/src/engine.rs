@@ -806,7 +806,15 @@ impl QueryEngine {
                 if let Some(ref name) = query.variable_name {
                     causality.trace_lineage(name)
                 } else {
-                    causality.writes_at(addr).iter().collect()
+                    // `trace_lineage` sorts by timestamp; `writes_at` returns
+                    // insertion order, which is not chronological. Sorting
+                    // here keeps one contract for `mutations`: without it the
+                    // same field is ordered one way when filtered by name and
+                    // another when filtered by address.
+                    let mut by_addr: Vec<&chronos_domain::CausalityEntry> =
+                        causality.writes_at(addr).iter().collect();
+                    by_addr.sort_by_key(|e| e.timestamp);
+                    by_addr
                 };
 
             let mutations = entries
@@ -1521,6 +1529,64 @@ mod tests {
         // Ordered by timestamp
         assert_eq!(result.mutations[0].timestamp, MonotonicNs::from(100));
         assert_eq!(result.mutations[2].value_after, "2");
+    }
+
+    /// The discriminating case. `test_query_causality_trace_lineage` above
+    /// asserts chronological order too, but its fixture records the writes in
+    /// chronological order, so it passes with or without the sort. Here the
+    /// writes arrive out of order — which the builder allows, because the
+    /// events reaching `push_all` are not guaranteed sorted — and the by-name
+    /// and by-address paths must still agree.
+    #[test]
+    fn lineage_by_address_is_chronological_even_when_writes_arrive_unsorted() {
+        use chronos_domain::query::CausalityQuery;
+        use chronos_domain::{CausalityEntry, CausalityIndex};
+
+        let addr = 0xC000u64;
+        let mut causality = CausalityIndex::new();
+        // Deliberately out of order: 300, then 100, then 200.
+        for (event_id, ts, value) in [(30u64, 300u64, "c"), (10, 100, "a"), (20, 200, "b")] {
+            causality.record_write(
+                addr,
+                CausalityEntry {
+                    event_id,
+                    timestamp: MonotonicNs::from(ts),
+                    thread_id: 1,
+                    value_before: None,
+                    value_after: value.to_string(),
+                    function: "f".to_string(),
+                    file: None,
+                    line: None,
+                },
+                Some("unsorted"),
+            );
+        }
+        let engine = QueryEngine::new(vec![]).with_causality(causality);
+
+        let by_addr = engine
+            .query_causality(&CausalityQuery::new("s1").by_address(addr).with_full_lineage())
+            .unwrap();
+        let by_name = engine
+            .query_causality(
+                &CausalityQuery::new("s1")
+                    .by_name("unsorted")
+                    .with_full_lineage(),
+            )
+            .unwrap();
+
+        let stamps = |m: &[chronos_domain::query::MutationRecord]| {
+            m.iter().map(|x| x.timestamp.get()).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            stamps(&by_addr.mutations),
+            vec![100, 200, 300],
+            "the by-address path must be chronological, not insertion-ordered"
+        );
+        assert_eq!(
+            stamps(&by_addr.mutations),
+            stamps(&by_name.mutations),
+            "both filter paths must yield one order for the same mutations"
+        );
     }
 
     #[test]

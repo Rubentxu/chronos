@@ -31,7 +31,11 @@ pub struct CausalityEntry {
 /// - By name: `trace_lineage(name)` — full write history for a named variable.
 #[derive(Debug, Clone, Default)]
 pub struct CausalityIndex {
-    /// Memory address → list of write mutations (ordered by insertion = chronological).
+    /// Memory address → list of write mutations, in **insertion** order.
+    ///
+    /// Insertion order is *not* chronological: the builder is fed from
+    /// `push_all`, and the events reaching it are not guaranteed sorted. Use
+    /// [`CausalityIndex::trace_lineage`] when chronological order matters.
     write_events: HashMap<u64, Vec<CausalityEntry>>,
     /// Variable name → memory addresses (for name-based lookups).
     name_to_addr: HashMap<String, Vec<u64>>,
@@ -86,7 +90,10 @@ impl CausalityIndex {
         entries
     }
 
-    /// Return all write entries for a specific address.
+    /// Return all write entries for a specific address, in **insertion**
+    /// order — which is not necessarily chronological. Callers that need
+    /// chronological order must sort, the same way [`Self::trace_lineage`]
+    /// does for the by-name path.
     pub fn writes_at(&self, addr: u64) -> &[CausalityEntry] {
         self.write_events
             .get(&addr)
