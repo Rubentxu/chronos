@@ -444,7 +444,15 @@ impl ChronosCounterexampleService {
             Vec::new()
         } else {
             let end = match limit {
-                Some(n) => (off + n).min(events_count),
+                // `offset` and `limit` are both raw `usize` from the caller.
+                // `offset + limit` wraps in release, and a wrapped sum lands
+                // below `offset`, so the slice below panicked on a range that
+                // starts after it ends — reachable from the tool with
+                // something as ordinary as `offset=5&limit=usize::MAX`. In
+                // debug it aborted on the overflow instead. Saturating keeps
+                // `end >= off`, which is what the slice requires, and the
+                // `.min` then still clamps to the real end of the data.
+                Some(n) => off.saturating_add(n).min(events_count),
                 None => events_count,
             };
             all_events[off..end].to_vec()
