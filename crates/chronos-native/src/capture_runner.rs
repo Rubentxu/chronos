@@ -27,7 +27,7 @@ mod imp {
     use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
     use crate::symbol_resolver::SymbolResolver;
     use chronos_domain::{
-        CaptureConfig, Language, MonotonicNs, SourceLocation, SymbolId, TraceEvent,
+        CaptureConfig, Language, MonotonicNs, SymbolId, TraceEvent,
     };
     use nix::sys::ptrace;
     use nix::unistd::Pid;
@@ -657,12 +657,7 @@ mod imp {
                     let addr = trace_event.location.address;
                     if addr > 0 {
                         if let Some(sym) = resolver.resolve(addr) {
-                            trace_event.location = SourceLocation::new(
-                                sym.file.as_deref().unwrap_or(""),
-                                sym.line.unwrap_or(0),
-                                &sym.name,
-                                addr,
-                            );
+                            trace_event.location = sym.to_location(addr);
                         }
                     }
                 }

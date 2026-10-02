@@ -39,6 +39,31 @@ impl SymbolInfo {
             addr >= self.address && addr < (self.address + self.size)
         }
     }
+
+    /// Project this symbol onto a `SourceLocation` at `addr`.
+    ///
+    /// `file` and `line` are carried through as the `None` the symbol
+    /// actually has. `SourceLocation::new` cannot express that — it takes
+    /// a bare `u32` and always stores `Some` — so the two call sites that
+    /// resolved a symbol through it reached for `unwrap_or("")` and
+    /// `unwrap_or(0)`. `SymbolInfo` documents both as "None for MVP", so
+    /// those defaults were not an edge case: they fired on every symbol
+    /// the resolver produced, persisting a blank file and line 0 on every
+    /// resolved event.
+    ///
+    /// `SourceLocation::line` is documented 1-based, which makes 0 not a
+    /// sentinel but a line that cannot exist, and `Display` rendered it as
+    /// `":0 (name at 0x...)"`. An unknown location is now absent, which is
+    /// what the type has always been able to say.
+    pub fn to_location(&self, addr: u64) -> SourceLocation {
+        SourceLocation {
+            file: self.file.clone(),
+            line: self.line,
+            column: None,
+            function: Some(self.name.clone()),
+            address: addr,
+        }
+    }
 }
 
 /// Resolves instruction addresses to symbol information.
@@ -363,6 +388,66 @@ mod tests {
 
         assert!(sym.contains_address(0x2000));
         assert!(!sym.contains_address(0x2001));
+    }
+
+    /// Discriminante. The two production call sites used to route a
+    /// partially-resolved symbol through `SourceLocation::new`, which
+    /// cannot express absence, so they substituted `""` and `0`. Since
+    /// `SymbolInfo` documents both fields as "None for MVP", that
+    /// substitution was the normal path, not an edge case: every resolved
+    /// event persisted a blank file and line 0 — and `line` is documented
+    /// 1-based, so 0 is a line that cannot exist.
+    ///
+    /// Reverting `to_location` to `SourceLocation::new(.., sym.line
+    /// .unwrap_or(0), ..)` fails this on `assert_eq!(loc.line, None)`
+    /// with `left: Some(0)`.
+    #[test]
+    fn to_location_keeps_an_unresolved_file_and_line_absent() {
+        let sym = SymbolInfo {
+            name: "main".into(),
+            address: 0x1000,
+            size: 100,
+            file: None,
+            line: None,
+        };
+
+        let loc = sym.to_location(0x1010);
+
+        assert_eq!(
+            loc.file, None,
+            "an unresolved file must not become Some(\"\")"
+        );
+        assert_eq!(loc.line, None, "an unresolved line must not become Some(0)");
+        assert_eq!(loc.function.as_deref(), Some("main"));
+        assert_eq!(loc.address, 0x1010);
+        // The rendered form is what a consumer actually reads. With the
+        // fabricated values this was ":0 (main at 0x1010)".
+        assert_eq!(loc.to_string(), "main at 0x1010");
+        assert!(
+            !loc.to_string().contains(":0"),
+            "a fabricated line 0 leaks into the rendered location: {loc}"
+        );
+    }
+
+    /// Control: the parts the symbol *does* carry still arrive. If
+    /// `to_location` dropped everything, the test above would still pass.
+    #[test]
+    fn to_location_carries_a_resolved_file_and_line_through() {
+        let sym = SymbolInfo {
+            name: "helper".into(),
+            address: 0x3000,
+            size: 32,
+            file: Some("src/main.c".into()),
+            line: Some(42),
+        };
+
+        let loc = sym.to_location(0x3008);
+
+        assert_eq!(loc.file.as_deref(), Some("src/main.c"));
+        assert_eq!(loc.line, Some(42));
+        assert_eq!(loc.function.as_deref(), Some("helper"));
+        assert_eq!(loc.address, 0x3008);
+        assert_eq!(loc.to_string(), "src/main.c:42 (helper at 0x3008)");
     }
 
     #[test]

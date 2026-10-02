@@ -59,6 +59,16 @@ impl std::fmt::Display for SourceLocation {
             (Some(func), None, None) => {
                 write!(f, "{} at 0x{:x}", func, self.address)
             }
+            // Function known, source unknown. `SymbolInfo` resolves a name
+            // from the ELF symbol table on every address but leaves `file`
+            // and `line` as `None` ("None for MVP"), so this is the shape a
+            // real resolved symbol produces. Without these arms the catch-all
+            // below printed the bare address and dropped the function name
+            // the resolver had actually found.
+            (None, Some(func), line) => match line {
+                Some(line) => write!(f, "{}:{} at 0x{:x}", func, line, self.address),
+                None => write!(f, "{} at 0x{:x}", func, self.address),
+            },
             _ => write!(f, "0x{:x}", self.address),
         }
     }
@@ -97,5 +107,28 @@ mod tests {
         let loc = SourceLocation::from_address(0xDEAD);
         let s = loc.to_string();
         assert_eq!(s, "0xdead");
+    }
+
+    /// Discriminante. A resolved symbol carries a name but no source, and
+    /// the catch-all arm used to print the bare address for that shape, so
+    /// the one piece of information the resolver had found was dropped from
+    /// the rendered location. Removing the `(None, Some(func), line)` arm
+    /// fails this with `left: "0x401000"`.
+    #[test]
+    fn test_display_keeps_the_function_when_the_source_is_unknown() {
+        let loc = SourceLocation {
+            file: None,
+            line: None,
+            column: None,
+            function: Some("main".into()),
+            address: 0x401000,
+        };
+        assert_eq!(loc.to_string(), "main at 0x401000");
+
+        let with_line = SourceLocation {
+            line: Some(7),
+            ..loc
+        };
+        assert_eq!(with_line.to_string(), "main:7 at 0x401000");
     }
 }

@@ -30,7 +30,7 @@ use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
 #[cfg(target_os = "linux")]
-use chronos_domain::{MonotonicNs, SourceLocation};
+use chronos_domain::MonotonicNs;
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::Path;
 #[cfg(target_os = "linux")]
@@ -928,12 +928,7 @@ impl NativeProbeBackend {
                     let addr = trace_event.location.address;
                     if addr > 0 {
                         if let Some(sym) = resolver.resolve(addr) {
-                            trace_event.location = SourceLocation::new(
-                                sym.file.as_deref().unwrap_or(""),
-                                sym.line.unwrap_or(0),
-                                &sym.name,
-                                addr,
-                            );
+                            trace_event.location = sym.to_location(addr);
                         }
                     }
                 }
