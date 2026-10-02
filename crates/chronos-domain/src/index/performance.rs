@@ -118,7 +118,11 @@ impl PerformanceIndex {
         self.function_stats.get(&address)
     }
 
-    /// Return all function stats sorted by call count descending.
+    /// Return the `limit` functions with the highest call count, descending.
+    ///
+    /// The result holds at most `limit` entries: `function_stats` is
+    /// truncated below, so "all" would be the wrong word here — the callers
+    /// that need the full set read `function_stats` directly.
     pub fn top_functions_by_calls(&self, limit: usize) -> Vec<&FunctionPerf> {
         let mut sorted: Vec<&FunctionPerf> = self.function_stats.values().collect();
         sorted.sort_by_key(|a| std::cmp::Reverse(a.call_count));
@@ -126,7 +130,9 @@ impl PerformanceIndex {
         sorted
     }
 
-    /// Return all function stats sorted by total cycles descending.
+    /// Return the `limit` functions with the highest total cycles, descending.
+    ///
+    /// Bounded by `limit` exactly as [`Self::top_functions_by_calls`] is.
     pub fn top_functions_by_cycles(&self, limit: usize) -> Vec<&FunctionPerf> {
         let mut sorted: Vec<&FunctionPerf> = self.function_stats.values().collect();
         sorted.sort_by_key(|a| std::cmp::Reverse(a.total_cycles));
