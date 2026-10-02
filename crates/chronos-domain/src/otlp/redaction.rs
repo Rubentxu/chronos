@@ -6,8 +6,9 @@
 //! The spike's `redact_and_limit_spans()` is generic over `ExportedSpan`
 //! (from M6.4). This product-side lift is generic over the simplest
 //! attribute representation — `Vec<(String, String)>` — so it can be
-//! applied to ANY exporter (including `chronos-services::session_export`)
-//! without coupling to a specific span type.
+//! applied to any producer of attribute pairs without coupling to a
+//! specific span type. That generic constrains the attribute shape only;
+//! it does not imply that a given consumer applies the policy.
 //!
 //! ## What is lifted
 //!   - [`RedactionPolicy`] — case-insensitive substring match against
@@ -39,6 +40,11 @@
 //! deliberately does not redact: it is the renderer, and a policy it applied
 //! silently would make "render this span" and "render this span under policy
 //! P" the same call with no way to name which one ran.
+//!
+//! Not a consumer: `chronos-services::session_export` never calls this
+//! policy. It serializes the `TraceEvent`s it pulls from
+//! `engine.get_all_events()` as they are, and those events can carry
+//! captured process memory as raw bytes in [`crate::EventData::Memory`].
 
 /// Redaction policy. Sensitive key patterns are matched
 /// case-insensitive against the attribute key name; the value of any
