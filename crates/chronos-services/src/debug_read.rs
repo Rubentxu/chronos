@@ -30,6 +30,13 @@ impl DebugReadService {
     /// Evaluate an arithmetic expression using local variables captured at a frame event.
     ///
     /// Supports `+`, `-`, `*`, `/`, parentheses, and variable names.
+    ///
+    /// Returns [`ServiceError::EventNotFound`] when the event does not exist.
+    /// Without that check the expression was evaluated against an empty variable
+    /// set, so `1+1` returned `2.0` for an event that was never captured — a
+    /// confident number about nothing, and one the caller cannot tell apart from
+    /// a real evaluation. `get_variables` below already rejects the same id for
+    /// the same reason.
     pub async fn evaluate_expression(
         session_id: &str,
         event_id: u64,
@@ -40,6 +47,13 @@ impl DebugReadService {
         let engine = guard
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
+
+        // Exact-id lookup, not a range, for the same reason as
+        // `get_variables`: an id that was never captured must not fall
+        // through as an empty scope.
+        engine
+            .get_event_by_id(event_id)
+            .ok_or(ServiceError::EventNotFound { event_id })?;
 
         match engine.evaluate_expression(event_id, expression) {
             Ok(value) => Ok(EvalResult::Value(value)),
@@ -469,6 +483,40 @@ mod tests {
     }
 
     // --- evaluate_expression ---
+
+    /// An event that was never captured has no variables, and an expression
+    /// over no variables still evaluates: `1+1` is 2.0 regardless.
+    ///
+    /// That made `evaluate_expression(999_999, "1+1")` answer `Value(2.0)` —
+    /// a confident number about an event that does not exist, and one the
+    /// caller has no way to distinguish from a real evaluation. `get_variables`
+    /// rejects the same id with `EventNotFound` and says why in a comment; this
+    /// is the same guard on the same lookup.
+    #[tokio::test]
+    async fn evaluate_expression_rejects_an_event_that_was_never_captured() {
+        let map = vars_engine();
+        let engines = Mutex::new(map);
+        let result = DebugReadService::evaluate_expression("s1", 999_999, "1 + 1", &engines).await;
+        assert!(
+            matches!(result, Err(ServiceError::EventNotFound { event_id: 999_999 })),
+            "constant arithmetic must not manufacture a value for a missing event, got {result:?}"
+        );
+    }
+
+    /// Control: the same expression on the event that does exist still works,
+    /// so the guard above is not passing because constant expressions fail.
+    #[tokio::test]
+    async fn evaluate_expression_still_answers_for_a_captured_event() {
+        let map = vars_engine();
+        let engines = Mutex::new(map);
+        match DebugReadService::evaluate_expression("s1", 0, "1 + 2", &engines)
+            .await
+            .expect("a captured event must still evaluate")
+        {
+            EvalResult::Value(v) => assert_eq!(v, 3.0),
+            other => panic!("expected a value, got {other:?}"),
+        }
+    }
 
     #[tokio::test]
     async fn evaluate_expression_ok() {
