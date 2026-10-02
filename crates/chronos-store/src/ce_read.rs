@@ -74,11 +74,14 @@ impl SessionStore {
         let events_count = Self::get_bundle_events_count(&tx, bundle_id)?;
         let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
         let mut chunks: Vec<(u32, Vec<TraceEvent>)> = Vec::new();
+        let mut undecodable = 0usize;
         for (idx, bytes) in chunks_data {
             // m9-05 R1: v3-first / v2-fallback decode ladder extracted into
-            // `decode_chunk_payload`. Drops entries neither layout can decode.
-            if let Some(events) = decode_chunk_payload(&bytes) {
-                chunks.push((idx, events));
+            // `decode_chunk_payload`. Entries neither layout can decode are
+            // counted here rather than dropped: see the count check below.
+            match decode_chunk_payload(&bytes) {
+                Some(events) => chunks.push((idx, events)),
+                None => undecodable += 1,
             }
         }
 
@@ -86,6 +89,28 @@ impl SessionStore {
         let mut result = Vec::new();
         for (_, chunk) in chunks {
             result.extend(chunk);
+        }
+
+        // The bundle record says how many events were written into it
+        // (`ce_write` fixes `summary.events_count` from the vector it
+        // persisted), and `events_count` above is that number read back. Having
+        // both means a short read is detectable, and this function is the one
+        // place that knows about it — so it checks.
+        //
+        // Skipping the check let a chunk that no longer decodes vanish, and
+        // the rest of the bundle came back as `Ok`. A counterexample is a
+        // reproduction: reporting fewer events than the bundle holds presents
+        // a truncated trace as a complete one, and every consumer downstream
+        // saw a well-formed result. Callers that only need a count have
+        // `count_counterexample_bundle_events`, which applies the same check,
+        // so the two can no longer disagree about how many events a bundle has.
+        let found = result.len() as u64;
+        if undecodable > 0 || found != events_count {
+            return Err(StoreError::BundleEventsIncomplete {
+                bundle_id: bundle_id.to_string(),
+                expected: events_count,
+                found,
+            });
         }
         Ok(result)
     }
@@ -106,11 +131,23 @@ impl SessionStore {
         let events_count = Self::get_bundle_events_count(&tx, bundle_id)?;
         let chunks_data = collect_bundle_chunks(&tx, bundle_id, events_count)?;
         let mut total: u64 = 0;
+        let mut undecodable = 0usize;
         for (_idx, bytes) in chunks_data {
             // m9-05 R1: shared with `load_counterexample_bundle_events`.
-            if let Some(events) = decode_chunk_payload(&bytes) {
-                total += events.len() as u64;
+            match decode_chunk_payload(&bytes) {
+                Some(events) => total += events.len() as u64,
+                None => undecodable += 1,
             }
+        }
+        // Same contract as the loader: a count that does not match what the
+        // bundle declares is damage, not an answer. Reported as an error so the
+        // count and the load can never disagree about the same bundle.
+        if undecodable > 0 || total != events_count {
+            return Err(StoreError::BundleEventsIncomplete {
+                bundle_id: bundle_id.to_string(),
+                expected: events_count,
+                found: total,
+            });
         }
         Ok(total)
     }

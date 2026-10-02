@@ -34,6 +34,24 @@ pub enum StoreError {
         found: String,
     },
 
+    /// The events read back for a bundle are not the ones that were written.
+    ///
+    /// A bundle records how many events it holds, so a short read is not an
+    /// answer — it is damage. Without this arm an undecodable chunk was
+    /// dropped and the remaining events were returned as if the bundle were
+    /// whole, which let a truncated counterexample be reported as a complete
+    /// reproduction. `expected` is what the bundle declares, `found` is what
+    /// could actually be read.
+    #[error("bundle {bundle_id} declares {expected} event(s) but only {found} could be read")]
+    BundleEventsIncomplete {
+        /// The bundle whose events are short.
+        bundle_id: String,
+        /// How many events the bundle record declares.
+        expected: u64,
+        /// How many events could actually be decoded.
+        found: u64,
+    },
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

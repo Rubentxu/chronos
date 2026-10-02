@@ -1426,14 +1426,25 @@ fn m9_04_collision_containment_via_bundle_id() {
     }
     tx.commit().unwrap();
 
-    // Load events for the real bundle - should NOT return the fake chunk.
-    let events = store
-        .load_counterexample_bundle_events(real_bundle_id)
-        .unwrap();
-    assert!(
-        events.is_empty(),
-        "identity check must drop chunks with wrong bundle_id"
-    );
+    // Load events for the real bundle - the foreign chunk must NOT be returned.
+    //
+    // This used to assert an empty vec, which also blessed something else: the
+    // record declares one event and the read produces none, and the test
+    // accepted that discrepancy as a valid answer. A bundle that says it holds
+    // an event and cannot produce it is damage, so the call now fails closed
+    // with the declared/actual pair — which still proves the point this test
+    // exists for, because the foreign event is not in the result either way.
+    match store.load_counterexample_bundle_events(real_bundle_id) {
+        Err(StoreError::BundleEventsIncomplete {
+            expected, found, ..
+        }) => {
+            assert_eq!(expected, 1, "the record declares one event");
+            assert_eq!(found, 0, "the foreign chunk must not be counted");
+        }
+        other => panic!(
+            "identity check must drop chunks with wrong bundle_id, got {other:?}"
+        ),
+    }
 }
 
 // m9-04 §5: Fresh store with unknown bundle returns empty events vec.
@@ -1446,6 +1457,92 @@ fn m9_04_fresh_store_ghost_bundle_returns_empty() {
     assert!(
         events.is_empty(),
         "ghost bundle must return empty vec without scanning legacy keys"
+    );
+}
+
+/// A bundle whose chunk no longer decodes must be reported as damaged, not
+/// returned short.
+///
+/// `ce_write` fixes `summary.events_count` from the vector it persisted, so
+/// the reader knows how many events the bundle holds and can tell a complete
+/// read from a truncated one — the check simply was not there. A counterexample
+/// is a reproduction: returning the surviving chunks as `Ok` presented a
+/// truncated trace as a whole one, and `chronos-services` reported
+/// `all_events.len()` as the bundle's event count, so the loss was invisible
+/// all the way to the caller.
+///
+/// The corruption is real, not simulated: a chunk row is overwritten with
+/// bytes that are neither the v3 nor the v2 layout, so the decode ladder
+/// returns `None` exactly as it would for damage on disk.
+#[test]
+fn m9_05_undecodable_chunk_is_reported_instead_of_returned_short() {
+    let store = make_store();
+    let bundle_id = "b-truncated";
+    let events: Vec<_> = (0..10u64).map(|i| make_event(i, "trunc")).collect();
+    store
+        .save_counterexample_bundle(CounterexampleBundleRecord {
+            summary: CounterexampleBundleSummary {
+                bundle_id: bundle_id.into(),
+                property_kind: "invariant".into(),
+                workspace_id: "ws".into(),
+                created_at_ms: 0,
+                rounds_used: 1,
+                has_full_bundle: true,
+                schema_version: 1,
+                events_count: 0,
+            },
+            events,
+            minimised: None,
+            event_cas_hashes: vec![],
+            target_hypothesis: None,
+            schema_version: 1,
+        })
+        .unwrap();
+
+    // Control: intact, the bundle reads back in full.
+    assert_eq!(
+        store.load_counterexample_bundle_events(bundle_id).unwrap().len(),
+        10,
+        "an intact bundle must read back whole, or this test proves nothing"
+    );
+
+    // Corrupt the only chunk.
+    let tx = store.db().begin_write().unwrap();
+    {
+        let mut table = tx
+            .open_table(COUNTEREXAMPLE_BUNDLE_EVENTS)
+            .unwrap();
+        let key = encode_chunk_key(bundle_id, 0);
+        table.insert(&key[..], b"not a chunk".as_slice()).unwrap();
+    }
+    tx.commit().unwrap();
+
+    match store.load_counterexample_bundle_events(bundle_id) {
+        Err(StoreError::BundleEventsIncomplete {
+            bundle_id: id,
+            expected,
+            found,
+        }) => {
+            assert_eq!(id, bundle_id);
+            assert_eq!(expected, 10, "the bundle declares what was written");
+            assert!(
+                found < expected,
+                "a short read must report fewer events than declared, got {found}"
+            );
+        }
+        other => panic!(
+            "a chunk that no longer decodes must be reported as damage, got {other:?} \
+             — a truncated counterexample reported as a complete reproduction"
+        ),
+    }
+
+    // The count must not quietly agree with a different number than the load.
+    assert!(
+        matches!(
+            store.count_counterexample_bundle_events(bundle_id),
+            Err(StoreError::BundleEventsIncomplete { .. })
+        ),
+        "count and load must reach the same conclusion about a damaged bundle"
     );
 }
 
