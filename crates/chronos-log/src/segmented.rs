@@ -51,7 +51,9 @@ use crate::error::LogError;
 use crate::gap::{Gap, GapReason};
 use crate::memory::InMemoryExecutionLog;
 use crate::record::{ExecutionRecord, SessionId};
-use crate::segment::{read_header, sanitize_session, write_segment, SegmentEntry};
+use crate::segment::{
+    create_owner_only, read_header, sanitize_session, write_segment, SegmentEntry,
+};
 use crate::seq::EventSeq;
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
@@ -235,7 +237,7 @@ pub fn write_manifest_atomic(
     let bytes = serde_json::to_vec_pretty(manifest)
         .map_err(|e| LogError::Backend(format!("serialize manifest: {e}")))?;
     {
-        let mut f = std::fs::File::create(&tmp_path)
+        let mut f = create_owner_only(&tmp_path)
             .map_err(|e| LogError::Backend(format!("create {:?}: {e}", tmp_path)))?;
         f.write_all(&bytes)
             .map_err(|e| LogError::Backend(format!("write {:?}: {e}", tmp_path)))?;
@@ -1700,6 +1702,24 @@ mod tests {
         let cfg = SegmentedConfig::with_dir(&dir).auto_load_call_graph_checkpoint(true);
         let log = SegmentedExecutionLog::open(session.clone(), cfg).unwrap();
         assert_eq!(log.call_graph_projection(), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The manifest names the segments of a session, so it leaks the same
+    /// evidence inventory as they do. It is written to a `.tmp` and renamed,
+    /// and `rename` keeps the permissions of the temporary file, so pinning
+    /// the temporary file to `0600` pins the manifest.
+    #[test]
+    #[cfg(unix)]
+    fn written_manifest_is_owner_read_write_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir();
+        let session = SessionId::new("m1");
+        let manifest = ExecutionLogManifest::new(&session, EventSeq::new(0));
+        write_manifest_atomic(&dir, &manifest).unwrap();
+        let path = manifest_path(&dir);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "manifest mode was {:04o}, expected 0600", mode);
         std::fs::remove_dir_all(&dir).ok();
     }
 

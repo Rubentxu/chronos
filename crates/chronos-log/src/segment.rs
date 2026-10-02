@@ -180,6 +180,26 @@ pub fn decode_payload(payload: &[u8]) -> Result<Vec<SegmentEntry>, LogError> {
     Ok(entries)
 }
 
+/// Create (or truncate) an on-disk evidence file with mode `0600`.
+///
+/// `File::create` follows the process umask, so under the usual `022` a
+/// segment landed at `0644` and any local user could read the captured
+/// process memory it carries. `OpenOptionsExt::mode` sets the creation
+/// mode, but the kernel still ANDs it with the umask, so the handle is
+/// also `fchmod`ed afterwards: a umask can only clear bits from the
+/// requested mode, never restore them.
+pub(crate) fn create_owner_only(path: &Path) -> std::io::Result<File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let f = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    f.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(f)
+}
+
 /// Write a complete segment file atomically (write to `*.tmp` then
 /// rename). Returns the final path on success.
 pub fn write_segment(
@@ -202,7 +222,7 @@ pub fn write_segment(
     let payload = encode_payload(entries)?;
     let checksum = blake3::hash(&payload);
 
-    let mut f = File::create(&tmp_path)
+    let mut f = create_owner_only(&tmp_path)
         .map_err(|e| LogError::Backend(format!("create {:?}: {}", tmp_path, e)))?;
     let mut header = [0u8; HEADER_SIZE];
     header[0..4].copy_from_slice(&SEGMENT_MAGIC.to_le_bytes());
@@ -709,6 +729,34 @@ mod tests {
         assert_eq!(decoded.metadata.end_seq, EventSeq::new(2));
         assert_eq!(decoded.metadata.entry_count, 3);
         assert_eq!(decoded.entries, entries);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// A segment carries execution evidence, including captured memory of
+    /// arbitrary processes, so it must not be readable by other local users.
+    /// `File::create` honours the process umask, which under the usual
+    /// `022` produced `0644`. The writer pins `0600`.
+    ///
+    /// The assertion does not depend on the ambient umask: the writer
+    /// `fchmod`s the open handle explicitly, because the umask can only
+    /// clear bits from `OpenOptionsExt::mode`, never restore them.
+    #[test]
+    #[cfg(unix)]
+    fn written_segment_is_owner_read_write_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir();
+        let entries = vec![record(0, "secret")];
+        let path = write_segment(
+            &dir,
+            &SessionId::new("mode"),
+            EventSeq::new(0),
+            EventSeq::new(0),
+            1,
+            &entries,
+        )
+        .unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "segment mode was {:04o}, expected 0600", mode);
         fs::remove_dir_all(dir).ok();
     }
 
