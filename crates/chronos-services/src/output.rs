@@ -60,12 +60,18 @@ pub struct MemoryRead {
     pub timestamp_ns: u64,
     /// Event ID of the write.
     pub event_id: u64,
-    /// Size in bytes.
+    /// Size in bytes, as declared by the write. Known even when the bytes
+    /// were not captured.
     pub size: usize,
-    /// Raw bytes.
-    pub data: Vec<u8>,
-    /// Hex string of `data` (two lower-case hex chars per byte, no `0x` prefix).
-    pub hex: String,
+    /// Raw bytes, or `null` when the write did not carry them.
+    ///
+    /// `null` means the contents were not recorded; an empty array means
+    /// they were recorded and were empty. Collapsing the two made a write of
+    /// unknown contents indistinguishable from a write of no contents.
+    pub data: Option<Vec<u8>>,
+    /// Hex string of `data` (two lower-case hex chars per byte, no `0x`
+    /// prefix), or `null` when `data` is `null`.
+    pub hex: Option<String>,
 }
 
 /// A flat set of all 17 x86-64 general-purpose + program-counter + flags registers.
@@ -2482,12 +2488,13 @@ mod tests {
             timestamp_ns: 42,
             event_id: 7,
             size: 4,
-            data: vec![0xDE, 0xAD, 0xBE, 0xEF],
-            hex: "deadbeef".into(),
+            data: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
+            hex: Some("deadbeef".into()),
         };
         let json = serde_json::to_value(&mr).unwrap();
         assert_eq!(json["address"], 0x1000u64);
         assert_eq!(json["hex"], "deadbeef");
+        assert_eq!(json["data"][0], 0xDE);
     }
 
     #[test]

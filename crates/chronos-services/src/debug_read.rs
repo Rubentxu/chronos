@@ -110,12 +110,17 @@ impl DebugReadService {
                 timestamp_ns,
             })?;
 
-        let hex = mem
-            .data
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("");
+        // `hex` is derived, so it stays absent exactly when the bytes are
+        // absent. Emitting an empty hex string for an uncaptured write would
+        // reintroduce the very claim this shape exists to avoid: that the
+        // region was read and found empty.
+        let hex = mem.data.as_ref().map(|bytes| {
+            bytes
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<Vec<_>>()
+                .join("")
+        });
 
         Ok(MemoryRead {
             address: mem.address,
@@ -498,11 +503,13 @@ mod tests {
         let engines = Mutex::new(map);
         let result = DebugReadService::evaluate_expression("s1", 999_999, "1 + 1", &engines).await;
         assert!(
-            matches!(result, Err(ServiceError::EventNotFound { event_id: 999_999 })),
+            matches!(
+                result,
+                Err(ServiceError::EventNotFound { event_id: 999_999 })
+            ),
             "constant arithmetic must not manufacture a value for a missing event, got {result:?}"
         );
     }
-
 
     /// A captured value of `"inf"` is not a number, and dividing by it is not
     /// a zero.
@@ -575,7 +582,10 @@ mod tests {
             .expect("a subnormal is a number")
         {
             EvalResult::Value(v) => {
-                assert!(v > 0.0 && v < 1e-300, "expected the subnormal back, got {v}")
+                assert!(
+                    v > 0.0 && v < 1e-300,
+                    "expected the subnormal back, got {v}"
+                )
             }
             other => panic!("a subnormal operand must evaluate, got {other:?}"),
         }
@@ -703,7 +713,66 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.address, 0x1000);
-        assert_eq!(result.hex, "deadbeef");
+        assert_eq!(result.hex.as_deref(), Some("deadbeef"));
+        assert_eq!(result.data.as_deref().map(<[u8]>::len), Some(4));
+    }
+
+    /// Discriminante: a write that declared a size but carried no bytes must
+    /// not be reported as a read that found the region empty.
+    ///
+    /// `EventData::Memory.data` is already `Option<Vec<u8>>` in the domain
+    /// type, so "the bytes were not recorded" is representable all the way
+    /// down. The query engine used to collapse it with `unwrap_or_default()`,
+    /// and this service then rendered `hex` from whatever survived. The pair
+    /// that reached the agent was a real non-zero `size` next to a fabricated
+    /// empty body -- the most misleading combination the output can carry,
+    /// because the size invites the reader to believe the bytes were seen.
+    ///
+    /// Mutating the derivation back to fabricating produces a red run:
+    /// forcing `hex` to `Some(String::new())` trips the `hex` assertion with
+    /// `Some("")`, and forcing `data` to `Some(vec![])` trips the `data`
+    /// assertion with `Some([])`.
+    ///
+    /// The positive control is `get_memory_ok` directly above: it still pins
+    /// the captured-bytes shape, so this guard cannot be satisfied by
+    /// returning `None` unconditionally.
+    #[tokio::test]
+    async fn get_memory_reports_absent_bytes_when_the_write_carried_none() {
+        let engine = make_engine(vec![trace_event(
+            5,
+            100,
+            1,
+            EventType::MemoryWrite,
+            EventData::Memory {
+                address: 0x1000,
+                size: 64,
+                data: None,
+            },
+        )]);
+        let engines = Mutex::new(HashMap::from([("s3".to_string(), engine)]));
+
+        let result = DebugReadService::get_memory("s3", 0x1000, 200, &engines)
+            .await
+            .expect("an uncaptured write is still a write: the read must succeed");
+
+        // The declared size is known even though the bytes are not.
+        assert_eq!(result.size, 64, "the declared size must survive the read");
+        assert_eq!(result.address, 0x1000);
+        assert!(
+            result.data.is_none(),
+            "an uncaptured write must not be reported as an empty buffer, got {:?}",
+            result.data
+        );
+        assert!(
+            result.hex.is_none(),
+            "hex is derived from the bytes, so it must be absent too, got {:?}",
+            result.hex
+        );
+
+        // Wire-level check on the production-derived value.
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json["data"].is_null(), "expected null data, got {json}");
+        assert!(json["hex"].is_null(), "expected null hex, got {json}");
     }
 
     #[tokio::test]
@@ -1046,5 +1115,4 @@ mod tests {
             analyze_pairs(&analysis)
         );
     }
-
 }

@@ -41,10 +41,19 @@ pub struct MemoryValue {
     pub timestamp_ns: u64,
     /// Memory address.
     pub address: u64,
-    /// Size in bytes.
+    /// Size in bytes. This is the size the write declared, and it is known
+    /// even when the bytes were not captured.
     pub size: usize,
-    /// Raw data bytes.
-    pub data: Vec<u8>,
+    /// Raw data bytes, or `None` when the write did not carry them.
+    ///
+    /// `None` means "the contents of this write were not recorded", which is
+    /// a different claim from "the contents are empty". A `Memory` event may
+    /// legitimately report an address and a size without a payload, and
+    /// substituting an empty `Vec` here made that read as a zeroed region
+    /// paired with a real non-zero `size` -- the most misleading combination
+    /// the output could carry, because the size invites the reader to believe
+    /// the bytes were seen and found empty.
+    pub data: Option<Vec<u8>>,
 }
 
 /// Saliency score for a function.
@@ -634,7 +643,7 @@ impl QueryEngine {
                                 timestamp_ns: event.timestamp_ns.get(),
                                 address: *addr,
                                 size: *size,
-                                data: data.clone().unwrap_or_default(),
+                                data: data.clone(),
                             });
                         }
                     }
@@ -1571,7 +1580,11 @@ mod tests {
         let engine = QueryEngine::new(vec![]).with_causality(causality);
 
         let by_addr = engine
-            .query_causality(&CausalityQuery::new("s1").by_address(addr).with_full_lineage())
+            .query_causality(
+                &CausalityQuery::new("s1")
+                    .by_address(addr)
+                    .with_full_lineage(),
+            )
             .unwrap();
         let by_name = engine
             .query_causality(
@@ -2073,6 +2086,87 @@ mod tests {
         )
     }
 
+    /// A `Memory` write that declared a size but carried no bytes.
+    ///
+    /// `make_memory_event` above always wraps its payload in `Some`, which is
+    /// why no test in this crate could ever reach the `None` arm.
+    fn make_uncaptured_memory_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        address: u64,
+        size: usize,
+    ) -> TraceEvent {
+        TraceEvent::new(
+            id,
+            MonotonicNs::from(ts),
+            tid,
+            EventType::MemoryWrite,
+            SourceLocation::from_address(address),
+            EventData::Memory {
+                address,
+                size,
+                data: None,
+            },
+        )
+    }
+
+    /// Discriminante for the read path, at the layer that produced the defect.
+    ///
+    /// `get_memory_at` used to carry the payload through `unwrap_or_default()`,
+    /// collapsing "the write carried no bytes" into "the region is empty" while
+    /// keeping the write's real non-zero `size`. Restoring that exact
+    /// expression (`Some(data.clone().unwrap_or_default())`) makes this fail
+    /// with `data: Some([])` instead of `data: None`.
+    ///
+    /// The positive control is `test_get_memory_found` above, which still pins
+    /// the captured-bytes payload, so this cannot be satisfied by returning
+    /// `None` for every read.
+    #[test]
+    fn test_get_memory_preserves_an_uncaptured_payload_as_absent() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![make_uncaptured_memory_event(1, 1000, 1, addr, 64)];
+        let engine = QueryEngine::new(events);
+
+        let mem = engine
+            .get_memory_at(addr, MonotonicNs::from(1500))
+            .expect("an uncaptured write is still a write, so the read succeeds");
+
+        assert_eq!(mem.address, addr);
+        assert_eq!(mem.event_id, 1);
+        // The declared size is known even though the bytes are not.
+        assert_eq!(
+            mem.size, 64,
+            "the declared write size must survive the read"
+        );
+        assert!(
+            mem.data.is_none(),
+            "a write that carried no bytes must not read back as an empty \
+             buffer, got {:?}",
+            mem.data
+        );
+    }
+
+    /// The neighbouring case: a later captured write supersedes an earlier
+    /// uncaptured one at the same address. Without this, the guard above could
+    /// be satisfied by treating the newest write as uncaptured.
+    #[test]
+    fn test_get_memory_prefers_the_latest_write_with_payload() {
+        let addr = 0x7FFF0000u64;
+        let events = vec![
+            make_uncaptured_memory_event(1, 1000, 1, addr, 64),
+            make_memory_event(2, 2000, 1, addr, 2, vec![0xAB, 0xCD]),
+        ];
+        let engine = QueryEngine::new(events);
+
+        let mem = engine
+            .get_memory_at(addr, MonotonicNs::from(2500))
+            .expect("the captured write must be found");
+        assert_eq!(mem.event_id, 2);
+        assert_eq!(mem.size, 2);
+        assert_eq!(mem.data.as_deref(), Some(vec![0xAB, 0xCD].as_slice()));
+    }
+
     #[test]
     fn test_get_memory_found() {
         let addr = 0x7FFF0000u64;
@@ -2088,7 +2182,10 @@ mod tests {
         let mem = result.unwrap();
         assert_eq!(mem.event_id, 1);
         assert_eq!(mem.timestamp_ns, 1000);
-        assert_eq!(mem.data, vec![0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(
+            mem.data.as_deref(),
+            Some(vec![0x01, 0x02, 0x03, 0x04].as_slice())
+        );
     }
 
     #[test]
@@ -2107,7 +2204,10 @@ mod tests {
         let mem = result.unwrap();
         assert_eq!(mem.event_id, 2);
         assert_eq!(mem.timestamp_ns, 2000);
-        assert_eq!(mem.data, vec![0xFF, 0xFE, 0xFD, 0xFC]);
+        assert_eq!(
+            mem.data.as_deref(),
+            Some(vec![0xFF, 0xFE, 0xFD, 0xFC].as_slice())
+        );
     }
 
     #[test]
