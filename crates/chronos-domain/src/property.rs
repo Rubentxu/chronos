@@ -28,6 +28,16 @@ pub enum PropertyValue {
     Number(f64),
     Text(String),
     Bool(bool),
+    /// The value exists but cannot be represented as a scalar of the
+    /// declared type.
+    ///
+    /// Distinct from "no value": the observation happened, and what it
+    /// carried was not something this type can hold — a variable declared
+    /// numeric whose text does not parse, for instance. Coercing it to
+    /// `Text` instead would answer a comparison that can never hold as if
+    /// the types matched, and a consumer had no way to tell a genuine
+    /// string from a number that failed to read.
+    Unsupported(String),
 }
 
 impl Default for PropertyValue {
@@ -46,6 +56,7 @@ impl fmt::Display for PropertyValue {
             PropertyValue::Number(n) => write!(f, "{n}"),
             PropertyValue::Text(s) => write!(f, "{s:?}"),
             PropertyValue::Bool(b) => write!(f, "{b}"),
+            PropertyValue::Unsupported(s) => write!(f, "unsupported({s:?})"),
         }
     }
 }
@@ -221,6 +232,7 @@ fn variant_name(value: &PropertyValue) -> &'static str {
         PropertyValue::Number(_) => "number",
         PropertyValue::Text(_) => "text",
         PropertyValue::Bool(_) => "bool",
+        PropertyValue::Unsupported(_) => "unsupported",
     }
 }
 
@@ -730,6 +742,7 @@ fn value_text(v: &PropertyValue) -> String {
         PropertyValue::Text(s) => {
             format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
         }
+        PropertyValue::Unsupported(s) => format!("unsupported({s:?})"),
     }
 }
 

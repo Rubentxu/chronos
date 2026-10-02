@@ -84,8 +84,15 @@ impl PropertyProjection {
 
     /// Parse a `VariableInfo` string value into a `PropertyValue`.
     ///
-    /// If `type_name` starts with 'i', 'u', or 'f' and the value parses as `f64`,
-    /// returns `PropertyValue::Number`. Otherwise falls back to `PropertyValue::Text`.
+    /// A `type_name` that starts with 'i', 'u', or 'f' declares a number.
+    /// If the value parses as `f64` it is [`PropertyValue::Number`]; if it
+    /// does not, it is [`PropertyValue::Unsupported`] rather than
+    /// [`PropertyValue::Text`]. Coercing it to `Text` answered a comparison
+    /// that could never hold as if the types matched, and left a consumer no
+    /// way to tell a genuine string from a number that failed to read.
+    ///
+    /// A `type_name` that is not numeric is `Text`, which is a real
+    /// statement about the value and not a fallback.
     fn parse_value(value: &str, type_name: &str) -> PropertyValue {
         let first_char = type_name.chars().next();
         if let Some(c) = first_char {
@@ -93,6 +100,7 @@ impl PropertyProjection {
                 if let Ok(n) = value.parse::<f64>() {
                     return PropertyValue::Number(n);
                 }
+                return PropertyValue::Unsupported(value.to_string());
             }
         }
         PropertyValue::Text(value.to_string())
@@ -109,6 +117,51 @@ mod tests {
         trace::{EventData, EventType, SourceLocation},
         VariableScope,
     };
+
+    /// A variable declared numeric whose value does not parse is not text.
+    /// Coercing it to `Text` answered a comparison that could never hold as
+    /// if the types matched, and left a consumer no way to tell a genuine
+    /// string from a number that failed to read.
+    #[test]
+    fn parse_value_does_not_coerce_an_unreadable_number_into_text() {
+        assert_eq!(
+            PropertyProjection::parse_value("not-a-number", "int"),
+            PropertyValue::Unsupported("not-a-number".to_string()),
+            "a declared integer that does not parse is unsupported, not text"
+        );
+        // Every numeric spelling of the type name, and the shapes that
+        // parse and those that do not.
+        for type_name in ["int", "uint", "float", "i32", "u64", "f64"] {
+            assert_eq!(
+                PropertyProjection::parse_value("1.5", type_name),
+                PropertyValue::Number(1.5),
+                "{type_name} with a parsable value is a number"
+            );
+            assert!(
+                matches!(
+                    PropertyProjection::parse_value("", type_name),
+                    PropertyValue::Unsupported(_)
+                ),
+                "{type_name} with an empty value is unsupported, not text"
+            );
+        }
+    }
+
+    /// Control: a `type_name` that is not numeric really does describe a
+    /// string, so `Text` there is a statement about the value and not a
+    /// fallback for a failed parse.
+    #[test]
+    fn parse_value_keeps_text_for_a_non_numeric_type() {
+        assert_eq!(
+            PropertyProjection::parse_value("not-a-number", "String"),
+            PropertyValue::Text("not-a-number".to_string())
+        );
+        assert_eq!(
+            PropertyProjection::parse_value("42", "char[]"),
+            PropertyValue::Text("42".to_string()),
+            "a non-numeric type keeps the value as text even when it looks numeric"
+        );
+    }
 
     fn make_var_event(
         event_id: u64,
@@ -279,7 +332,10 @@ mod tests {
         let report = PropertyProjection::run(&property, &engine);
 
         assert!(
-            matches!(report.outcome, PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }),
+            matches!(
+                report.outcome,
+                PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }
+            ),
             "a value that could not be read as its declared type must not prove a change, got {:?}",
             report.outcome
         );

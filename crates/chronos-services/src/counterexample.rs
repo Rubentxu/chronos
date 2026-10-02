@@ -969,6 +969,11 @@ fn constant_strategy(base: &PropertyValue) -> proptest::strategy::SBoxedStrategy
         PropertyValue::Number(n) => NumberShrinking { start: *n }.sboxed(),
         PropertyValue::Text(s) => TextShrinking { start: s.clone() }.sboxed(),
         PropertyValue::Bool(_) => proptest::strategy::Just(base.clone()).sboxed(),
+        // No constant can be generated for a value that is not representable:
+        // anything we invented here would be comparable and the base is not.
+        // Degenerate, like `Bool` above — the operator gets the base back and
+        // the comparison cannot hold, which is fail-closed.
+        PropertyValue::Unsupported(_) => proptest::strategy::Just(base.clone()).sboxed(),
     }
 }
 

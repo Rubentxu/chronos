@@ -1616,9 +1616,23 @@ pub struct ExportPropertiesEntry {
 #[schemars(rename_all = "snake_case")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExportPropertyValue {
-    Number { value: f64 },
-    Text { value: String },
-    Bool { value: bool },
+    Number {
+        value: f64,
+    },
+    Text {
+        value: String,
+    },
+    Bool {
+        value: bool,
+    },
+    /// A value that exists but is not representable as a scalar. Carried
+    /// through the export so that reading it back yields the same
+    /// information as reading it from the store — mapping it to `Text` on
+    /// the way out would undo, at the boundary, exactly what
+    /// `PropertyValue::Unsupported` exists to preserve.
+    Unsupported {
+        reason: String,
+    },
 }
 
 impl From<PropertyValue> for ExportPropertyValue {
@@ -1627,6 +1641,7 @@ impl From<PropertyValue> for ExportPropertyValue {
             PropertyValue::Number(n) => ExportPropertyValue::Number { value: n },
             PropertyValue::Text(t) => ExportPropertyValue::Text { value: t },
             PropertyValue::Bool(b) => ExportPropertyValue::Bool { value: b },
+            PropertyValue::Unsupported(r) => ExportPropertyValue::Unsupported { reason: r },
         }
     }
 }
@@ -1637,6 +1652,7 @@ impl From<ExportPropertyValue> for PropertyValue {
             ExportPropertyValue::Number { value } => PropertyValue::Number(value),
             ExportPropertyValue::Text { value } => PropertyValue::Text(value),
             ExportPropertyValue::Bool { value } => PropertyValue::Bool(value),
+            ExportPropertyValue::Unsupported { reason } => PropertyValue::Unsupported(reason),
         }
     }
 }
