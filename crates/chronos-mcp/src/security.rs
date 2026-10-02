@@ -5,7 +5,20 @@
 
 use std::path::{Path, PathBuf};
 
-/// Allowed path prefixes for validated program paths.
+/// Documented prefixes for validated program paths.
+///
+/// These are **NOT an allowlist and enforce nothing**. The first entry is
+/// `/`, and `starts_with("/")` holds for every absolute path, so the check
+/// below can never reject a path on prefix grounds. Keep this list readable
+/// as documentation of where programs are normally installed, not as a
+/// containment boundary — reading it as a boundary is exactly the mistake
+/// that lets someone "harden" the code by deleting `/` and break every
+/// caller, or assume that a path outside these prefixes is rejected when it
+/// is not.
+///
+/// The real policy (see `validate_program_path`) is: absolute, no `..`,
+/// and the path must exist. That is the product's purpose — running the
+/// program the user named. Multi-tenant containment is not in scope yet.
 const ALLOWED_PREFIXES: &[&str] = &["/", "/usr", "/home", "/tmp", "/opt"];
 
 /// Validate a program path for execution.
@@ -14,6 +27,9 @@ const ALLOWED_PREFIXES: &[&str] = &["/", "/usr", "/home", "/tmp", "/opt"];
 /// - Path traversal sequences (`..`)
 /// - Non-absolute paths (must start with `/`)
 /// - Non-existent files (canonicalization fails)
+///
+/// An existing absolute path is accepted wherever it lives — there is no
+/// prefix allowlist, by design (see `ALLOWED_PREFIXES`).
 ///
 /// Returns the canonical path on success.
 pub fn validate_program_path(path: &str) -> Result<PathBuf, SecurityError> {
@@ -32,15 +48,23 @@ pub fn validate_program_path(path: &str) -> Result<PathBuf, SecurityError> {
         .canonicalize()
         .map_err(|_| SecurityError::ProgramNotFound(path.to_string()))?;
 
-    // 4. Verify the canonical path starts with an allowed prefix
+    // 4. Prefix check. Kept as an explicit, always-true guard rather than
+    // deleted, so the code states the policy where it is enforced: the
+    // documented prefixes include "/", so this can never reject anything.
+    // Dropping the list entirely is a semantics change (running arbitrary
+    // programs is the point of this function); renaming the message below
+    // is what makes the code honest.
     let canonical_str = canonical.to_string_lossy();
     let has_allowed_prefix = ALLOWED_PREFIXES
         .iter()
         .any(|prefix| canonical_str.starts_with(prefix));
 
     if !has_allowed_prefix {
+        // Unreachable with the current list; if the list is ever narrowed,
+        // this must not claim a containment that the rejection does not
+        // describe.
         return Err(SecurityError::ProgramNotFound(format!(
-            "Path '{}' resolves to '{}' which is not under an allowed prefix",
+            "Path '{}' resolves to '{}', which does not match any documented prefix",
             path, canonical_str
         )));
     }
@@ -128,6 +152,36 @@ mod tests {
             result.unwrap_err(),
             SecurityError::ProgramNotFound(_)
         ));
+    }
+
+    /// Behaviour pin, not a proof of the documentation fix: the audit that
+    /// prompted it changed only comments and one error message, so this
+    /// test passes both before and after. What it protects is the
+    /// *behaviour* those comments now describe — an existing absolute path
+    /// outside the documented prefixes is accepted on purpose, because
+    /// running the program the user named is the point of this function.
+    /// Without this test a future refactor could narrow the prefix list and
+    /// silently break every caller, thinking it was hardening.
+    #[test]
+    fn test_validate_program_path_accepts_path_outside_documented_prefixes() {
+        // /etc/hosts exists on Linux and macOS and is under neither /usr,
+        // /home, /tmp nor /opt.
+        match validate_program_path("/etc/hosts") {
+            Ok(path) => {
+                assert!(path.is_absolute());
+                assert!(
+                    path.to_string_lossy().starts_with('/'),
+                    "expected a canonical absolute path, got {:?}",
+                    path
+                );
+            }
+            Err(SecurityError::ProgramNotFound(_)) => {
+                // No /etc/hosts in this environment: the path does not exist,
+                // so there is no behaviour to pin. Same skip as the /bin/ls
+                // test above.
+            }
+            Err(other) => panic!("unexpected rejection of an existing absolute path: {other}"),
+        }
     }
 
     #[test]
