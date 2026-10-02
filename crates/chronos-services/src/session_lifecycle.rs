@@ -221,7 +221,10 @@ impl ChronosSessionLifecycleService {
     ///
     /// Algorithm (single-call, m7-07):
     /// 1. If `drain_subscriptions`, run `ChronosObserveService::observe{verb=list}`
-    ///    to destructively drain fired tripwire events.
+    ///    over the session's fired tripwire events. That call is
+    ///    non-destructive (REC-C2.1.4b / CHAR-C2-02): it pages evidence and
+    ///    consumes none, so `drained_subscriptions` records that the step
+    ///    succeeded, not that evidence was drained.
     /// 2. `ProbeService::stop` (one call only — events returned to caller).
     /// 3. Compute `sealed_at` if `seal_tail` (no write yet — caller
     ///    decides whether to persist sealed metadata into the redb
@@ -237,10 +240,19 @@ impl ChronosSessionLifecycleService {
         input: SessionStopInput,
     ) -> Result<(bool, SessionStopPersistence), ServiceError> {
         let drained_subscriptions = if input.drain_subscriptions {
-            // observe{verb=list} is destructive; we ignore its return
-            // value here because the v2 contract only exposes a boolean
-            // "drained_subscriptions" flag.
-            let _ = ChronosObserveService::observe(
+            // The `Ok` value carries the page of firings; the v2 contract only
+            // exposes a boolean, so the payload is dropped here. The `Err` is
+            // NOT dropped: a failed read of the execution log is reported as
+            // `drained_subscriptions: false` rather than as a success.
+            //
+            // NOTE: `observe{verb=list}` is non-destructive by design
+            // (REC-C2.1.4b / CHAR-C2-02). It pages firings out of the
+            // `ExecutionLog` against a caller-owned cursor and consumes
+            // nothing. So this flag records that the requested list step
+            // completed, not that evidence was drained. Making the drain real,
+            // or renaming the flag, changes the v2 wire contract and remains
+            // reserved.
+            match ChronosObserveService::observe(
                 ctx.observe,
                 ObserveInput {
                     verb: ObserveVerb::List,
@@ -256,8 +268,18 @@ impl ChronosSessionLifecycleService {
                     label: None,
                 },
             )
-            .await;
-            true
+            .await
+            {
+                Ok(_) => true,
+                Err(e) => {
+                    tracing::warn!(
+                        session_id = %input.session_id,
+                        error = %e,
+                        "session_stop: observe list failed; reporting drained_subscriptions=false"
+                    );
+                    false
+                }
+            }
         } else {
             false
         };

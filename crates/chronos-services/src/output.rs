@@ -461,7 +461,12 @@ pub enum ObserveAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObserveRetention {
-    /// Drain fired events on the next `verb=list` (default, matches v1).
+    /// Fired events are listed on the next `verb=list` (default, matches v1).
+    ///
+    /// Since REC-C2.1.4b (CHAR-C2-02) `list` pages evidence out of the
+    /// `ExecutionLog` and consumes none, so this value does not change the
+    /// page contents and is identical in behaviour to
+    /// [`ObserveRetention::RetainedUntilSessionEnd`].
     #[default]
     Drained,
     /// Lifecycle policy: evidence is retained for the session's lifetime.
@@ -2216,8 +2221,10 @@ pub struct SessionStopInput {
     /// Default `true` (m7-04 v2 semantic: "seal tail").
     #[serde(default = "default_true")]
     pub seal_tail: bool,
-    /// Drain `observe{verb=list}` before stop. Default `true`.
-    /// Destructive (matches m7-02 `retention=Drained` default).
+    /// Run `observe{verb=list}` before stop. Default `true`.
+    /// Non-destructive (REC-C2.1.4b / CHAR-C2-02): lists fired tripwire
+    /// events without consuming them. See `drained_subscriptions` on
+    /// `SessionStopOutput` for what the resulting flag does and does not mean.
     #[serde(default = "default_true")]
     pub drain_subscriptions: bool,
 }
@@ -2237,6 +2244,13 @@ pub struct SessionStopOutput {
     pub ebpf_detached: bool,
     #[serde(default)]
     pub sealed_at: Option<u64>,
+    /// True when the caller asked for the pre-stop `observe{verb=list}` step
+    /// and that step completed without error.
+    ///
+    /// It does NOT mean evidence was consumed: `observe{verb=list}` has been
+    /// non-destructive since REC-C2.1.4b (CHAR-C2-02), so nothing is drained.
+    /// A false value therefore means "not requested, or the step failed", and
+    /// never means "evidence remains unconsumed on the caller's behalf".
     pub drained_subscriptions: bool,
     pub capability_snapshot: CapabilitySnapshot,
     pub provenance: SessionLifecycleProvenance,
