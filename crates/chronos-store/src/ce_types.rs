@@ -25,6 +25,26 @@ pub use chronos_domain::ports::counterexample::wire::{
     ExistencePredicateWire, HypothesisInputWire, MinimisedPayload,
 };
 
+/// Version a stamped on a field the deserializer finds missing.
+///
+/// **This returns CURRENT, not 1** — the field doc on
+/// `summary.schema_version` says "Defaults to 1 for bundles persisted before
+/// m9-01", and that sentence describes the *domain* type, not this one.
+/// `chronos_domain::ports::counterexample::default_schema_version` returns 1;
+/// this twin returns `CURRENT_BUNDLE_SCHEMA_VERSION` (3). Two functions with
+/// one name and opposite values is worth stating outright rather than leaving
+/// the field doc to speak for both.
+///
+/// Why they differ: a bundle is persisted with `bincode` 1, which is not
+/// self-describing, so it never reports a field as absent and `#[serde(default
+/// = ...)]` never fires on this path. The value is therefore unreachable here
+/// today, and changing it would be speculative. If a bundle ever starts being
+/// read through a self-describing format, this is the line that decides what
+/// a pre-m9-01 record claims to be, and returning CURRENT would let a record
+/// with no version at all pass the `SchemaTooNew` check as a v3.
+///
+/// `m9_02_legacy_bundle_deserializes_with_default_schema_version` asserts this
+/// equals `CURRENT_BUNDLE_SCHEMA_VERSION`, so changing it is not silent.
 pub(crate) fn default_schema_version() -> u32 {
     CURRENT_BUNDLE_SCHEMA_VERSION
 }
@@ -69,9 +89,13 @@ pub struct CounterexampleBundleSummary {
     pub created_at_ms: u64,
     pub rounds_used: u32,
     pub has_full_bundle: bool,
-    /// m9-01: monotonic version of the bundle envelope. Defaults to 1
-    /// for bundles persisted before m9-01 (serde `#[serde(default)]`).
+    /// m9-01: monotonic version of the bundle envelope.
     /// Loader rejects bundles with `schema_version > CURRENT_BUNDLE_SCHEMA_VERSION`.
+    ///
+    /// The "Defaults to 1" of the original wording describes the domain twin;
+    /// this crate's default is CURRENT. See [`default_schema_version`] above
+    /// for why, and for what would have to change before that difference could
+    /// affect a load.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
     /// m9-02: total event count at save time. Allows O(1) reads of the
