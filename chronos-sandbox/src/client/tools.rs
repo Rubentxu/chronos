@@ -1428,12 +1428,18 @@ impl McpSession {
     /// C5.3.1 (REC-C5): now calls v2 `state_query` (`kind=memory_read`). The
     /// v1 `size` parameter is dropped (v2 returns the natural memory region
     /// at the address).
+    ///
+    /// Returns `None` when the write at that address declared a size but
+    /// carried no bytes. That is not an error: the server answered, and the
+    /// answer is "the contents were not recorded". Collapsing it into an empty
+    /// `Vec` would reproduce on this side exactly the claim the server was
+    /// fixed to stop making.
     pub async fn debug_get_memory(
         &mut self,
         session_id: &str,
         address: u64,
         _size: usize,
-    ) -> Result<Vec<u8>, McpSandboxError> {
+    ) -> Result<Option<Vec<u8>>, McpSandboxError> {
         let params = serde_json::json!({
             "session_id": session_id,
             "kind": "memory_read",
@@ -1443,12 +1449,7 @@ impl McpSession {
 
         let response = self.rpc_client.call_tool("state_query", params).await?;
 
-        #[derive(serde::Deserialize)]
-        struct V2Mem {
-            #[serde(default)]
-            data: Vec<u8>,
-        }
-        let v2: V2Mem = serde_json::from_value(response)
+        let v2: V2MemoryReadWire = serde_json::from_value(response)
             .map_err(|e| McpSandboxError::RpcError(e.to_string()))?;
         Ok(v2.data)
     }
@@ -1793,6 +1794,27 @@ impl McpSession {
 // ============================================================================
 // Additional Types for Return Values
 // ============================================================================
+
+/// Wire shape of the `state_query` (`kind=memory_read`) response.
+///
+/// Mirrors `chronos_services::output::MemoryRead`. Kept independent here for
+/// the same reason `CausalityReport` is: `chronos-sandbox` does not depend on
+/// `chronos-services`, and adding it would cycle. When the wire shape
+/// evolves, both structs MUST evolve together.
+///
+/// `data` is `Option<Vec<u8>>`, not `Vec<u8>` with `#[serde(default)]`, and
+/// that distinction is load-bearing. `#[serde(default)]` only covers an
+/// *absent* field; it does NOT accept an explicit `null`, which serde rejects
+/// with `invalid type: null, expected a sequence` (verified on serde 1.0.228).
+/// The server emits `null` when the write declared a size but carried no
+/// bytes, so a `Vec<u8>` here turned an honest answer into an RPC error.
+/// `None` means "the bytes were not recorded", which is a different claim
+/// from "the region is empty".
+#[derive(Debug, Clone, serde::Deserialize)]
+struct V2MemoryReadWire {
+    #[serde(default)]
+    data: Option<Vec<u8>>,
+}
 
 /// Causality report for memory address inspection.
 ///
@@ -2812,6 +2834,81 @@ fn walk_newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Discriminante: an uncaptured write must decode, not error.
+    ///
+    /// The previous inline DTO was `data: Vec<u8>` with `#[serde(default)]`,
+    /// which looked tolerant but is not: `default` covers an *absent* field
+    /// only. An explicit `null` — exactly what the server now sends for a
+    /// write that declared a size without bytes — was rejected by serde with
+    /// `invalid type: null, expected a sequence`, turning an honest answer
+    /// into an `RpcError`. Verified on serde 1.0.228.
+    ///
+    /// The assertions here are deliberately written against the `Result`
+    /// rather than against the field, so they compile under either typing.
+    /// That makes the guard discriminate at the assert level: mutating `data`
+    /// back to `Vec<u8>` turns the first case red with the serde error
+    /// instead of breaking the build.
+    #[test]
+    fn memory_read_wire_accepts_a_null_payload_without_failing() {
+        let absent = serde_json::from_value::<V2MemoryReadWire>(serde_json::json!({"data": null}));
+        assert!(
+            absent.is_ok(),
+            "a null payload is the server's honest answer for an uncaptured \
+             write and must decode, got {absent:?}"
+        );
+
+        let empty = serde_json::from_value::<V2MemoryReadWire>(serde_json::json!({"data": []}));
+        assert!(
+            empty.is_ok(),
+            "an empty payload is a different claim and must also decode, got {empty:?}"
+        );
+
+        let captured = serde_json::from_value::<V2MemoryReadWire>(
+            serde_json::json!({"data": [222, 173, 190, 239]}),
+        );
+        assert!(
+            captured.is_ok(),
+            "a captured payload must decode, got {captured:?}"
+        );
+
+        let missing = serde_json::from_value::<V2MemoryReadWire>(serde_json::json!({}));
+        assert!(
+            missing.is_ok(),
+            "an absent field must stay tolerated for an older server, got {missing:?}"
+        );
+    }
+
+    /// Positive control for the semantic half: `null` and `[]` are different
+    /// claims and must not collapse into each other. This one reads the field
+    /// directly, so it is bound to the `Option` typing; reverting that typing
+    /// stops the crate compiling, which is a red build rather than a red
+    /// assert. The test above is what pins the failure at the assert level.
+    #[test]
+    fn memory_read_wire_keeps_absent_and_empty_payloads_distinct() {
+        let absent: V2MemoryReadWire =
+            serde_json::from_value(serde_json::json!({"data": null})).unwrap();
+        assert!(
+            absent.data.is_none(),
+            "a null payload must decode as absent, got {:?}",
+            absent.data
+        );
+
+        let empty: V2MemoryReadWire =
+            serde_json::from_value(serde_json::json!({"data": []})).unwrap();
+        assert_eq!(
+            empty.data,
+            Some(Vec::new()),
+            "an empty payload is a captured-and-empty result, not an absent one"
+        );
+
+        let captured: V2MemoryReadWire =
+            serde_json::from_value(serde_json::json!({"data": [222, 173, 190, 239]})).unwrap();
+        assert_eq!(captured.data, Some(vec![0xDE, 0xAD, 0xBE, 0xEF]));
+
+        let missing: V2MemoryReadWire = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(missing.data.is_none());
+    }
 
     #[test]
     fn test_query_filter_default() {

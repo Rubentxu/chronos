@@ -1052,12 +1052,21 @@ pub struct DebugGetVariablesResponse {
 }
 
 /// Response from debug_get_memory.
+///
+/// Currently unconsumed inside this workspace: the live path is
+/// `McpTestClient::debug_get_memory`, which decodes through
+/// `client::tools::V2MemoryReadWire`. Kept in step with that shape so a
+/// future consumer does not re-derive the old, stricter typing.
+///
+/// `data` is `Option<Vec<u8>>` because the server reports `null` for a write
+/// that declared a size but carried no bytes. A `Vec<u8>` would reject that
+/// `null` outright rather than represent it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugGetMemoryResponse {
     pub session_id: String,
     pub address: u64,
     pub size: usize,
-    pub data: Vec<u8>,
+    pub data: Option<Vec<u8>>,
 }
 
 /// A variable that changed between two events, as reported by `debug_diff`.
