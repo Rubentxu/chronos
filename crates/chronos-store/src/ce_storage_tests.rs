@@ -669,12 +669,23 @@ fn m9_02_list_includes_future_versioned_row_best_effort() {
     );
 
     // load_counterexample_bundle rejects the future-versioned row individually.
-    let load_result = store.load_counterexample_bundle("b-future");
-    let err = load_result.expect_err("future-versioned bundle must be rejected on load");
-    let err_msg = format!("{err}");
+    let err = match store.load_counterexample_bundle("b-future") {
+        Ok(_) => panic!("future-versioned bundle must be rejected on load"),
+        Err(e) => e,
+    };
+    // Assert the variant, not the message: m9-08 created `SchemaTooNew`
+    // precisely so callers can branch on the error kind, and a match on
+    // `contains("newer than supported")` would still pass if the variant
+    // were dissolved back into `Serialization` with the text preserved.
     assert!(
-        err_msg.contains("newer than supported"),
-        "load error must mention 'newer than supported', got: {err_msg}"
+        matches!(
+            err,
+            StoreError::SchemaTooNew {
+                found: 4,
+                supported: 3
+            }
+        ),
+        "expected SchemaTooNew {{ found: 4, supported: 3 }}, got {err:?}"
     );
 }
 

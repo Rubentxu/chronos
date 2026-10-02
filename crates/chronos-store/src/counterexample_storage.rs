@@ -25,8 +25,18 @@
 //! that lets the loader distinguish legacy bundles (no field on disk,
 //! serde defaults to 1) from future-versioned bundles. The current
 //! version is [`CURRENT_BUNDLE_SCHEMA_VERSION`]. Bundles written by a
-//! newer chronos-store with a higher version are hard-rejected on
-//! `load_counterexample_bundle`; the list path best-effort skips them.
+//! newer chronos-store with a higher version are hard-rejected by
+//! `load_counterexample_bundle`, which returns
+//! `StoreError::SchemaTooNew { found, supported }`.
+//!
+//! The list path does **not** filter by version: `bincode` deserializes a
+//! future-versioned row without trouble, so
+//! `list_counterexample_bundles` returns it and the rejection happens only
+//! when that bundle is loaded. This is deliberate and pinned by
+//! `m9_02_list_includes_future_versioned_row_best_effort` — a list that hid
+//! bundles the store still holds would make them look deleted. The cost is
+//! that a caller listing bundles sees entries it may not be able to load,
+//! and must expect the load to fail.
 //!
 //! **m9-02:** Events are moved out of the blob into `counterexample_bundle_events`
 //! side table (chunked, 256 events per chunk). `summary.events_count` carries
