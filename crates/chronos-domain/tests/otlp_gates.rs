@@ -115,6 +115,94 @@ fn pipeline_redacts_before_rendering() {
     );
 }
 
+/// ADR-0019 §2.3 caps distinct attribute keys "across the entire export
+/// call (not per span)". The pipeline applied `redact_and_limit_attributes`
+/// once per span, so the budget restarted on every span and a call that
+/// emitted N spans could carry up to N x `max_distinct_keys` distinct keys
+/// — which is the unbounded-cardinality collector OOM the cap exists to
+/// prevent.
+///
+/// Two events, two distinct fields each: the call carries 4 field keys
+/// plus the 3 attributes every span adds, so 7 distinct keys against a cap
+/// of 6. Per span each one holds only 5, so a per-span budget collapses
+/// nothing.
+#[test]
+fn cardinality_budget_is_shared_across_the_whole_export_call() {
+    let limits = CardinalityLimits {
+        max_distinct_keys: 6,
+        ..CardinalityLimits::default()
+    };
+    let event = |a: &str, b: &str| ChronosEvent {
+        ts_micros: 1_700_000_000_000_000,
+        probe: "http_in".to_string(),
+        fields: vec![
+            (a.to_string(), EventField::Str("1".to_string())),
+            (b.to_string(), EventField::Str("2".to_string())),
+        ],
+    };
+    let outcome = run_service_pipeline(
+        Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+        &[event("alpha", "beta"), event("gamma", "delta")],
+        &gate_filter(),
+        &ExportLimits::default(),
+        &RedactionPolicy::empty(),
+        &limits,
+    )
+    .expect("valid traceparent and events must succeed");
+
+    assert_eq!(outcome.spans.len(), 2, "two events in, two spans out");
+    assert_eq!(
+        outcome.redaction_counters.collapsed_cardinality, 1,
+        "7 distinct keys against a cap of 6: the 7th collapses once, \
+         not zero times because each span is under the cap on its own"
+    );
+}
+
+/// Control: the same budget must not collapse anything while the whole
+/// call is within the cap, so the test above cannot pass by tightening the
+/// limit for every span. Each span holds 5 distinct keys here and the
+/// call holds 7, both under a cap of 8.
+#[test]
+fn cardinality_budget_leaves_a_call_within_the_cap_untouched() {
+    let limits = CardinalityLimits {
+        max_distinct_keys: 8,
+        ..CardinalityLimits::default()
+    };
+    let event = |a: &str, b: &str| ChronosEvent {
+        ts_micros: 1_700_000_000_000_000,
+        probe: "http_in".to_string(),
+        fields: vec![
+            (a.to_string(), EventField::Str("1".to_string())),
+            (b.to_string(), EventField::Str("2".to_string())),
+        ],
+    };
+    let outcome = run_service_pipeline(
+        Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+        &[event("alpha", "beta"), event("gamma", "delta")],
+        &gate_filter(),
+        &ExportLimits::default(),
+        &RedactionPolicy::empty(),
+        &limits,
+    )
+    .expect("valid traceparent and events must succeed");
+
+    assert_eq!(outcome.spans.len(), 2, "two events in, two spans out");
+    assert_eq!(
+        outcome.redaction_counters.collapsed_cardinality, 0,
+        "7 distinct keys against a cap of 8: nothing collapses, and the \
+         shared budget is still the one doing the counting"
+    );
+    for span in &outcome.spans {
+        assert!(
+            !span
+                .attributes
+                .iter()
+                .any(|(k, _)| k == "chronos._cardinality_collapsed"),
+            "no span may carry the overflow key when nothing overflowed"
+        );
+    }
+}
+
 /// `Ok` does not mean "produced something". A probe outside the opt-in
 /// filter is dropped, counted, and the call still succeeds — which is why
 /// the gates assert on `export_skipped`, not only on the variant.

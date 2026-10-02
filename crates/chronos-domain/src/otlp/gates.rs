@@ -81,7 +81,8 @@ use super::exporter::{
 };
 use super::parse::{parse_traceparent, TraceparentParseError};
 use super::redaction::{
-    redact_and_limit_attributes, CardinalityLimits, RedactionCounters, RedactionPolicy,
+    redact_and_limit_attributes_within, CardinalityBudget, CardinalityLimits, RedactionCounters,
+    RedactionPolicy,
 };
 use super::{OtlpInvocationId, RecordedInvocation};
 
@@ -178,7 +179,8 @@ impl std::error::Error for PipelineError {}
 ///    [`CorrelationStore`].
 /// 3. Select and build spans through [`export_spans`] (opt-in filter and
 ///    declared limits applied here).
-/// 4. Redact and cardinality-limit each span's attributes.
+/// 4. Redact and cardinality-limit each span's attributes, all charged
+///    against one budget shared by the call (ADR-0019 §2.3).
 /// 5. Render the redacted spans as JSON Lines.
 ///
 /// Steps 3-5 are three separate calls because that is the order the
@@ -222,9 +224,14 @@ pub fn run_service_pipeline(
 
     let mut redaction_counters = RedactionCounters::default();
     let mut spans = spans;
+    // ADR-0019 §2.3: the cap is across the entire export call, not per
+    // span. One budget for the whole call, so a request that emits N spans
+    // still carries at most `max_distinct_keys` distinct attribute keys.
+    let mut budget = CardinalityBudget::new(cardinality);
     for span in &mut spans {
         let attributes = std::mem::take(&mut span.attributes);
-        let (redacted, counters) = redact_and_limit_attributes(attributes, redaction, cardinality);
+        let (redacted, counters) =
+            redact_and_limit_attributes_within(attributes, redaction, cardinality, &mut budget);
         span.attributes = redacted;
         redaction_counters.redacted_fields += counters.redacted_fields;
         redaction_counters.collapsed_cardinality += counters.collapsed_cardinality;
