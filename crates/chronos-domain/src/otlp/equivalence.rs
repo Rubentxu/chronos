@@ -153,7 +153,13 @@ pub fn hash_invocation_canonical(events: &[ChronosEvent], spec: &EquivalenceSpec
         .map(|e| hash_event_canonical(e, spec))
         .collect();
     per_event_hashes.sort_unstable();
-    per_event_hashes.dedup();
+    // No `dedup` here. Sorting is what makes the hash order-independent, which
+    // is what this function promises. Deduplicating went further and made the
+    // hash multiplicity-independent, so `[e, e, f]` and `[e, f, f]` hashed the
+    // same and alignment reported them as `Matched` with a zero delta — a
+    // dropped event indistinguishable from a balanced one. No `EquivalenceSpec`
+    // field asks for it: the spec decides whether timestamps and field order
+    // count, and says nothing about repeats.
 
     let mut out = Vec::with_capacity(per_event_hashes.len() * 8);
     for h in &per_event_hashes {
@@ -168,6 +174,14 @@ pub fn hash_invocation_canonical(events: &[ChronosEvent], spec: &EquivalenceSpec
 pub fn hash_session_canonical(invocation_hashes: &[u64], _spec: &EquivalenceSpec) -> u64 {
     let mut sorted = invocation_hashes.to_vec();
     sorted.sort_unstable();
+    // `dedup` stays here even though it was just removed one function up.
+    // Unlike the invocation hash, this one is specified: the test
+    // `hash_session_default_dedupes_identical_invocations` asserts that
+    // `[10, 10, 10]` and `[10]` are the same session. So the asymmetry between
+    // the two functions is real and deliberate at the session level — a
+    // session is compared by the set of invocations it contains, while an
+    // invocation is compared by the sequence of events it produced. Changing
+    // this is a contract change, not a defect fix.
     sorted.dedup();
     let mut out = Vec::with_capacity(sorted.len() * 8);
     for h in &sorted {

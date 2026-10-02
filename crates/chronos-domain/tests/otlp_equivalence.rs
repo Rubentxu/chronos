@@ -276,3 +276,70 @@ fn all_field_variants_produce_distinct_tags() {
     sorted.dedup();
     assert_eq!(sorted.len(), tags.len(), "all 4 tags must be distinct");
 }
+
+/// An invocation's hash must depend on how many times each event happened, not
+/// only on which events happened.
+///
+/// The doc on `hash_invocation_canonical` promises order-independence — the
+/// events are sorted so reordering them leaves the hash alone. Sorting delivers
+/// that. The `dedup` that followed it delivered something else: the hash also
+/// became multiplicity-independent, so a run that executed a hot function three
+/// times and a run that executed it once hashed the same.
+///
+/// That matters because the hash is what alignment and fingerprinting compare.
+/// With it, `[e, e, f]` and `[e, f, f]` were reported as `Matched` with
+/// `delta_event_count: 0` — a dropped event indistinguishable from a balanced
+/// one. No `EquivalenceSpec` field asks for this: the spec chooses whether
+/// timestamps and field order count, and says nothing about duplicates.
+#[test]
+fn invocation_hash_counts_repeated_events() {
+    let e = || ev(0, "p", vec![("k", EventField::Int(1))]);
+    let f = || ev(1, "p", vec![("k", EventField::Int(2))]);
+    let spec = equivalence_spec_default();
+
+    // Same event repeated a different number of times is a different run.
+    let once = hash_invocation_canonical(&[e()], &spec);
+    let thrice = hash_invocation_canonical(&[e(), e(), e()], &spec);
+    assert_ne!(
+        once, thrice,
+        "an event executed once and three times must not hash the same"
+    );
+
+    // The case that was reported as a match: the totals are equal but the
+    // multiplicities differ.
+    assert_ne!(
+        hash_invocation_canonical(&[e(), e(), f()], &spec),
+        hash_invocation_canonical(&[e(), f(), f()], &spec),
+        "equal totals with different per-event counts must not hash the same"
+    );
+
+    // Control: order-independence is what the doc promises, and it must hold.
+    assert_eq!(
+        hash_invocation_canonical(&[e(), f()], &spec),
+        hash_invocation_canonical(&[f(), e()], &spec),
+        "reordering events must not change the hash — that is the documented contract"
+    );
+}
+
+/// The session hash deliberately does the opposite, and this pins why.
+///
+/// `hash_session_default_dedupes_identical_invocations` already specifies that
+/// `[10, 10, 10]` and `[10]` are the same session: a session is compared by
+/// *which* invocations it contains, not how many times each appears. That is
+/// the opposite rule to the one `hash_invocation_canonical` follows after the
+/// fix in the test above, and the asymmetry is the point — it is recorded here
+/// so a future reader does not "correct" the session side to match.
+#[test]
+fn session_hash_still_ignores_repeated_invocations_by_specification() {
+    let spec = equivalence_spec_default();
+    assert_eq!(
+        hash_session_canonical(&[7, 7, 7], &spec),
+        hash_session_canonical(&[7], &spec),
+        "a session is compared by the set of invocations it contains"
+    );
+    assert_eq!(
+        hash_session_canonical(&[1, 2, 3], &spec),
+        hash_session_canonical(&[3, 1, 2], &spec),
+        "and remains order-independent"
+    );
+}
