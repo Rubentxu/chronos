@@ -336,6 +336,8 @@ impl DebugReadService {
             }
         }
 
+        accesses.sort_by_key(|a| std::cmp::Reverse(a.timestamp_ns));
+
         Ok(MemoryAnalysis {
             start_address: format!("0x{:x}", start_address),
             end_address: format!("0x{:x}", end_address),
@@ -877,6 +879,45 @@ mod tests {
             audit_pairs(&audit),
             vec![(2, 300), (3, 200)],
             "limit=2 must keep the two most recent writes, newest first"
+        );
+    }
+
+    // --- analyze_memory: ordering contract ---
+
+    fn analyze_pairs(analysis: &MemoryAnalysis) -> Vec<(u64, u64)> {
+        analysis
+            .accesses
+            .iter()
+            .map(|a| (a.event_id, a.timestamp_ns))
+            .collect()
+    }
+
+    /// `MemoryAnalysis::accesses` is documented as "Individual accesses, newest
+    /// first". A client that reads `accesses[0]` must get the most recent access
+    /// in the window, never the oldest one. The engine indexes events by
+    /// `event_id`, not by timestamp, so the emission order of `get_all_events`
+    /// carries no temporal guarantee and cannot stand in for the sort.
+    #[tokio::test]
+    async fn analyze_memory_accesses_are_newest_first() {
+        let engines = Mutex::new(audit_engine());
+
+        let analysis =
+            DebugReadService::analyze_memory("s4", 0x1000, u64::MAX, 0, u64::MAX, &engines)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            analyze_pairs(&analysis),
+            vec![(2, 300), (3, 200), (1, 100)],
+            "accesses must be newest first, so accesses[0] is the most recent access"
+        );
+        assert!(
+            analysis
+                .accesses
+                .windows(2)
+                .all(|pair| pair[0].timestamp_ns > pair[1].timestamp_ns),
+            "consecutive timestamps must be strictly decreasing, got {:?}",
+            analyze_pairs(&analysis)
         );
     }
 }
