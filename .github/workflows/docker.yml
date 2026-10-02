@@ -3,7 +3,12 @@ name: Docker
 on:
   push:
     tags:
-      - 'v*'
+      # Release tags only. `v*` also matched the 119 cycle tags
+      # (v0.2.0 - v0.8.0), whose commits declare crate version 0.1.0/0.1.1
+      # while the crate is at 0.1.4, so a cycle tag would have published an
+      # image tagged `v0.8.1` and `:latest` containing a 0.1.4 binary.
+      # `*` does not cross `/`, so this matches v0.1.0, v0.1.4, v0.1.10 ...
+      - 'v0.1.*'
 
 jobs:
   docker:

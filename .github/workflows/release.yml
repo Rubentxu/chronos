@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      # Release tags only — see the same note in docker.yml. `v*` also
+      # matched the 119 cycle tags, whose commits declare a different crate
+      # version than the number in the tag.
+      - 'v0.1.*'
 
 env:
   CARGO_TERM_COLOR: always
