@@ -247,4 +247,67 @@ mod tests {
         assert_eq!(report.observations_count, 2);
         assert_eq!(report.outcome, PropertySequenceOutcome::Pass);
     }
+
+    /// `changed()` must not report a change it could not evaluate.
+    ///
+    /// The chain that produced the false Pass: a variable declared `f64` whose
+    /// later value is `"abc"`. The observation projection cannot parse it, so
+    /// it degrades to `Text` without signalling anything. The previous value
+    /// was a real `Number(10)`. `prev != obs` is true for `Number` against
+    /// `Text`, so `changed()` answered `Pass` — for an invariant that was never
+    /// evaluated on data capable of answering it.
+    ///
+    /// The `Comparison` branch already refused to compare across variants; this
+    /// test pins that `Changed` does the same.
+    #[test]
+    fn run_changed_refuses_to_compare_values_of_different_types() {
+        let events = vec![
+            make_var_event(1, 100, "counter", "10", "f64"),
+            // Declared f64, but the value is not a number.
+            make_var_event(2, 200, "counter", "abc", "f64"),
+        ];
+        let engine = QueryEngine::new(events);
+        let property = Property {
+            id: PropertyId(4),
+            name: "counter_changed".to_string(),
+            version: 1,
+            observe: "counter".to_string(),
+            trigger: "always".to_string(),
+            invariant: InvariantCheck::Changed,
+        };
+
+        let report = PropertyProjection::run(&property, &engine);
+
+        assert!(
+            matches!(report.outcome, PropertySequenceOutcome::UnsupportedByRecordedEvidence { .. }),
+            "a value that could not be read as its declared type must not prove a change, got {:?}",
+            report.outcome
+        );
+    }
+
+    /// Control: a genuine change between two readable numbers is still a Pass.
+    /// Without this, the test above could pass because `changed()` never fires.
+    #[test]
+    fn run_changed_still_passes_on_a_real_numeric_change() {
+        let events = vec![
+            make_var_event(1, 100, "counter", "10", "f64"),
+            make_var_event(2, 200, "counter", "11", "f64"),
+        ];
+        let engine = QueryEngine::new(events);
+        let property = Property {
+            id: PropertyId(5),
+            name: "counter_changed".to_string(),
+            version: 1,
+            observe: "counter".to_string(),
+            trigger: "always".to_string(),
+            invariant: InvariantCheck::Changed,
+        };
+
+        let report = PropertyProjection::run(&property, &engine);
+        assert_eq!(
+            report.outcome,
+            PropertySequenceOutcome::Pass,
+            "a real numeric change is still a change"
+        );
+    }
 }

@@ -214,6 +214,16 @@ fn same_variant(a: &PropertyValue, b: &PropertyValue) -> bool {
     )
 }
 
+/// Name of a value's variant, for a reason string that says which two types
+/// could not be compared.
+fn variant_name(value: &PropertyValue) -> &'static str {
+    match value {
+        PropertyValue::Number(_) => "number",
+        PropertyValue::Text(_) => "text",
+        PropertyValue::Bool(_) => "bool",
+    }
+}
+
 fn compare(op: ComparisonOp, left: &PropertyValue, right: &PropertyValue) -> bool {
     match (left, right) {
         (PropertyValue::Number(l), PropertyValue::Number(r)) => compare_num(op, *l, *r),
@@ -283,6 +293,27 @@ impl Property {
                         ),
                     };
                 };
+                if !same_variant(prev, obs) {
+                    // Same rule the `Comparison` branch below already applies,
+                    // for the same reason. `prev != obs` is *true* whenever the
+                    // variants differ, so without this guard a value that was
+                    // never comparable counted as a change and `changed()`
+                    // answered Pass. The usual way to get here is a value whose
+                    // declared type could not be parsed: the observation
+                    // projection degrades it to `Text` in silence, so a
+                    // previous `Number(10)` and a current `Text("abc")` are
+                    // different by construction — the invariant was never
+                    // evaluated on data that could answer it.
+                    return PropertyOutcome::UnsupportedByRecordedEvidence {
+                        reason: format!(
+                            "changed() cannot compare `{}` across value types ({} vs {}); \
+                             the recorded values are not comparable",
+                            self.observe,
+                            variant_name(prev),
+                            variant_name(obs)
+                        ),
+                    };
+                }
                 let differs = prev != obs;
                 let holds = match self.invariant {
                     InvariantCheck::Changed => differs,
