@@ -399,6 +399,26 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         // Bump the seq allocator past the gap so the next append()
         // returns a seq strictly greater than gap.last_missing.
         let allocator = next_seq.entry(session_id.clone()).or_insert(EventSeq::ZERO);
+        // A gap declares evidence that WAS LOST in `[first_missing,
+        // last_missing]`. If it starts beyond the next seq to be allocated,
+        // the range in between was never handed out, so it cannot have been
+        // lost — accepting it would leave an undeclared hole between the last
+        // record and the gap, and replay treats such a hole as corruption, so
+        // the whole log becomes unreadable on the next `open`.
+        //
+        // The overflow path in `SegmentedExecutionLog::append` never trips
+        // this: it calls `allocate_seq_for_gap` first, so its gaps always
+        // start exactly at the allocator. This guard makes the public API
+        // hold the same discipline instead of trusting every caller.
+        if gap.first_missing > *allocator {
+            return Err(LogError::InvalidGap {
+                reason: format!(
+                    "first_missing ({}) is beyond the next seq to allocate ({}): \
+                     the range in between was never written, so it cannot be a gap",
+                    gap.first_missing, allocator.0
+                ),
+            });
+        }
         if gap.last_missing >= *allocator {
             *allocator = gap.last_missing.next();
         }
@@ -657,6 +677,62 @@ mod tests {
         assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(0));
         assert_eq!(log.append_raw(a.clone(), 0, "x").unwrap(), EventSeq::new(1));
         assert_eq!(log.append_raw(b.clone(), 0, "x").unwrap(), EventSeq::new(1));
+    }
+
+    /// A gap that starts beyond the next seq to be allocated would leave an
+    /// undeclared hole between the last record and the gap. Replay treats
+    /// such a hole as corruption, so accepting it makes the whole log
+    /// unreadable on the next `open`. Evidence cannot be lost for seqs that
+    /// were never handed out.
+    #[test]
+    fn gap_beyond_the_allocator_is_rejected() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("s");
+        log.append_raw(s.clone(), 0, "x").unwrap();
+        // Seq 0 is written, so the allocator is at 1. A gap starting at 100
+        // leaves 1..=99 neither written nor declared.
+        let err = log
+            .record_gap(
+                s.clone(),
+                Gap::new(
+                    EventSeq::new(100),
+                    EventSeq::new(200),
+                    GapReason::KernelRingOverflow,
+                    "hole",
+                ),
+            )
+            .expect_err("a gap beyond the allocator must be rejected");
+        assert!(matches!(err, LogError::InvalidGap { .. }));
+
+        // The rejected gap must not have moved the allocator, so the very
+        // next append still continues contiguously.
+        let next = log.append_raw(s.clone(), 0, "x").unwrap();
+        assert_eq!(
+            next,
+            EventSeq::new(1),
+            "a rejected gap must leave the allocator untouched"
+        );
+    }
+
+    /// The contiguous case is what the production overflow path produces and
+    /// must keep working.
+    #[test]
+    fn contiguous_gap_at_the_allocator_is_accepted() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("s");
+        log.append_raw(s.clone(), 0, "x").unwrap();
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::KernelRingOverflow,
+                "contiguous",
+            ),
+        )
+        .unwrap();
+        let next = log.append_raw(s.clone(), 0, "x").unwrap();
+        assert!(next > EventSeq::new(3));
     }
 
     #[test]
