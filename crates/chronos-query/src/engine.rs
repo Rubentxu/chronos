@@ -266,10 +266,20 @@ impl QueryEngine {
             .cloned()
             .collect();
 
-        let next_offset = if (query.offset + query.limit) < total_matching as usize {
-            Some(query.offset + query.limit)
-        } else {
-            None
+        // `offset` and `limit` are free `usize` values from tool input and are
+        // clamped nowhere, so the sum can overflow. In release that wraps: with
+        // `offset = 1` and `limit = usize::MAX` the result is `0`, the
+        // comparison below passes, and `next_offset` becomes `Some(0)` — a
+        // client that follows it receives the first page forever, silently.
+        // Saturating puts the sum above any real page, so `next_offset` is
+        // `None`, which is the truth: this page already covers everything.
+        let next_offset = {
+            let consumed = query.offset.saturating_add(query.limit);
+            if consumed < total_matching as usize {
+                Some(consumed)
+            } else {
+                None
+            }
         };
 
         QueryResult {
@@ -966,6 +976,34 @@ mod tests {
             SourceLocation::from_address(regs.rip),
             EventData::Registers(regs),
         )
+    }
+
+    /// An overflowing `offset + limit` must not wrap into a `next_offset` that
+    /// sends the client back to the start forever. `offset` and `limit` are
+    /// free `usize` from tool input with no clamp anywhere, so this is
+    /// reachable; in release the old sum wrapped to `0` and paginated the
+    /// first page indefinitely, without ever erroring.
+    #[test]
+    fn overflowing_pagination_does_not_wrap_next_offset() {
+        let engine = QueryEngine::new(sample_events());
+        let query = TraceQuery::new("s").pagination(usize::MAX, 1);
+        let result = engine.execute(&query);
+        assert_eq!(
+            result.next_offset, None,
+            "a saturated page covers everything, so there is no next page; got {:?}",
+            result.next_offset
+        );
+    }
+
+    /// The ordinary case must keep paginating. Without this the guard could
+    /// silently disable pagination for every query.
+    #[test]
+    fn ordinary_pagination_still_reports_the_next_page() {
+        let engine = QueryEngine::new(sample_events());
+        let query = TraceQuery::new("s").pagination(3, 0);
+        let result = engine.execute(&query);
+        assert_eq!(result.next_offset, Some(3));
+        assert_eq!(result.events.len(), 3);
     }
 
     fn sample_events() -> Vec<TraceEvent> {
