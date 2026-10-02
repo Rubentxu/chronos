@@ -1063,7 +1063,19 @@ impl ChronosServer {
 
         match ChronosExecutionQueryService::query(&ctx, input).await {
             Ok(out) => {
-                let value = serde_json::to_value(&out).unwrap_or(serde_json::json!({}));
+                // A serialization failure is a fault, not an empty result.
+                // `unwrap_or(json!({}))` answered `success({})`, which reads
+                // downstream as "the query found nothing" when in fact the
+                // answer could not be rendered. Both output types carry `f64`
+                // fields (output.rs), and a non-finite one is enough to make
+                // serde refuse. The other handlers in this file already use
+                // the `map_err(..)?` form.
+                let value = serde_json::to_value(&out).map_err(|e| {
+                    rmcp::ErrorData::internal_error(
+                        format!("query serialize: {e}"),
+                        None,
+                    )
+                })?;
                 Ok(CallToolResult::success(json_content(&value)))
             }
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
@@ -1111,7 +1123,19 @@ impl ChronosServer {
 
         match ChronosStateQueryService::query(&ctx, input).await {
             Ok(out) => {
-                let value = serde_json::to_value(&out).unwrap_or(serde_json::json!({}));
+                // A serialization failure is a fault, not an empty result.
+                // `unwrap_or(json!({}))` answered `success({})`, which reads
+                // downstream as "the query found nothing" when in fact the
+                // answer could not be rendered. Both output types carry `f64`
+                // fields (output.rs), and a non-finite one is enough to make
+                // serde refuse. The other handlers in this file already use
+                // the `map_err(..)?` form.
+                let value = serde_json::to_value(&out).map_err(|e| {
+                    rmcp::ErrorData::internal_error(
+                        format!("query serialize: {e}"),
+                        None,
+                    )
+                })?;
                 Ok(CallToolResult::success(json_content(&value)))
             }
             Err(ServiceError::SessionNotFound(s)) => Ok(CallToolResult::error(text_content(
@@ -2397,7 +2421,20 @@ impl ChronosServer {
                     tail_sealed: sealed_at.is_some(),
                     sealed_at,
                 };
-                let _ = self.store.save_session(meta, &events);
+                if let Err(e) = self.store.save_session(meta, &events) {
+                    // The probe is already stopped here and cannot be resumed,
+                    // so swallowing this left the events in memory only: the
+                    // tool answered `status: "stopped"` with
+                    // `query_engine_ready: true`, and a later
+                    // `session_start{action=load}` found nothing. The comment
+                    // above explained what gets written, never why the error
+                    // could be dropped, which is the part that mattered.
+                    return Ok(CallToolResult::error(text_content(format!(
+                        "session '{session_id}' was stopped but could not be persisted: {e}. \
+                         The captured events exist only in this process, and a later \
+                         session_start{{action=load}} will not find this session."
+                    ))));
+                }
                 // 2. Build the in-memory QueryEngine for query_* tools.
                 self.build_and_store_engine(&session_id, events, language)
                     .await;
