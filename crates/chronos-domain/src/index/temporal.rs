@@ -99,6 +99,15 @@ impl TemporalIndex {
 
     /// Get all event IDs within a time range [start, end).
     pub fn range(&self, start: TimestampNs, end: TimestampNs) -> Vec<EventId> {
+        // `[start, end)` is empty when `start >= end`, but `BTreeMap::range`
+        // panics on an inverted range. The bounds are built from two
+        // independent tool parameters and arrive unsorted, so this input is
+        // reachable from tool input. Answer it as the empty set, which is
+        // also what the unindexed scan returns for the same query — the two
+        // paths must not disagree about a query with no answer.
+        if start >= end {
+            return Vec::new();
+        }
         self.entries
             .range(start..end)
             .map(|(_, &eid)| eid)
@@ -162,6 +171,35 @@ impl TemporalIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An inverted range is reachable from tool input: `timestamp_start` and
+    /// `timestamp_end` are independent parameters and arrive unsorted. The
+    /// old code handed them straight to `BTreeMap::range`, which panics when
+    /// `start > end`, so this query crashed the server. `[start, end)` is
+    /// empty, and that is also what the unindexed scan returns for it.
+    #[test]
+    fn inverted_range_is_empty_not_a_panic() {
+        let mut index = TemporalIndex::new();
+        index.insert(TimestampNs::from(100), 1);
+        index.insert(TimestampNs::from(200), 2);
+        index.insert(TimestampNs::from(300), 3);
+
+        assert!(
+            index
+                .range(TimestampNs::from(500), TimestampNs::from(100))
+                .is_empty(),
+            "an inverted range must answer empty, not panic"
+        );
+        // A degenerate empty range must stay empty too.
+        assert!(index
+            .range(TimestampNs::from(200), TimestampNs::from(200))
+            .is_empty());
+        // The ordered cases must be unaffected by the guard.
+        assert_eq!(
+            index.range(TimestampNs::from(100), TimestampNs::from(300)),
+            vec![1, 2]
+        );
+    }
 
     #[test]
     fn test_insert_and_range() {

@@ -34,6 +34,11 @@ impl ShadowIndex {
 
     /// Get all event IDs that accessed any address in a range [start, end).
     pub fn get_range(&self, start: u64, end: u64) -> Vec<EventId> {
+        // Same reason as `TemporalIndex::range`: an inverted range panics
+        // inside `BTreeMap::range`, and `[start, end)` is empty there.
+        if start >= end {
+            return Vec::new();
+        }
         let mut result = Vec::new();
         for (_addr, event_ids) in self.entries.range(start..end) {
             result.extend_from_slice(event_ids);
@@ -60,6 +65,21 @@ impl ShadowIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An inverted address range reaches the index from tool input and used
+    /// to panic inside `BTreeMap::range`. `[start, end)` is empty there.
+    #[test]
+    fn inverted_address_range_is_empty_not_a_panic() {
+        let mut index = ShadowIndex::new();
+        index.insert(0x1000, 1);
+        index.insert(0x2000, 3);
+
+        assert!(
+            index.get_range(0x9000, 0x1000).is_empty(),
+            "an inverted address range must answer empty, not panic"
+        );
+        assert_eq!(index.get_range(0x1000, 0x3000), vec![1, 3]);
+    }
 
     #[test]
     fn test_insert_and_get() {
