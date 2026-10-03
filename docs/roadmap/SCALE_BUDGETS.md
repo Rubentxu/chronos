@@ -453,13 +453,36 @@ la misma causa raíz (§4.6).
 > Es más barato que C1 (no necesita 10⁶), y discrimina el mismo defecto. Se propone como test
 > rápido de regresión; C1 es el que cierra el gate.
 
-### 7.3 C3 — Los agregados deben ser O(N), no O(N²/512)
+### 7.3 C3 — Los agregados deben ser O(N), no O(N²/512) — **CERRADO 2026-10-03**
 
 > **Enunciado.** El coste total de `summarize` (y de `rollup`) debe ser lineal en N.
 >
 > **Forma de test.** Con N y 2N sembrados, afirmar que `coste(2N)/coste(N)` está acotado por una
-> constante declarada. El exponente local observado hoy crece hasta **2,5** (§4.5); conforme al
+> constante declarada. El exponente local observado antes de R2.2 crecía hasta **2,5**; conforme al
 > contrato, la curva debe tender a exponente 1.
+
+**Medido el 2026-10-03**, sembrando por la fábrica de producción y agregando por
+`ReadPathService::summarize` — el método que llama el servidor MCP, no la función libre
+`summarize_log`, porque por el servicio es por donde pasan el presupuesto, el registro y el techo
+D2:
+
+| N | `summarize` | `total_events` |
+|---|---|---|
+| 60.000 | 0,726 s | 60.000 |
+| 120.000 | 1,419 s | 120.000 |
+| | **coste(2N)/coste(N) = 1,95** | lineal ≈ 2, cuadrático ≈ 4 |
+
+Exponente 1. **No-vacuidad medida en los dos lados:** inyectando un re-recorrido completo del log
+por página — la *forma* del defecto pre-R2.2, no una perturbation distinta — el cociente sube a
+**3,97**, el test cae en rojo y el target pasa de 7,9 s a 111,6 s. `MAX_RATIO = 3.0` está declarado
+entre las dos formas, no ajustado a la medición.
+
+La segunda aserción del target no usa reloj: un agregado sobre 2N debe reportar exactamente 2N y
+cada evento cae en un cubo y solo uno. Es la mitad del contrato que sigue valiendo en un host tan
+cargado que no se pueda cronometrar.
+
+**Vive en:** `crates/chronos-services/tests/scale_c3_aggregates_linear.rs`, `#[ignore]` con el
+motivo y el coste, por la misma razón que el resto de los lanes de escala (§7.5).
 
 ### 7.4 C4 — `read_after` debe costar O(nuevo), no O(N de la sesión) — **CERRADO 2026-10-03**
 
@@ -655,8 +678,12 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
    entre elles es probablemente de ruta (proceso que siembra + servidor + cliente en un caso,
    solo lectura en otro), no de código. **No se elige ganador aqui**; lo que se anota es que la
    cifra mas baja pertenece a la medicion que pasa por el camino corregido.
-6. **C3** para los agregados, si se decide que los agregados son parte de la superficie
-   certificable y no solo de la exploracion.
+6. ~~**C3** para los agregados.~~ **CERRADO (2026-10-03).** El punto era condicional —
+   "si se decide que los agregados son parte de la superficie certificable" — y la
+   decision que lo hace exigible ya esta tomada: `summarize` y `rollup` son dos de los
+   cuatro modos de `execution_log_read`, el unico read path del producto, asi que estan
+   dentro de la superficie por construccion y no por opcion. El contrato esta escrito,
+   verde y con la no-vacuidad medida (§7.3).
 
 ### Medición de una sola muestra, 2026-10-03, con C4 en sitio
 
