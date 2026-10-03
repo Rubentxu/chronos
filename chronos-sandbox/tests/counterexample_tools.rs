@@ -267,18 +267,27 @@ async fn ce4_list_after_shrink_includes_bundle() {
 /// CE5: shrink after a different fixture (test_exit_immediate) — same
 /// behaviour expected; pipeline is fixture-agnostic.
 ///
-/// m8-06: uses Ge/1000 like ce1 to guarantee an initial violation that
-/// the shrinker can do real work on.
+/// m8-06: uses a Ge hypothesis on the captured event count, so the target
+/// is guaranteed to violate at the start and the shrinker has real work.
+///
+/// This used to hardcode `1000.0` "like ce1", but ce1 had already been
+/// converted to `count + 1` in `b4fe4e8d` — the comment had drifted from the
+/// code it claimed to mirror. It only passed because `test_exit_immediate`
+/// happens to capture far fewer than 1000 events, which is an accident of
+/// timing, not a property. `test_busyloop` under tarpaulin instrumentation
+/// *does* cross 1000, which is how `ce12` was found failing.
 #[tokio::test]
 async fn ce5_shrink_on_exit_immediate_fixture() {
-    let (mut client, session_id, _captured) = setup_with_probe("test_exit_immediate").await;
+    let (mut client, session_id, count) = setup_with_probe("test_exit_immediate").await;
+
+    let constant = (count + 1) as f64;
 
     let target = json!({
         "session_id": session_id,
         "kind": "invariant",
         "scope": "EventCount",
         "comparison": "Ge",
-        "constant": { "Number": 1000.0 },
+        "constant": { "Number": constant },
     });
 
     let resp = client
@@ -660,6 +669,28 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
         )
     });
 
+    // Count the events the engine actually holds, which is the same view the
+    // `EventCount` hypothesis is evaluated against. This test had the same
+    // hardcoded `constant: 1000.0` that `b4fe4e8d` removed from ce1/ce7/ce10
+    // and was simply missed. It is the one that fails under tarpaulin: the
+    // `test_busyloop` fixture is instrumented there, runs slower per iteration
+    // but captures more events inside the 400 ms window, crosses 1000, and the
+    // hypothesis `EventCount >= 1000` is then already TRUE on the captured
+    // trace — so the server correctly refuses with "nothing to shrink". The
+    // server was right and the test's premise was wrong.
+    let captured = client
+        .query_events_walk_all(
+            &session_id,
+            chronos_sandbox::client::types::QueryFilter {
+                limit: 500,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("counterexample_tools: query_events after probe_stop: {e}"))
+        .len();
+    let constant = (captured + 1) as f64;
+
     // Shrink with non-default Invariant options: scope=EventCount, comparison=Ge.
     // The target_hypothesis is persisted verbatim via hypothesis_input_to_wire.
     let target = json!({
@@ -667,7 +698,7 @@ async fn ce12_replay_preserves_non_default_invariant_options() {
         "kind": "invariant",
         "scope": "EventCount",
         "comparison": "Ge",
-        "constant": { "Number": 1000.0 },
+        "constant": { "Number": constant },
     });
 
     let resp = client
