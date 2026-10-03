@@ -407,6 +407,27 @@ caracterización actual no ejercita. Ver §9.4.
 > que el tope sea tan bajo que nada pase nunca: el ancho que el rechazo sugiere tiene que ser
 > aceptado de verdad.
 >
+> **CORREGIDO 20 minutos después de escribirse lo de arriba: el rechazo ofrecía una anchura que
+> no funcionaba, y un guard de cable lo encontró.** El mensaje llevaba un
+> `suggested_bucket_size_ns` calculado con el span **alcanzado**, y parecía accionable. No lo era:
+> el recorrido se detiene en el primer cubo que no cabe, luego ese span es un **prefijo** de la
+> sesión. Un llamante que siguiera la sugerencia volvía a ser rechazado unos eventos más tarde —
+> con otro span y otra cifra, o sea un bucle. El guard de servicio no lo detectó porque solo
+> afirmaba `suggested > 1`, que es una propiedad trivial que un número erróneo cumple igual. El
+> campo desaparece y el mensaje dice ahora la **regla** (el tope admite un span de `MAX_BUCKETS`
+> cubos, luego la anchura debe superar el span completo dividido por `MAX_BUCKETS`), marcando su
+> propia cifra como suelo del requisito y no como el requisito. Dos guardas lo sustituyen: un
+> ancho dimensionado sobre la extensión completa responde, y uno dimensionado sobre el prefijo que
+> reporta el rechazo vuelve a ser rechazado por el mismo motivo declarado.
+>
+> **Por qué esto se cuenta aquí y no en el diario del ciclo:** es el caso más limpio de la sesión
+> de por qué un guard de nivel servicio no sustituye a uno de cable. La propiedad que un cliente
+> puede accionar no es la variante de error, es el **texto**, y el texto hace dos saltos
+> (`AggregateError` → `ReadPathError::Aggregate(String)` → envelope `isError`) que nada en
+> `chronos-services` puede cubrir. El guard que lo cubre es
+> `chronos-sandbox/tests/execution_log_read_bucket_cap.rs`, y encontró un defecto real el día que
+> se escribió.
+>
 > **Lo que este arreglo cambia en la respuesta.** Con bucketing relativo, una sesión cuyo primer
 > evento no está en el origen del reloj ve `bucket_count` más bajo: la sesión de 1M del lane, que
 > ocupaba 2 cubos absolutos, ocupa **1** relativo. Los tres números que el resumen expone
