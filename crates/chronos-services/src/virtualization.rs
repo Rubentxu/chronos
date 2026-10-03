@@ -57,6 +57,39 @@
 //!   test that used to carry the `rec_c1_03_` prefix.
 
 use crate::events_cursor::EventsCursorV1;
+use crate::error::ServiceError;
+use crate::read_budget::{BudgetExceeded, ReadBudget};
+
+/// Why an aggregation walk stopped before covering the log.
+///
+/// Two causes, and they are **not** interchangeable:
+///
+/// - [`Self::Budget`] — the walk ran out of its D2 ceiling. The evidence is
+///   readable; the walk just may not continue. Resumable from `next_seq`.
+/// - [`Self::Read`] — the log could not be read. The walk stopped at a point
+///   it was never able to pass, and the partial aggregate it had built is
+///   **discarded**, not returned.
+///
+/// The distinction is the whole point. Collapsing them would either report a
+/// read failure as "you hit your budget" (inviting a pointless retry that will
+/// fail identically) or report a budget stop as a log error (hiding a policy
+/// decision behind what looks like a fault). Before this type existed, both
+/// were `Ok`.
+#[derive(Debug, thiserror::Error)]
+pub enum AggregateError {
+    /// The walk passed its `ResourceLimits` ceiling (SCALE_BUDGETS §5 D2).
+    #[error("{0}")]
+    Budget(#[from] BudgetExceeded),
+    /// A page could not be read. The aggregate is not returned.
+    #[error("read-path aggregate stopped: {source}")]
+    Read {
+        /// The underlying read failure, surfaced verbatim. It is never
+        /// swallowed: a decode failure at page 500 is evidence about the log,
+        /// not an internal detail.
+        #[source]
+        source: ServiceError,
+    },
+}
 
 /// Default threshold (events) below which raw page is returned.
 ///
@@ -199,11 +232,26 @@ pub const DEFAULT_BUCKET_SIZE_NS: u64 = 1_000_000_000;
 ///
 /// **Note**: this function reads ALL events; the threshold switch
 /// (`should_summarize`) is the caller's responsibility.
+///
+/// # Budget (SCALE_BUDGETS §5 D2)
+///
+/// `budget` is charged once per page and enforces the D2 ceiling. It is a
+/// **cooperative** ceiling because this function is synchronous and never
+/// yields — see [`crate::read_budget`] for why `tokio::time::timeout` cannot
+/// preempt it.
+///
+/// Whether the ceiling bites at a given size is a measurement, not an
+/// argument: SCALE_BUDGETS §3.1 records that the 1.222,7 s figure originally
+/// quoted here was measured against a `read_from_seq` that cloned the whole
+/// log on every page, and is not reproducible on current code. The ceiling
+/// stands on its own terms — it bounds the walk and reports where it stopped —
+/// not on that number.
 pub fn summarize_log(
     log: &crate::session_log::SessionExecutionLog,
     cursor: &EventsCursorV1,
     bucket_size_ns: u64,
-) -> EventSummary {
+    budget: &mut ReadBudget,
+) -> Result<EventSummary, AggregateError> {
     use crate::events_log_read::{read_page, LogReadFilters};
     assert!(bucket_size_ns > 0, "bucket_size_ns must be > 0");
 
@@ -211,7 +259,18 @@ pub fn summarize_log(
     let mut current_cursor = cursor.clone();
     let page_limit = 1024;
 
-    while let Ok(page) = read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+    loop {
+        // NOT `while let Ok(page)`: a read failure mid-walk must not become a
+        // complete-looking aggregate. The walk below may already have folded
+        // hundreds of pages into `bucket_counts` when the failing page arrives,
+        // and returning `Ok(partial)` would hand the agent a summary whose
+        // `total_events` silently undercounts the log. The caller cannot tell
+        // a truncated aggregate from a whole one, which is the same lie as an
+        // exhausted log reported as "no evidence" (ADR-0004).
+        let page = match read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+            Ok(page) => page,
+            Err(e) => return Err(AggregateError::Read { source: e }),
+        };
         if page.records.is_empty() {
             break;
         }
@@ -225,6 +284,9 @@ pub fn summarize_log(
             bucket_counts[idx] += 1;
         }
         let next_cursor = page.next.clone();
+        // The page boundary is where the D2 ceiling is enforced: one page is
+        // the unit of work this function can be interrupted after.
+        budget.charge_page(page.records.len() as u64, next_cursor.next_seq().0)?;
         // Stop if cursor does not advance (avoid infinite loop).
         if next_cursor.next_seq() == current_cursor.next_seq() && page.records.len() < page_limit {
             break;
@@ -232,7 +294,7 @@ pub fn summarize_log(
         current_cursor = next_cursor;
     }
 
-    EventSummary::from_bucket_counts(&bucket_counts)
+    Ok(EventSummary::from_bucket_counts(&bucket_counts))
 }
 
 /// Roll up events by **thread** (proxy for invocation grouping when
@@ -249,10 +311,16 @@ pub fn summarize_log(
 /// When `chronos_invocation_id` becomes available in the read path
 /// (post-M10.6 follow-up), the grouping key can be replaced without
 /// changing the public signature.
+///
+/// # Budget (SCALE_BUDGETS §5 D2)
+///
+/// Same cooperative ceiling as [`summarize_log`], charged once per page, and
+/// the same caveat about what the recorded measurement was taken against.
 pub fn rollup_log(
     log: &crate::session_log::SessionExecutionLog,
     cursor: &EventsCursorV1,
-) -> InvocationRollup {
+    budget: &mut ReadBudget,
+) -> Result<InvocationRollup, AggregateError> {
     use crate::events_log_read::{read_page, LogReadFilters};
     use std::collections::HashMap;
 
@@ -260,7 +328,13 @@ pub fn rollup_log(
     let mut current_cursor = cursor.clone();
     let page_limit = 1024;
 
-    while let Ok(page) = read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+    loop {
+        // Same reasoning as `summarize_log`: a mid-walk read failure is not an
+        // aggregate, it is an error. See the comment there.
+        let page = match read_page(log, &current_cursor, page_limit, &LogReadFilters::default()) {
+            Ok(page) => page,
+            Err(e) => return Err(AggregateError::Read { source: e }),
+        };
         if page.records.is_empty() {
             break;
         }
@@ -268,6 +342,7 @@ pub fn rollup_log(
             *counts.entry(ev.thread_id).or_insert(0) += 1;
         }
         let next_cursor = page.next.clone();
+        budget.charge_page(page.records.len() as u64, next_cursor.next_seq().0)?;
         if next_cursor.next_seq() == current_cursor.next_seq() && page.records.len() < page_limit {
             break;
         }
@@ -275,7 +350,7 @@ pub fn rollup_log(
     }
 
     let counts_vec: Vec<u64> = counts.values().copied().collect();
-    InvocationRollup::from_invocation_counts(&counts_vec)
+    Ok(InvocationRollup::from_invocation_counts(&counts_vec))
 }
 
 #[cfg(test)]
@@ -284,6 +359,7 @@ mod tests {
     use crate::error::ServiceError;
     use crate::events_cursor::{EventsCursorError, EVENTS_CURSOR_V1_SCHEMA};
     use crate::events_log_read::{read_page, LogReadFilters};
+    use crate::read_budget::ResourceLimits;
     use crate::session_log::SessionExecutionLog;
     use chronos_domain::seq::EventSeq;
     use chronos_domain::{
@@ -293,6 +369,16 @@ mod tests {
 
     fn sid() -> SessionId {
         SessionId::new(format!("sess-{}", uuid::Uuid::new_v4()))
+    }
+
+    /// A ceiling these tests never reach, so any stop is a mechanism bug and
+    /// not a configuration accident. The budget itself is covered by
+    /// `read_budget`'s own tests, which drive it deliberately to both stops.
+    fn generous_limits() -> ResourceLimits {
+        ResourceLimits {
+            max_events: 10_000_000,
+            timeout_secs: 3_600,
+        }
     }
 
     /// Records written before the retention pass, then retired off disk.
@@ -737,7 +823,9 @@ mod tests {
         ));
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         let cursor = EventsCursorV1::start(session);
-        let summary = summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+        let summary = summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS, &mut budget)
+            .expect("a generous budget must not stop an empty-log summarize");
         assert_eq!(summary.total_events, 0);
         assert_eq!(summary.bucket_count, 0);
         assert_eq!(summary.mean_per_bucket, 0);
@@ -760,7 +848,8 @@ mod tests {
         ));
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         let cursor = EventsCursorV1::start(session);
-        let _ = summarize_log(&log, &cursor, 0);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+        let _ = summarize_log(&log, &cursor, 0, &mut budget);
     }
 
     #[test]
@@ -774,10 +863,219 @@ mod tests {
         ));
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         let cursor = EventsCursorV1::start(session);
-        let rollup = rollup_log(&log, &cursor);
+        let mut budget = ReadBudget::start("rollup", &generous_limits(), 0);
+        let rollup = rollup_log(&log, &cursor, &mut budget)
+            .expect("a generous budget must not stop an empty-log rollup");
         assert_eq!(rollup.invocation_count, 0);
         assert_eq!(rollup.total_events, 0);
         assert_eq!(rollup.mean_per_invocation, 0);
         assert_eq!(rollup.max_per_invocation, 0);
+    }
+
+    // ======================================================================
+    // The Silent Lie: a mid-walk read failure must not become a complete
+    // aggregate.
+    //
+    // Both walks above used to be `while let Ok(page) = read_page(...)`.
+    // That loop shape cannot distinguish "the log ended" from "the log became
+    // unreadable on page 500", and it resolves both by leaving the loop and
+    // returning `Ok`. The caller receives a summary over a prefix of the log
+    // whose `total_events` undercounts it, with nothing marking the
+    // difference. Under D2 that got worse, not better: the honest budget stop
+    // had just been introduced, and it now sat next to a silent truncation
+    // that looked identical from the outside.
+    // ======================================================================
+
+    /// A log whose records decode until `poison_at`, which carries a payload
+    /// no decoder can interpret — the shape of a genuinely damaged segment,
+    /// as opposed to a mock that fails on demand.
+    ///
+    /// `poison_at` must exceed one page (1024) for the failure to land on a
+    /// *later* page, which is the whole point: the walk must already have
+    /// folded real evidence into its aggregate when the read breaks.
+    fn log_with_poisoned_record(tag: &str, valid: u64, poison_at: u64) -> SessionExecutionLog {
+        use std::env;
+        let session = sid();
+        let tmp =
+            env::temp_dir().join(format!("virt_lie_{tag}_{}", uuid::Uuid::new_v4().simple()));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session).expect("log");
+
+        for i in 0..valid {
+            let event = TraceEvent::new(
+                i,
+                MonotonicNs::from(i * 1_000_000),
+                1,
+                EventType::FunctionEntry,
+                SourceLocation::from_address(0),
+                EventData::Empty,
+            );
+            log.append(NewExecutionRecord {
+                kind: ExecutionKind::Raw,
+                session_id: log.session_id().clone(),
+                monotonic_ns: i * 1_000_000,
+                payload: ExecutionPayload::new(
+                    serde_json::to_vec(&event).expect("encode"),
+                    "trace_event",
+                ),
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
+                captured_at_unix_ns: None,
+            })
+            .expect("append");
+        }
+        // The record that cannot be decoded, placed past the first page.
+        log.append(NewExecutionRecord {
+            kind: ExecutionKind::Raw,
+            session_id: log.session_id().clone(),
+            monotonic_ns: poison_at * 1_000_000,
+            payload: ExecutionPayload::new(b"not-json-at-all".to_vec(), "unknown_producer"),
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
+            captured_at_unix_ns: None,
+        })
+        .expect("append");
+        log.flush().ok();
+        log
+    }
+
+    /// How many valid records the walk can absorb before the damaged one.
+    /// Comfortably more than one page, so the aggregate is genuinely partial
+    /// when the read breaks.
+    const VALID_BEFORE_POISON: u64 = 3_000;
+    /// The seq of the damaged record. Past the first page (1024) and inside
+    /// the walk, so the failure is a mid-walk failure.
+    const POISON_AT: u64 = 2_500;
+
+    #[test]
+    fn summarize_does_not_report_a_partial_aggregate_as_complete() {
+        let log = log_with_poisoned_record("sum", VALID_BEFORE_POISON, POISON_AT);
+        let cursor = EventsCursorV1::start(log.session_id().clone());
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+
+        let err = summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS, &mut budget).expect_err(
+            "a damaged record must stop the walk with an error, \
+             not return the prefix that was aggregated before it",
+        );
+        assert!(
+            matches!(err, AggregateError::Read { .. }),
+            "the failure must be reported as a read failure: {err:?}"
+        );
+        // The reason survives: "it timed out" would be a different lie.
+        let text = err.to_string();
+        assert!(
+            text.contains("decode") || text.contains("Decode"),
+            "the decode failure must reach the caller: {text}"
+        );
+    }
+
+    #[test]
+    fn rollup_does_not_report_a_partial_aggregate_as_complete() {
+        let log = log_with_poisoned_record("roll", VALID_BEFORE_POISON, POISON_AT);
+        let cursor = EventsCursorV1::start(log.session_id().clone());
+        let mut budget = ReadBudget::start("rollup", &generous_limits(), 0);
+
+        let err = rollup_log(&log, &cursor, &mut budget)
+            .expect_err("a damaged record must stop the walk with an error");
+        assert!(
+            matches!(err, AggregateError::Read { .. }),
+            "the failure must be reported as a read failure: {err:?}"
+        );
+    }
+
+    /// Non-vacuity, in the same shape as every other guard here: with the
+    /// `Err` arm removed from the loop (i.e. the walk written as
+    /// `while let Ok(page) = ...` again), BOTH tests above fail — the walk
+    /// returns `Ok` over the 2,500 events it managed to read, and the
+    /// caller cannot tell that record 2,500 was never seen.
+    ///
+    /// Kept as a live test rather than a note because the loop shape is
+    /// exactly the kind of change a future refactor makes "for readability".
+    #[test]
+    fn a_read_failure_is_never_absorbed_into_an_ok_aggregate() {
+        let log = log_with_poisoned_record("vac", VALID_BEFORE_POISON, POISON_AT);
+        let cursor = EventsCursorV1::start(log.session_id().clone());
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+
+        match summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS, &mut budget) {
+            Err(AggregateError::Read { .. }) => {}
+            Err(other) => panic!("expected a read failure, got {other:?}"),
+            Ok(summary) => panic!(
+                "a walk that hit a damaged record returned Ok over {} events — \
+                 this is the Silent Lie, and the guard no longer discriminates",
+                summary.total_events
+            ),
+        }
+    }
+
+    /// The two stops must stay distinguishable: a ceiling stop is resumable
+    /// and carries an anchor; a read stop is not a policy decision. Before
+    /// `AggregateError` they were the same `Ok`.
+    #[test]
+    fn a_budget_stop_and_a_read_stop_are_different_answers() {
+        // A read stop, from a damaged record.
+        let log = log_with_poisoned_record("distinguish_read", VALID_BEFORE_POISON, POISON_AT);
+        let cursor = EventsCursorV1::start(log.session_id().clone());
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+        let read_stop = summarize_log(&log, &cursor, DEFAULT_BUCKET_SIZE_NS, &mut budget)
+            .expect_err("damaged record");
+
+        // A budget stop, from a clean log under a zero-second ceiling.
+        use std::env;
+        let session = sid();
+        let tmp = env::temp_dir()
+            .join(format!("virt_distinguish_budget_{}", uuid::Uuid::new_v4().simple()));
+        let clean_log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        for i in 0..VALID_BEFORE_POISON {
+            let event = TraceEvent::new(
+                i,
+                MonotonicNs::from(i * 1_000_000),
+                1,
+                EventType::FunctionEntry,
+                SourceLocation::from_address(0),
+                EventData::Empty,
+            );
+            clean_log
+                .append(NewExecutionRecord {
+                    kind: ExecutionKind::Raw,
+                    session_id: session.clone(),
+                    monotonic_ns: i * 1_000_000,
+                    payload: ExecutionPayload::new(
+                        serde_json::to_vec(&event).expect("encode"),
+                        "trace_event",
+                    ),
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                    symbol_id: None,
+                    captured_at_unix_ns: None,
+                })
+                .expect("append");
+        }
+        clean_log.flush().ok();
+        let cursor = EventsCursorV1::start(session);
+        let mut budget = ReadBudget::start(
+            "summarize",
+            &ResourceLimits {
+                max_events: usize::MAX,
+                timeout_secs: 0,
+            },
+            0,
+        );
+        let budget_stop = summarize_log(&clean_log, &cursor, DEFAULT_BUCKET_SIZE_NS, &mut budget)
+            .expect_err("zero-second ceiling");
+
+        assert!(
+            matches!(read_stop, AggregateError::Read { .. }),
+            "the damaged-record walk is a read stop: {read_stop:?}"
+        );
+        match budget_stop {
+            AggregateError::Budget(b) => {
+                // The anchor is what makes a budget stop actionable, and it
+                // is the thing a read stop cannot offer.
+                assert!(b.next_seq > 0, "a budget stop must name its anchor");
+            }
+            other => panic!("expected a budget stop, got {other:?}"),
+        }
     }
 }
