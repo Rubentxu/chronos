@@ -117,7 +117,7 @@
   },
   "remote_tag": "rec-c1.5-closure",
   "peel_match": true,
-  "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive.",
-  "remote_tag_peel": "a1a79c80122d3e8a859f44bb29f043f5422e1324",
+  "note": "Cycle SHAs populated post-merge. The branch feat/rec-c1.5-closure is ready for sddk release + archive. CORRECTION 2026-10-03: remote_tag_peel previously read a1a79c80122d3e8a859f44bb29f043f5422e1324, which is the MERGE COMMIT, not the tag peel. The tag rec-c1.5-closure peels to 5bbf774888c3bced7967e3e060859d9a78d7035a, verified 2026-10-03 with `git ls-remote --tags origin 'rec-c1.5-closure*'` (refs/tags/...^{} = 5bbf7748) and by the local tag object 79193338994679e3e7ebb66fc0ff6a568348b295. Correcting the checkpoint was required as well as the receipt: CC#22 compares the two, so fixing only the receipt would have turned 3 missing-field lines into a peel-mismatch line. See release-receipt.md, section 'Provenance of the canonical SHA fields'.",
+  "remote_tag_peel": "5bbf774888c3bced7967e3e060859d9a78d7035a",
   "archived_at": "2026-09-19T14:45:35+02:00"
 }

@@ -7,6 +7,9 @@
 | Branch | `feat/rec-c1.5-closure` |
 | Date | `2026-09-20` |
 | Tag | `rec-c1.5-closure` |
+| Remote tag | `rec-c1.5-closure` |
+| Remote tag_peel | `5bbf774888c3bced7967e3e060859d9a78d7035a` |
+| Peel match | true |
 | Cycle | `p-3416cfb8288f8964/rec-c1-5-closure` |
 | Path | `A-lite` |
 | Route | `local` |
@@ -18,6 +21,37 @@
 - base: efb4498953feabb1f0a0bb1c841ac03e93d46f1c
 - workspace_version_at_closure: 0.1.4
 - released_at: 2026-09-20 (cycle work); re-verified 2026-09-30
+
+## Provenance of the canonical SHA fields (added 2026-10-03)
+
+This receipt previously carried `Tag`, and the peel only in the `tag_peel`
+bullet above. It had no `Remote tag`, `Remote tag_peel` or `Peel match`
+rows, so vault-drift check **CC#22** reported three drift lines against this
+cycle — one of the two cycles keeping the sweep red since `b5edae57`.
+
+The three rows are the canonical format that CC#22's own resolution procedure
+prescribes. Their values are not copied from `apply-checkpoint.json`: that
+file's `remote_tag_peel` was **wrong**, and copying it would have closed the
+drift by writing a false SHA into the receipt.
+
+`apply-checkpoint.json` recorded `remote_tag_peel: a1a79c80…`, which is the
+**merge commit**, not the tag peel. Verified against the live remote on
+2026-10-03:
+
+```
+$ git ls-remote --tags origin "rec-c1.5-closure*"
+79193338994679e3e7ebb66fc0ff6a568348b295	refs/tags/rec-c1.5-closure
+5bbf774888c3bced7967e3e060859d9a78d7035a	refs/tags/rec-c1.5-closure^{}
+```
+
+`refs/tags/…^{}` is the peel, so the tag resolves to `5bbf7748…` — the value
+this receipt's own "Integration verification" section already recorded on
+2026-09-30. The local tag object agrees: `79193338…` peels to `5bbf7748…`.
+`a1a79c80…` is a real commit and an ancestor of `HEAD`, it is simply not what
+the tag points at.
+
+`Peel match: true` is kept because the tag exists on the remote and peels to a
+commit that is an ancestor of `main`.
 
 ## What was delivered
 
