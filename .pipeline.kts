@@ -44,6 +44,17 @@
 //   no se ha vuelto a medir todavía; el coste del propio check sí está medido
 //   en 35.2s incremental sobre host compartido.
 //
+//   NOTA 2026-10-03 (ci-toolchain-parity). Segundo guard añadido el mismo día,
+//   por el mismo modo de fallo: un gate local en verde que la CI remota
+//   rechaza. El de feature-matrix era "código que nunca se compiló"; este es
+//   "código que se compiló con otro compilador". La CI usa el canal `stable`
+//   flotante y el host estaba clavado en 1.98.1 mientras la CI ya iba en
+//   1.99.0, así que el lint `clippy::double_must_use` —nuevo en 1.99— no
+//   existed para ningún gate local. Con este stage el gate local son 11
+//   stages y 20 steps. Coste SIN MEDIR: depende de si el host tiene la
+//   toolchain de la CI (en cuyo caso re-copia el lint) o no (en cuyo caso
+//   para y lo dice).
+//
 //   TIER 2 (CHRONOS_FULL_GATE=1, replica integral de ci.yml):
 //     test-workspace-integration  --workspace --tests --exclude chronos-e2e
 //
@@ -101,6 +112,50 @@ pipeline {
         // -----------------------------------------------------------------
         stage("feature-matrix-truth") {
             sh("cd $REPO && cargo check --workspace --all-targets --all-features 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0")
+        }
+
+        // ---------------------------------------------------------------
+        // ci-toolchain-parity
+        //
+        // Por qué este stage existe: `rust-toolchain.toml` fija el canal
+        // `stable`, que FLOAT. La CI remota resuelve ese mismo canal en cada
+        // run (`dtolnay/rust-toolchain@stable`), así que la CI siempre compila
+        // con el stable MÁS RECIENTE, mientras el host de desarrollo puede
+        // llevar semanas clavado en un stable anterior.
+        //
+        // La consecuencia es la misma clase de defecto que corrigió
+        // feature-matrix-truth, pero por otro lado: un gate local puede
+        // certificar en verde EXACTAMENTE lo que la CI remota rechaza.
+        //
+        // No era teórico. El 2026-10-03, el push 5654b9dd pasó fmt, clippy
+        // y all-features en verde sobre clippy 1.98.1 local, y la CI lo
+        // rechazó: `clippy::double_must_use` es un lint NUEVO de clippy
+        // 1.99.0 sobre el `#[must_use]` que genera `async_trait` en
+        // crates/chronos-domain/src/ports/browser_probe.rs:56. Con 1.98.1
+        // ese lint no existe, así que ningún gate local podía verlo.
+        //
+        // Qué hace, y por qué no es un stage rojo permanente:
+        //   - Compara el clippy local contra la versión que la CI usó por
+        //     última vez (CHRONOS_CI_CLIPPY_VERSION, abajo).
+        //   - Si coinciden: imprime "paridad OK" y sale. Coste ~0.
+        //   - Si difieren: re-ejecuta el lint con EXACTAMENTE la toolchain de
+        //     la CI y exige exit 0. Ahí es donde se detecta el fallo.
+        // Es aut-curativo: en el host que hoy tiene 1.98.1 la stage paga un
+        // clippy extra, y en cuanto el host suba a la versión de la CI vuelve
+        // a costar nada. Un gate que se pone rojo para siempre y nadie arregla
+        // es peor que no tenerlo.
+        //
+        // NO SE HACIA ANTES UNA MANIPULACIÓN DE TOOLCHAIN: si la toolchain de
+        // la CI no está instalada, la stage falla diciendo qué instalar. No
+        // declara PASS sin haber verificado, que es el principio de ADR-0004
+        // aplicado al propio gate.
+        //
+        // Coste: NO MEDIDO todavía. El lint con 1.99.0 se midió en 42.3s con
+        // CARGO_TARGET_DIR aparte; sobre el target compartido del host será
+        // más. Se declara sin medir en vez de inventar una cifra.
+        // -----------------------------------------------------------------
+        stage("ci-toolchain-parity") {
+            sh("""cd $REPO && CI_VER="1.99.0" && LOCAL_VER=$(rustc --version | cut -d' ' -f2) && echo "clippy local: $LOCAL_VER | CI (último run observado): $CI_VER" && if [ "$LOCAL_VER" = "$CI_VER" ]; then echo 'PARIDAD OK: el gate local lint corre con la misma toolchain que la CI remota'; else echo "DRIFT DETECTADO: local=$LOCAL_VER != CI=$CI_VER. Un lint nuevo puede pasar aqui y rechazar en remoto. Re-ejecutando el lint con la toolchain exacta de la CI."; if rustup toolchain list | grep -q "^$CI_VER-"; then CARGO_TARGET_DIR=/tmp/chronos-parity-target cargo +$CI_VER clippy --workspace --all-targets -- -D warnings 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0; else echo "PARIDAD NO VERIFICADA: la toolchain $CI_VER no está instalada en este host. Instálala con 'rustup toolchain install $CI_VER --component clippy' y repite el gate. Esta stage no declara PASS sin verificar."; exit 1; fi; fi""")
         }
 
         stage("build-domain") {

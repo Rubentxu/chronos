@@ -53,6 +53,17 @@ pub trait BrowserProbeFactory: Send + Sync {
 /// `BrowserProbeService::start/stop/drain/raw_events` need. Future
 /// backends (Playwright, jsdom, WebDriver) only have to implement these
 /// four methods.
+// `clippy::double_must_use` (nuevo en clippy 1.99.0) marca el `#[must_use]`
+// que `async_trait` genera sobre el wrapper `Pin<Box<dyn Future>>`, que ya es
+// `#[must_use` de por si`. El codigo marcado lo genera el macro de un tercero,
+// no este trait, asi que el lint no se puede corregir en la fuente: solo
+// silenciarlo con una razon.
+//
+// Sin este `allow`, el lint solo aparece con clippy >= 1.99.0. El host de
+// desarrollo corre 1.98.1, donde el lint no existe, de modo que un gate local
+// puede certificar en verde exactamente lo que la CI rechaza. Esa asimetria
+// la cierra el stage `ci-toolchain-parity` de `.pipeline.kts`.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait BrowserProbeBackend: Send + Sync {
     /// Spawn Chrome, attach to CDP, return the capture session that
