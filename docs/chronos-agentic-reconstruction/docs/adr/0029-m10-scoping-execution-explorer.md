@@ -210,3 +210,124 @@ UAT-M10-01 cubre M10.2 (permissions) + M10.1 (cursor monotonicity via `EventsCur
 - `crates/chronos-services/src/debug_read.rs` (606L) — `DebugReadService` 7 read-only methods.
 - `docs/chronos-agentic-reconstruction/docs/testing/ARCHITECTURE_FITNESS_FUNCTIONS.md` — REC-C1/REC-C2 acceptance criteria reference.
 - ADR-0004 (no falsear una entrega) — aplicado en §3 + §4 (cada sub-cycle verifica su scope antes de declarar DONE).
+
+---
+
+## 10. Corrección posterior (2026-10-03): D4 y el threshold por tamaño quedan SUPERADOS
+
+> **Esta sección no borra nada de §§2.3, §3.6, §4.2, §6. El texto original se conserva palabra por
+> word** para que se vea qué se afirmó y por qué se retira. Quien lea §2.3 fila M10.4 y §4.2 debe
+> leer esta sección junto a él.
+>
+> **Estado: las dos afirmaciones siguientes son `documentadas` pero `falsas` respecto al código.
+> Nada se ha integrado ni certificado aquí; esto es una corrección documental, verificada por
+> lectura y por búsqueda sobre `main @ 3aa99c0b`.**
+
+### §10.1 Afirmación retirada #1 — el override por despliegue (env var que no existe)
+
+**Afirmación original retirada**, conservada arriba en:
+
+- **§2.3, fila M10.4 (línea 72)**: *"threshold switch page↔summary (default 100_000, env
+  `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD`)"*.
+- **§3.6, punto 4 (línea 117)**: *"env-overridable threshold (D4)"*.
+- **§4.2, "Threshold heurístico" (línea 134)**: *"Mitigación: env-overridable + multi-threshold
+  tests (1K, 10K, 100K, 1M)"*.
+
+**Motivo de la retirada**: `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD` **no se lee en ninguna parte del
+código**. No es una variable configurable: el nombre sólo aparece en prosa.
+
+**Evidencia (verificada por búsqueda el 2026-10-03 sobre `main @ 3aa99c0b`)**:
+
+- Las **únicas 3 apariciones en código Rust** son comentarios de documentación, ninguno una
+  lectura: `crates/chronos-services/src/virtualization.rs:22` (`//!` de módulo),
+  `crates/chronos-services/src/virtualization.rs:64` (doc comment de la constante) y
+  `crates/chronos-mcp/src/tools_params.rs:391` (doc comment del ancho de cubo por defecto).
+- La constante real es `DEFAULT_VIRTUALIZATION_THRESHOLD: u64 = 100_000` en
+  `crates/chronos-services/src/virtualization.rs:65`. **No es configurable**: sus únicas
+  referencias en todo el workspace son su propia definición (`:65`) y **una** aserción de test
+  (`crates/chronos-services/src/virtualization.rs:405`).
+- La ausencia no es una convención del repo: `env::var` se usa en **34 ocurrencias repartidas en 14
+  ficheros** del workspace. Es simplemente que esta variable no está entre ellas.
+
+### §10.2 Afirmación retirada #2 — el switch page↔summary por tamaño NO está cableado (más grave)
+
+**Afirmación original retirada**, conservada arriba en:
+
+- **§2.3, fila M10.4 (línea 72)**: *"threshold switch page↔summary (default 100_000, …)"*.
+- **§4.2, "Threshold heurístico" (línea 134)**: *"100_000 eventos default puede ser poco/mucho"*.
+- **§6 (líneas 165, 169)**: *"UAT-M10-02 (live stream + summary threshold)"* y *"UAT-M10-02 … cubre
+  M10.4 (summary threshold)"*.
+
+**Motivo de la retirada**: el comportamiento descrito —que una sesión con más de N eventos haga que
+el read path devuelva un resumen en vez de paginar— **no existe en el read path**.
+
+**Evidencia (verificada por lectura el 2026-10-03 sobre `main @ 3aa99c0b`)**:
+
+- `should_summarize` es una función **pura que recibe `threshold` como parámetro**
+  (`crates/chronos-services/src/virtualization.rs:71`, cuerpo: `event_count > threshold`). **No tiene
+  ningún call site de producción.** Sus referencias son su definición, los doc comments del mismo
+  fichero (`:47`, `:48`, `:201`), los tests del mismo fichero (`:384`–`:401`) y **una mención en
+  prosa** en `crates/chronos-services/src/read_path.rs:178` que justamente **difiere la decisión al
+  llamador**: *"the caller owns the `should_summarize` threshold decision"*. Es API pública
+  (`pub mod virtualization`, `crates/chronos-services/src/lib.rs:148`) pero **no invocada**.
+- El handler MCP `execution_log_read` enruta **exclusivamente sobre el discriminante `mode`**
+  (`crates/chronos-mcp/src/server.rs:3654`, `match params.mode`), con cuatro brazos: `Poll`
+  (`server.rs:3655`), `Summarize` (`server.rs:3681`), `Rollup` (`server.rs:3700`) y `Causality`
+  (`server.rs:3714`). El discriminante es `ExecutionLogReadKind`
+  (`crates/chronos-mcp/src/tools_params.rs:478`-`487`). **En ningún punto se compara `event_count`
+  contra el umbral.** `event_count` aparece una sola vez, y sólo como **salida reportada** del brazo
+  `poll` (`crates/chronos-mcp/src/server.rs:3676`, `"event_count": events.len()`), nunca como
+  entrada de una decisión.
+- La única validación de tamaño que hace el handler es un rechazo de `bucket_size_ns == 0`
+  (`server.rs:3682`-`3686`), que no es el guard de tamaño descrito.
+
+**Matiz que importa, y que evita el falsehood simétrico**: **no todo esto está ausente.** El
+discriminante `mode` **sí** está cableado y **sí** tiene implementaciones de producción reales:
+`poll_batch` lee **una página acotada** (`crates/chronos-services/src/read_path.rs:155`-`173`),
+`Summarize` y `Rollup` agregan el log real (`read_path.rs:179`-`197`). Lo que **no** existe es la
+**decisión automática** de cambiar de paginación a resumen en función del tamaño de la sesión. La
+afirmación retirada es esa decisión, no la existencia del read path ni de las vistas.
+
+### §10.3 Por qué se retiran y no se "arreglan": D1 + D2 ya pronunciaron la decisión
+
+Este hallazgo **no es trabajo de implementación pendiente**, sino una decisión ya tomada en otro
+sitio que este ADR nunca recogió. `docs/roadmap/SCALE_BUDGETS.md` (contrato de entrada de R2.1,
+§10, ítems 2 y 3) registra exactamente esta corrección como pendiente, y la R2.1 ya la formuló:
+*"un documento que promete un guard inexistente es peor que un documento que no lo promete"*.
+
+Las dos decisiones del operador que **superseden** el diseño de §2.3 fila M10.4 y de §4.2:
+
+- **D1 — la lectura es de VENTANA ACOTADA** (`docs/roadmap/SCALE_BUDGETS.md:270`-`276`): *"El agente
+  lee franjas. **NO** se promete drenar la sesión entera de forma secuencial."* Consecuencia directa:
+  el número de páginas que el agente recorrerá **no es una constante del producto**, sino una
+  elección suya.
+- **D2 — el techo de 60 s se extiende de captura a lecturas** (`docs/roadmap/SCALE_BUDGETS.md:278`-`284`):
+  `ResourceLimits { max_events: 1_000_000, timeout_secs: 60 }`
+  (`crates/chronos-mcp/src/server.rs:123`-`137`) pasa a ser **techo duro de cualquier operación del
+  read path**, no sólo de captura.
+
+**Por qué esto deja al umbral por tamaño sin objeto, y no simplemente "sin implementar":** una
+política de page-vs-summary **por tamaño de sesión** presupone que el read path conoce el tamaño de
+la sesión y decide por el llamante si merece un agregado. D1 retira esa premisa — es el **llamante**
+quien elige el modo, leyendo franjas acotadas. D2 pone el techo **dentro** de la operación: el
+límite que gobierna una lectura pasa a ser un máximo duro de eventos y de tiempo, no un punto de
+conmutación a un modo distinto. Juntas, la pregunta "¿la sesión supera 100_000 eventos, así que
+devuelvo un resumen?" deja de tener sentido como política: la respuesta la da el agente, y el
+límite que le protege ya no es el umbral sino el techo de D2.
+
+Por eso este ADR **no cablea el guard**, y por eso la lectura correcta para quien abra §2.3 dentro de
+seis meses no es "falta código": es que **faltaba una decisión, y esa decisión ya se tomó en
+`SCALE_BUDGETS.md`**. Cablear ahora un switch por threshold reintroduciría una política que D1 y D2
+ya reemplazaron.
+
+### §10.4 Qué queda vigente de §2.3 y §4.2
+
+Se retiran **sólo** el override por env var y el switch por tamaño. El resto de la fila M10.4 sigue
+lo que dice: aggregation layers (time-bucketed summaries + per-invocation rollups), sandbox de
+trazas grandes, y la **REC-C1/REC-C2 regression suite** de 8 UATs. `EventSummary`,
+`InvocationRollup`, `summarize_log` y `rollup_log` existen y son reales
+(`crates/chronos-services/src/virtualization.rs:81`, `:126`, `:202`, `:252`).
+
+**Pendiente, y no resuelto por esta sección**: el enforcement de D2 (techo duro en el read path)
+sigue **decidido y sin mecanismo** (`SCALE_BUDGETS.md` §9.3 y §10, ítem 1). Esta corrección
+documental **no** lo implementa ni lo certifica.

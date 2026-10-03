@@ -532,20 +532,49 @@ a ningún contrato de §7, que son todos relativos.
 
 ## 10. Qué falta para cerrar R2.1
 
-R2.1 **no** puede declararse cerrada con este documento. Faltan, como mínimo:
+R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, sobre
+`main @ 3aa99c0b`:
+
+**Cerrados desde la redaccion de este documento:**
+
+- **(2) y (3) — el switch por threshold y las afirmaciones falsas.** Cerrados por correccion
+  documental con supersede-not-remove: `ADR-0029` §10 y `M10-SCOPING.md` §9 anaden la seccion
+  correctiva (121 y 118 lineas insertadas, **0 borradas**), con evidencia `fichero:linea` y el
+  comando de busqueda. No se implementa el guard: **queda SUPERADO por D1 + D2**, no pendiente.
+  La decision es de lectura por ventana, no de politica por tamano, asi que el guard por umbral
+  no es lo que falta: es lo que dejo de necesitar.
+- **(8) en parte — los tests de contrato C1 y C2.** Escritos y verdes. C1 a 1M queda en target
+  propio con `#[ignore]` y fuera del lazo rapido; C2 y el RED discriminante de forma estan en el
+  lazo normal y cuestan menos de un segundo entre los dos. C3 (agregados) sigue pendiente.
+
+**Abiertos:**
 
 1. **Mecanismo para D2**: enforcement de `timeout_secs = 60` en las operaciones del read path
-   (§5 D2, §9.3). Hoy no existe.
-2. **Decidir el switch por threshold**: cablearlo o retirarlo de ADR-0029 y M10-SCOPING (§9.2).
-   Un documento que promete un guard inexistente es peor que un documento que no lo promete.
-3. **Corregir o marcar como falsas** las afirmaciones de ADR-0029 §2.3 y M10-SCOPING §4.4 (§9.1, §9.2).
-4. **Anclar B2** una vez eliminado el clon, derivando el número desde la latencia observada
-   (§6.2).
-5. **Resolver la estrategia de p95** de los agregados a 1M (§8).
-6. **Caracterizar D3**: unameasurement que use timestamps epoch, que la actual no ejercita (§9.4).
-7. **Resolver la discrepancia de RSS** entre las dos grabaciones (§9.5).
-8. **Escribir los tests C1/C2/C3** (§7), con la coordinación previa sobre
-   `reconstruction-contracts.toml` (§7.4).
+   (§5 D2, §9.3). Hoy no existe. Sigue siendo el primer pendiente.
+2. **Anclar B2** una vez observado el coste de `poll` sin el clon (§6.2). El clon ya no esta, asi
+   que el numero se puede derivar; es trabajo corto una vez hecho.
+3. **Resolver la estrategia de p95** de los agregados a 1M (§8). Bloqueante por coste, no por
+   dificultad: 20 muestras a ~1.223 s son ~6,8 h por operacion.
+4. **Caracterizar D3**: una medicion que use timestamps epoch, que la actual no ejercita (§9.4).
+5. **Resolver la discrepancia de RSS** entre las dos grabaciones (§9.5). Se deja sin elegir
+   ganador a proposito.
+6. **C3** para los agregados, si se decide que los agregados son parte de la superficie
+   certificable y no solo de la exploracion.
+
+**Hallazgos posteriores que este documento no recogia:**
+
+- `record_gap` acepta un gap que **solapa** registros ya escritos. El log resultante es evidencia
+  contraditoria y `build_replay_plan` lo rechaza, o sea que **el log deja de poder reabrirse**.
+  Un gap *retroactivo* (empieza antes del allocator pero termina antes del ultimo registro) si es
+  legitimo y no debe rechazarse: es justo el caso que `reach_disordered` maneja. Confundir las
+  dos cosas dejaria el flag permanentemente activo y C1 volveria a fallar.
+- `should_summarize` **no tiene ningun campo `oversized`** y ningun call site de produccion. Se
+  verifica que `EventBatch` tiene exactamente dos campos (`next_cursor`, `events`); el unico
+  `oversized` del workspace es un comentario de test no relacionado. El discriminante `mode` si
+  esta cableado y las cuatro vistas tienen implementacion real: lo que falta es la *decision
+  automatica* de conmutar por tamano.
+- `M10-SCOPING.md:3` sigue afirmando que no se ha ejecutado ningun sub-cycle de M10. Era exacto
+  cuando se escribio (2026-09-22) y hoy es **obsoleto por fecha**, no falso en su momento.
 
 Mientras 1..8 no estén cerrados, este documento es un **contrato de entrada**, y R2.1 está
 `implementado` y `verificado localmente` como caracterización. Nada `integrado`, nada
