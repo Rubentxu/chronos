@@ -7,7 +7,7 @@
 //! The measurement is **bytes allocated per call**, not wall clock. That is a
 //! deliberate choice: a duration assertion in the hot gate is a flaky gate,
 //! whereas the allocation profile is a property of the code, and it is the
-//! exact metric `SCALE_BUDGETS.md` §3.1b already recorded for the defect (~422
+//! exact metric `SCALE_BUDGETS.md` §3.2b already recorded for the defect (~422
 //! MB transient per call, ≈ 1x the whole session, which is the arithmetic
 //! signature of a full-Vec clone).
 //!

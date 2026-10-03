@@ -60,6 +60,40 @@ const POLL_LIMIT: usize = 100;
 /// `call_with_timeout` instead.
 const AGGREGATE_TIMEOUT_SECS: u64 = 600;
 
+/// Unwrap a raw `tools/call` envelope into the tool's own payload.
+///
+/// `McpTestClient::call_tool` does this internally; `call_with_timeout` does
+/// not — it returns the JSON-RPC envelope verbatim, because the point of
+/// taking an explicit timeout is to reach the aggregate modes whose cost the
+/// client's hardcoded 30s default would cut short.
+///
+/// Indexing that envelope as if it were the payload is a mistake this file
+/// used to make: `summary["total_events"]` on
+/// `{"id":..,"jsonrpc":..,"result":{..}}` yields `None`, which read as a
+/// missing count rather than as a wrong index. `wire_retention_facts.rs:34`
+/// already does `.get("result")` for the same reason.
+///
+/// A `isError: true` response is not an error here: after D2 a budget stop is
+/// reported as an error envelope *carrying the resume anchor*, and this test
+/// asserts on that shape. So the payload is returned either way and the
+/// caller decides what it means.
+fn unwrap_tool_envelope(raw: &serde_json::Value) -> serde_json::Value {
+    let result = raw
+        .get("result")
+        .unwrap_or_else(|| panic!("tools/call must answer with a result, got {raw}"));
+    let content = result
+        .get("content")
+        .and_then(|c| c.as_array())
+        .unwrap_or_else(|| panic!("result must carry a content array, got {raw}"));
+    let text = content
+        .first()
+        .and_then(|c| c.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or_else(|| panic!("the first content block must be text, got {raw}"));
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("the tool payload must be JSON ({e}), got {text}"))
+}
+
 fn temp_root(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!(
         "chronos-scale-{tag}-{}-{}",
@@ -239,7 +273,7 @@ async fn the_read_path_serves_a_million_events() {
     // printed and asserted against below, so the test records the cost
     // instead of hiding it behind a pass.
     let t = std::time::Instant::now();
-    let summary = client
+    let raw = client
         .call_with_timeout(
             "tools/call",
             json!({ "name": "execution_log_read", "arguments": {
@@ -247,26 +281,69 @@ async fn the_read_path_serves_a_million_events() {
             std::time::Duration::from_secs(AGGREGATE_TIMEOUT_SECS),
         )
         .await
-        .unwrap_or_else(|e| panic!("summarize over {EVENTS} events must complete, got: {e}"));
+        .unwrap_or_else(|e| panic!("summarize over {EVENTS} events must answer, got: {e}"));
     let summarize_secs = t.elapsed().as_secs_f64();
-    eprintln!("summarize completed in {summarize_secs:.1}s: {summary}");
+    eprintln!("summarize answered in {summarize_secs:.1}s: {raw}");
 
-    let total = summary["total_events"]
-        .as_u64()
-        .unwrap_or_else(|| panic!("summarize must report a total_events count, got {summary}"));
-    assert_eq!(
-        total, EVENTS,
-        "summarize must account for every seeded event, not a truncated read"
-    );
+    let summary = unwrap_tool_envelope(&raw);
 
-    // The bound below is deliberately NOT asserted. Measured on 2026-10-02,
-    // `summarize` over 1M events ran past 600s at 98.5% CPU holding ~1.5 GB
-    // RSS on a host at load ~17, so the aggregate view does not currently
-    // scale to this size, while the paged `poll` above does. Asserting a
-    // budget the product does not meet would turn a recorded limitation into
-    // a permanent red test; asserting nothing would hide it. So the cost is
-    // printed and pinned in the `#[ignore]` reason on this test, and the
-    // aggregate is asserted only for correctness given enough time.
+    // The honest outcomes are exactly two, and the test accepts both:
+    //
+    //   a) the walk finished inside its ceiling -> the total is the real one
+    //   b) the walk passed its ceiling           -> an error carrying the
+    //                                               resume anchor
+    //
+    // What is NOT acceptable, and what this assertion exists to reject, is the
+    // third outcome this code used to produce: an `Ok` aggregate over a prefix
+    // of the log whose `total_events` silently undercounted it. That shape is
+    // the Silent Lie ADR-0004 exists to remove, and after D2 the read path can
+    // no longer emit it — so the test pins that it cannot come back.
+    if summary.get("error").is_some() {
+        let reason = summary["error"].as_str().unwrap_or("<not a string>");
+        assert!(
+            reason.starts_with("read_path_"),
+            "a summarize failure must name its reason from the read-path budget \
+             contract, got {reason:?} in {summary}"
+        );
+        let next_seq = summary["next_seq"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("a budget stop must carry the resume anchor, got {summary}"));
+        assert!(
+            next_seq > 0 && next_seq <= EVENTS,
+            "the resume anchor must point inside the session, got {next_seq}"
+        );
+        assert_eq!(
+            summary["partial"],
+            json!(true),
+            "a budget stop must be marked partial, never presented as complete: {summary}"
+        );
+        eprintln!(
+            "summarize stopped at its ceiling after {next_seq} events \
+             ({:.1}s) and offered the resume anchor — the honest stop",
+            summarize_secs
+        );
+    } else {
+        let total = summary["total_events"].as_u64().unwrap_or_else(|| {
+            panic!("a complete summarize must report total_events, got {summary}")
+        });
+        assert_eq!(
+            total, EVENTS,
+            "a summarize that reports success must account for every seeded event, \
+             not a truncated read"
+        );
+    }
+
+    // The bound below is deliberately NOT asserted, and the reason is worth
+    // stating precisely because it is no longer the one this file used to
+    // carry. The 2026-10-02 note ("ran past 600s at load ~17") was measured
+    // against a `read_from_seq` that cloned the whole log on every page; R2.2
+    // replaced it with a windowed slice, and the same measurement afterwards
+    // answered in ~11s. So the old figure does not describe current code, and
+    // the new one is not asserted either — a wall-clock budget asserted in a
+    // test that seeds a million records is a flake generator on shared CI.
+    // What IS asserted is the contract above: a complete answer is complete,
+    // and a stopped one is stopped and resumable. The cost is printed on every
+    // run so it is recorded rather than assumed.
     eprintln!("AGGREGATE COST over {EVENTS} events: {summarize_secs:.1}s");
 
     // ---------------------------------------------------------------- rollup
@@ -274,30 +351,75 @@ async fn the_read_path_serves_a_million_events() {
     // tool reports `invocation_count`, `total_events`, `mean_per_invocation`
     // and `max_per_invocation`. `total_events` is the scale assertion -- it
     // must again account for the whole session rather than a truncated read.
-    let rollup = client
-        .call_tool(
-            "execution_log_read",
-            json!({ "session_id": SESSION, "mode": "rollup" }),
+    //
+    // Routed through `call_with_timeout` for the same two reasons as
+    // `summarize`: the client's 30s default is shorter than an aggregate over
+    // 1M can be expected to take, and `call_tool` turns an `isError` envelope
+    // into a transport `Err`, which would erase the budget stop's anchor —
+    // the one number a caller needs to resume.
+    let t = std::time::Instant::now();
+    let raw_rollup = client
+        .call_with_timeout(
+            "tools/call",
+            json!({ "name": "execution_log_read", "arguments": {
+                "session_id": SESSION, "mode": "rollup" } }),
+            std::time::Duration::from_secs(AGGREGATE_TIMEOUT_SECS),
         )
         .await
-        .unwrap_or_else(|e| panic!("rollup over 1M events must succeed, got: {e}"));
-    let rollup_total = rollup["total_events"]
-        .as_u64()
-        .unwrap_or_else(|| panic!("rollup must report a total_events count, got {rollup}"));
+        .unwrap_or_else(|e| panic!("rollup over {EVENTS} events must answer, got: {e}"));
+    let rollup_secs = t.elapsed().as_secs_f64();
+    eprintln!("rollup answered in {rollup_secs:.1}s");
+    let rollup = unwrap_tool_envelope(&raw_rollup);
+
+    if rollup.get("error").is_some() {
+        let reason = rollup["error"].as_str().unwrap_or("<not a string>");
+        assert!(
+            reason.starts_with("read_path_"),
+            "a rollup failure must name its reason from the read-path budget \
+             contract, got {reason:?} in {rollup}"
+        );
+        assert!(
+            rollup["next_seq"].as_u64().is_some_and(|n| n > 0),
+            "a budget stop must carry the resume anchor, got {rollup}"
+        );
+        eprintln!("rollup stopped at its ceiling and offered the resume anchor");
+    } else {
+        let rollup_total = rollup["total_events"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("a complete rollup must report total_events, got {rollup}"));
+        assert_eq!(
+            rollup_total, EVENTS,
+            "a rollup that reports success must account for every seeded event, \
+             not a truncated read"
+        );
+    }
+    // The seeded records carry `invocation_id: None`, and the read path cannot
+    // group by invocation id yet — so the rollup groups by `thread_id`. All
+    // the seeded records are on one thread, so the group count is 1.
+    //
+    // What must be pinned is not the number but that the number is
+    // self-describing: an answer of `invocation_count: 1` is only honest
+    // alongside a `grouping_key` that says it is a thread count. Without that
+    // field an agent reads one invocation where the truth is "one thread, and
+    // the number of invocations is unknown" — the 1M-event case makes it
+    // stark, because 1,000,000 events on one thread is very unlikely to be
+    // one invocation.
     assert_eq!(
-        rollup_total, EVENTS,
-        "rollup must account for every seeded event, not a truncated read"
+        rollup["grouping_key"],
+        json!("thread_id"),
+        "the rollup must declare what it grouped by: {rollup}"
     );
-    // The seeded records carry `invocation_id: None`, so the rollup must not
-    // invent invocations for them. Pinned because a rollup that reported a
-    // plausible non-zero `invocation_count` here would be fabricating
-    // identities out of v1-shaped records.
-    let invocation_count = rollup["invocation_count"]
-        .as_u64()
-        .unwrap_or_else(|| panic!("rollup must report an invocation_count, got {rollup}"));
     assert_eq!(
-        invocation_count, 0,
-        "records with no invocation_id must not be counted as invocations: {rollup}"
+        rollup["grouping_is_identity"],
+        json!(false),
+        "a thread grouping must not be presented as an identity: {rollup}"
+    );
+    let group_count = rollup["invocation_count"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("rollup must report a group count, got {rollup}"));
+    assert_eq!(
+        group_count, 1,
+        "all seeded records share one thread, so there is exactly one group: {rollup}"
     );
 
     eprintln!(

@@ -252,7 +252,8 @@ impl ReadPathService {
     ///
     /// This is the operation the D2 ceiling governs. Whether it *bites* at
     /// 1M events depends on the read path's cost, and that measurement moved
-    /// with R2.2: see `SCALE_BUDGETS.md` §3.1 — the 1.222,7 s figure was
+    /// with R2.2: see `SCALE_BUDGETS.md` §3.1, where the figure is reconciled
+    /// by measurement on both trees — the 1.222,7 s figure was
     /// recorded against a `read_from_seq` that cloned the whole log per page
     /// and is no longer reproducible on current code. The ceiling is not
     /// argued from a stale number; it bounds the walk whatever the cost is,
