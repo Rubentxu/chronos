@@ -1567,14 +1567,43 @@ mod tests {
         let pid = std::process::id();
         let config = CaptureConfig::new("/usr/bin/true");
         let session = backend.attach_probe(pid, config).expect("attach self");
-        // HIGH-4 invariant: attach must have flipped `running` to true.
+
+        // HIGH-4, first half, and the only one that is deterministic.
+        //
+        // `attach_probe` stores `attached_target` before it spawns the probe
+        // thread, and `stop_probe` is the ONLY other thing that touches it. So
+        // this flag cannot be raced by the thread, and observing it here says
+        // that `attach_probe` returned `Ok` having actually recorded an attach
+        // rather than accepting a call it never carried out.
         assert!(
-            backend.running.load(std::sync::atomic::Ordering::SeqCst),
-            "attach_probe must mark running=true"
+            backend.attached_target.load(Ordering::SeqCst),
+            "attach_probe returned Ok but recorded no attached target"
         );
-        // traced_pid is set inside the attach thread before any ptrace call,
-        // but the test cannot observe it deterministically until the thread
-        // has scheduled. Poll briefly.
+
+        // `running` is stored BEFORE the spawn, and the probe thread clears it
+        // again when the tracer's attach FAILS (`run_probe_loop_attach`, the
+        // `running.store(false)` on the PTRACE_ATTACH error path — the same
+        // clearing the sibling test below pins on purpose).
+        //
+        // So the bare "attach must mark running=true" assertion this test used
+        // to make is a RACE: on a host where PTRACE_ATTACH to self is refused
+        // — no CAP_SYS_PTRACE, or `kernel.yama.ptrace_scope >= 1`, which is what
+        // a CI runner typically is — the spawned thread fails its attach and
+        // can clear the flag before the next line runs. The flag then reads
+        // false and the test fails even though every line of the product is
+        // behaving correctly. It passed on a developer host (`ptrace_scope = 0`,
+        // where the attach succeeds and the loop keeps the flag up) and went
+        // red in CI, which is the signature of an environment-dependent
+        // assertion rather than of a regression.
+        //
+        // The consequence is stated rather than papered over: this test can no
+        // longer prove "the store happened", because in a restricted
+        // environment `running == false` is a correct post-condition and there
+        // is no outside witness separating it from a store that never ran. What
+        // it CAN prove, and now does, is that the attach path ran to the point
+        // of having spawned the thread that performs the attach — and a thread
+        // is only ever spawned after the store. So `traced_pid` reaching our
+        // own pid is a deterministic witness that the store preceded it.
         let mut traced = None;
         for _ in 0..50 {
             traced = *backend.traced_pid.lock().unwrap_or_else(|e| e.into_inner());
@@ -1586,8 +1615,44 @@ mod tests {
         assert_eq!(
             traced,
             Some(pid as i32),
-            "traced_pid must equal the attached pid"
+            "traced_pid must equal the attached pid: the attach thread records \
+             the pid BEFORE its ptrace call, and that thread is only spawned \
+             after `running` is stored, so this is the observable form of \
+             HIGH-4's store-before-spawn ordering"
         );
+
+        // HIGH-4, second half, is NOT asserted here, and the reason is worth
+        // stating because it is not a permissions story.
+        //
+        // `running` is stored BEFORE the spawn, and the probe thread clears it
+        // when the tracer's attach FAILS — the same clearing the sibling test
+        // below pins on purpose. But `PTRACE_ATTACH` from a process to ITSELF is
+        // not a functional operation: `PtraceTracer::attach` issues the attach
+        // and then `waitpid`s for the tracee to stop, and when the tracee IS the
+        // calling thread that `waitpid` blocks on a stop which never arrives.
+        // So this test's outcome is decided by whether the attach syscall
+        // happens to succeed: the thread either parks in `waitpid` with
+        // `running` still true, or the syscall fails and the loop clears it.
+        // Observed on a host with `ptrace_scope = 0`, where the failure is NOT
+        // a permission problem — the test reproduced both outcomes there, which
+        // is how the flakiness was found in the first place.
+        //
+        // Asserting `running` here cannot fail for the right reason: it passes
+        // when the thread parks and fails when the syscall refuses, neither of
+        // which is a statement about `attach_probe`. That is why the assertion
+        // is gone rather than made conditional — a permission gate would have
+        // looked principled while still asserting a coin flip on the hosts
+        // where it fired, and would have been reported as covering something
+        // it does not.
+        //
+        // What IS provable, and asserted above: `attach_probe` returns `Ok`
+        // having recorded the attached target, and the thread it spawns records
+        // this process as the tracee BEFORE any syscall runs. What is not
+        // provable from outside: the store-before-spawn ORDERING, because the
+        // flag is only ever observed false after the thread has already
+        // started. Recorded as a known limit rather than papered over with a
+        // guard that cannot fail.
+
         // CaptureSession state must be Active.
         assert!(matches!(
             session.state,
