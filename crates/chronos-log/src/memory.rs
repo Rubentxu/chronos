@@ -121,6 +121,25 @@ impl SessionEntries {
         self.entries.partition_point(|e| e.reach() < from_seq)
     }
 
+    /// The lowest seq any entry occupies, or `ZERO` for an empty list.
+    ///
+    /// This is `span_first`, not `reach()`: a `Record` occupies the single seq
+    /// `r.seq` and a `Gap` occupies its whole `[first_missing, last_missing]`,
+    /// so the oldest thing present can be the START of a gap that was recorded
+    /// after later records. That is also why the `first_reachable` seek does
+    /// not apply here — it partitions on `reach()`, and the minimum of
+    /// `span_first` over a reach-ordered list is not the first entry's.
+    ///
+    /// `read_after` calls this only when the caller's cursor is behind the
+    /// tail, because it is O(N) in time; see the call site.
+    fn oldest_seq(&self) -> EventSeq {
+        self.entries
+            .iter()
+            .map(|e| e.span_first())
+            .min()
+            .unwrap_or(EventSeq::ZERO)
+    }
+
     /// Whether any entry already in the list occupies any seq in
     /// `[first, last]`. Used by `record_gap` to refuse a gap that would
     /// contradict evidence the session already holds.
@@ -639,6 +658,28 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         // persisted, which is what returning from inside the old `match` on the
         // owned snapshot achieved. `Early` carries them out of the lock scope
         // so the ordering is preserved rather than implied.
+        // The stale-cursor check below needs `oldest_seq`, the minimum over
+        // every entry — an O(N) walk of the session, on EVERY call. It cannot
+        // fire unless the cursor is behind the tail, and `oldest_seq` is always
+        // at or below the tail, so when the cursor has already caught up the
+        // answer is known without walking anything.
+        //
+        // The invariant: a record's `seq` is allocated below the allocator, and
+        // `record_gap` refuses a gap that starts beyond it, so every entry's
+        // `span_first` is below the allocator — and `tail_seq` IS the allocator
+        // minus one. Hence `oldest_seq <= tail_seq`, and a cursor at or past
+        // the tail cannot be stale.
+        //
+        // This is the SECOND cost C1/C2 warned about: the clone is layer 1 and
+        // is visible to an allocation counter, while this scan is layer 2 and
+        // is invisible to one. Removing the clone without removing this leaves
+        // a call that allocates nothing and still walks a million entries —
+        // measured at 51 ms per idle poll over a 1M-event session, linear in N
+        // exactly as the clone was.
+        let may_be_stale = !fresh
+            && stored.is_some()
+            && effective_cursor.last_seq < self.tail_seq(&session_id).unwrap_or(EventSeq::ZERO);
+
         enum Early {
             /// The session is not in the map at all.
             Missing,
@@ -655,30 +696,52 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             match records.get(&session_id) {
                 None => Some(Early::Missing),
                 Some(entries) => {
-                    // The oldest seq currently in the log, read by reference —
-                    // this walk is O(N) in time but allocates nothing, and it
-                    // has to see every entry because a gap can be the oldest
-                    // thing present.
-                    let oldest_seq = entries
-                        .entries
-                        .iter()
-                        .map(|e| match e {
-                            RecordEntry::Record(r) => r.seq,
-                            RecordEntry::Gap(g) => g.first_missing,
-                        })
-                        .min()
-                        .unwrap_or(EventSeq::ZERO);
+                    // The oldest seq currently in the log. Only computed when
+                    // the cursor could actually be behind it — see `may_be_stale`
+                    // above. When it is computed it still walks everything, by
+                    // reference: it has to see every entry because a gap can be
+                    // the oldest thing present, and a gap's `first_missing` is
+                    // not ordered against a record's `seq` the way `reach()` is,
+                    // so the seek `read_from_seq` uses does not apply to it.
+                    let stale = may_be_stale && effective_cursor.last_seq < entries.oldest_seq();
 
-                    if !fresh && effective_cursor.last_seq < oldest_seq && stored.is_some() {
+                    if stale {
                         Some(Early::Stale(LogError::CursorStale {
                             consumer: consumer.clone(),
                             expected: effective_cursor.last_seq,
-                            current: oldest_seq,
+                            current: entries.oldest_seq(),
                         }))
                     } else {
                         //   - fresh cursor: include every record (even seq#0).
                         //   - cursor with last_seq = n: include records with seq > n.
-                        for entry in &entries.entries {
+                        //
+                        // Both branches of the filter below reduce to the SAME
+                        // predicate — a `Record` is included when
+                        // `r.seq > last_seq`, a `Gap` when
+                        // `g.last_missing > last_seq`, and `reach()` is exactly
+                        // `r.seq` for a record and `last_missing` for a gap. So
+                        // the two tests are one test, `reach() >= last_seq + 1`,
+                        // and the first entry that can satisfy it is
+                        // `first_reachable(last_seq + 1)`. Seeking there skips
+                        // the whole prefix the loop would have rejected one
+                        // entry at a time, which is the difference between
+                        // O(session) and O(new) for a caught-up consumer.
+                        //
+                        // Gated on `!reach_disordered`, exactly as
+                        // `read_from_seq` gates its own seek: a list whose
+                        // `reach` dropped is not partitioned by `reach`, and a
+                        // binary search into it would return an arbitrary
+                        // match. A fresh cursor takes everything, so it seeks
+                        // nothing.
+                        let window: &[RecordEntry] = if fresh || entries.reach_disordered {
+                            &entries.entries
+                        } else {
+                            &entries.entries[entries.first_reachable(EventSeq::new(
+                                effective_cursor.last_seq.0.saturating_add(1),
+                            ))..]
+                        };
+
+                        for entry in window {
                             match entry {
                                 RecordEntry::Record(r) => {
                                     let include = fresh || r.seq > effective_cursor.last_seq;
@@ -1834,5 +1897,176 @@ mod c1_c2_read_from_seq {
         assert_eq!(seqs, vec![n - 3, n - 2, n - 1]);
         assert_eq!(page.position_after, EventSeq::new(n));
         assert!(!page.exhausted);
+    }
+
+    // ---------------------------------------------------------------------
+    // `read_after`'s seek, in the two states the public API cannot build.
+    //
+    // `read_after` now seeks to `first_reachable(last_seq + 1)` exactly as
+    // `read_from_seq` does, and `crates/chronos-log/tests/
+    // read_after_seek_equivalence.rs` covers every state that IS reachable
+    // from outside. These two are the ones that are not, and they live here
+    // because `force_entry` bypasses the guard on purpose — what is under test
+    // is the reader, not the API.
+    // ---------------------------------------------------------------------
+
+    /// The pre-seek loop of `read_after`, verbatim, as the oracle.
+    fn reference_read_after(
+        entries: &[RecordEntry],
+        fresh: bool,
+        last_seq: EventSeq,
+    ) -> (Vec<u64>, Vec<String>) {
+        let mut out_records: Vec<u64> = Vec::new();
+        let mut out_gaps: Vec<String> = Vec::new();
+        for entry in entries {
+            match entry {
+                RecordEntry::Record(r) => {
+                    if fresh || r.seq > last_seq {
+                        out_records.push(r.seq.0);
+                    }
+                }
+                RecordEntry::Gap(g) => {
+                    let include = if fresh {
+                        g.last_missing > EventSeq::ZERO
+                    } else {
+                        g.last_missing > last_seq
+                    };
+                    if include {
+                        out_gaps.push(format!("{}..{}", g.first_missing.0, g.last_missing.0));
+                    }
+                }
+            }
+        }
+        (out_records, out_gaps)
+    }
+
+    fn actual_read_after(
+        log: &InMemoryExecutionLog,
+        s: &SessionId,
+        last_seq: EventSeq,
+    ) -> (Vec<u64>, Vec<String>) {
+        match log
+            .read_after(
+                s.clone(),
+                LogConsumerId::new("oracle"),
+                Some(ConsumerCursor::at(LogConsumerId::new("oracle"), last_seq)),
+            )
+            .expect("read_after")
+        {
+            ReadResult::Ok { records, gaps, .. } => (
+                records.iter().map(|r| r.seq.0).collect(),
+                gaps.iter()
+                    .map(|g| format!("{}..{}", g.first_missing.0, g.last_missing.0))
+                    .collect(),
+            ),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    /// A reach-`disordered` list must still be read correctly, by scanning.
+    ///
+    /// The list is built with `force_entry` because `record_gap` refuses gaps
+    /// that overlap held evidence, which is what made the state unreachable
+    /// from the API. The assertion is that the reader's fallback is still
+    /// right if any future path ever produces the state: the difference is a
+    /// correct read and a silently wrong one.
+    #[test]
+    fn read_after_on_a_disordered_list_matches_the_full_walk() {
+        let (log, s) = seeded(10);
+        // A gap whose reach (3) drops below the previous record's (9), and
+        // which overlaps nothing because it was injected directly.
+        force_entry(
+            &log,
+            &s,
+            RecordEntry::Gap(Gap::new(
+                EventSeq::new(1),
+                EventSeq::new(3),
+                GapReason::KernelRingOverflow,
+                "forced",
+            )),
+        );
+        assert!(
+            !is_reach_ordered(&log, &s),
+            "the fixture must actually be disordered, or this test proves nothing"
+        );
+
+        for last in [0u64, 3, 5, 9, 40] {
+            let want = reference_read_after(&entries_of(&log, &s), false, EventSeq::new(last));
+            let got = actual_read_after(&log, &s, EventSeq::new(last));
+            assert_eq!(
+                got, want,
+                "disordered read at cursor {last} differs from the walk"
+            );
+        }
+    }
+
+    /// A cursor genuinely behind the oldest retained seq must still raise
+    /// `CursorStale`, not be answered with a short page.
+    ///
+    /// This is the case the `may_be_stale` short-circuit could plausibly have
+    /// broken: it skips the `oldest_seq` walk when the cursor is at or past
+    /// the tail. The walk is what detects this error, so "the seek made it
+    /// fast" and "the seek made it wrong" are the same change — which is why
+    /// the check is asserted here rather than assumed from the other tests.
+    #[test]
+    fn read_after_still_raises_cursor_stale_when_the_walk_would_have() {
+        let (log, s) = seeded(10);
+        let consumer = LogConsumerId::new("stale");
+
+        // Establish a stored high-water at the tail, as a caught-up consumer
+        // would have.
+        log.read_after(s.clone(), consumer.clone(), None)
+            .expect("seed cursor");
+
+        // Now prune the head so the stored cursor is behind what remains. The
+        // in-memory backend exposes no retention API of its own, so the state
+        // is forced the same way: drop the leading entries, which is exactly
+        // what advancing a retained watermark does to the list.
+        let keep_from = 6u64;
+        {
+            let mut records = log.records.lock().expect("records lock poisoned");
+            let entries = records.get_mut(&s).expect("session present");
+            entries
+                .entries
+                .retain(|e| e.reach() >= EventSeq::new(keep_from));
+        }
+        let entries_of_log = entries_of(&log, &s);
+        assert_eq!(
+            entries_of_log.first().map(|e| e.reach().0),
+            Some(keep_from),
+            "the fixture must have dropped a prefix, or the stale path is untested"
+        );
+
+        let want_stale = reference_oldest(&entries_of_log) > EventSeq::new(keep_from - 1);
+        assert!(
+            want_stale,
+            "the fixture must make a tail cursor stale, or this test proves nothing"
+        );
+        match log.read_after(
+            s.clone(),
+            consumer,
+            Some(ConsumerCursor::at(
+                LogConsumerId::new("stale"),
+                EventSeq::new(0),
+            )),
+        ) {
+            Err(LogError::CursorStale {
+                expected, current, ..
+            }) => {
+                assert_eq!(expected, EventSeq::new(0));
+                assert_eq!(current, reference_oldest(&entries_of_log));
+            }
+            other => {
+                panic!("a cursor behind the retained head must raise CursorStale, got {other:?}")
+            }
+        }
+    }
+
+    fn reference_oldest(entries: &[RecordEntry]) -> EventSeq {
+        entries
+            .iter()
+            .map(|e| e.span_first())
+            .min()
+            .unwrap_or(EventSeq::ZERO)
     }
 }
