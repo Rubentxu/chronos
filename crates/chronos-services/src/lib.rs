@@ -134,6 +134,7 @@ pub mod process_metrics;
 pub mod projection;
 pub mod query_service;
 pub mod race_classifier;
+pub mod read_budget;
 pub mod read_path;
 pub mod session_compare;
 pub mod session_explain;

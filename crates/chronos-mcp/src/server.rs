@@ -115,26 +115,21 @@ fn text_content(text: impl Into<String>) -> Vec<Content> {
     vec![Content::text(text.into())]
 }
 
-/// Resource limits for capture operations.
-///
-/// Used to prevent resource exhaustion attacks by capping the number of events
-/// and the wall-clock time of a capture.
-#[derive(Debug, Clone)]
-pub struct ResourceLimits {
-    /// Maximum number of events to collect before stopping (default: 1_000_000).
-    pub max_events: usize,
-    /// Timeout in seconds for the capture (default: 60).
-    pub timeout_secs: u64,
-}
-
-impl Default for ResourceLimits {
-    fn default() -> Self {
-        Self {
-            max_events: 1_000_000,
-            timeout_secs: 60,
-        }
-    }
-}
+// Resource limits for read-path operations.
+//
+// SCALE_BUDGETS §5 D2 decided that `max_events` / `timeout_secs` are a hard
+// ceiling on any read-path operation, not only on capture. The struct now
+// lives in `chronos_services::read_budget` because the loops it governs are
+// in `chronos-services`, and a ceiling enforced from the composition root
+// into a lower layer cannot depend on a higher one. It is re-exported here so
+// `chronos_mcp::server::ResourceLimits` keeps resolving unchanged.
+//
+// Before this move the struct was defined in this file and its only readers
+// were the two `#[test]` functions further down: a decision with no
+// mechanism. `ReadPathService` now holds the value and charges it at page
+// boundaries; `read_budget`'s module docs carry the acceptance criterion and
+// the reason the ceiling has to be cooperative.
+pub use chronos_services::read_budget::ResourceLimits;
 
 /// Empty parameter type for tools that take no arguments.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -3769,6 +3764,31 @@ further would be a Silent Lie."
 
         match outcome {
             Ok(value) => Ok(CallToolResult::success(json_content(&value))),
+            // SCALE_BUDGETS §5 D2: a budget stop is the one read failure whose
+            // numbers an agent can act on — how far the walk got and the
+            // cursor to resume from. So it gets the same treatment the
+            // `cursor_stale` arm above already gives a re-anchorable error:
+            // readable text AND a structured envelope with the numbers. A bare
+            // `"{e}"` here would be honest but unusable, and an agent that
+            // could not see the resume anchor would retry the whole
+            // aggregation and stall on the same ceiling again.
+            Err(chronos_services::read_path::ReadPathError::Budget(b)) => {
+                let mut content = text_content(b.to_string());
+                content.extend(json_content(&serde_json::json!({
+                    "error": b.reason(),
+                    "operation": b.operation,
+                    "limit_field": b.limit.field(),
+                    "limit_secs": b.limit_secs,
+                    "max_events": b.max_events,
+                    "elapsed_ms": b.elapsed.as_millis() as u64,
+                    "events_scanned": b.events_scanned,
+                    "pages_scanned": b.pages_scanned,
+                    "next_seq": b.next_seq,
+                    "partial": true,
+                    "resume": "re-issue the same mode with cursor anchored at next_seq",
+                })));
+                Ok(CallToolResult::error(content))
+            }
             // Fail-closed: the registry's own reason is surfaced, never
             // replaced by an empty-success envelope.
             Err(e) => Ok(CallToolResult::error(text_content(format!("{e}")))),
