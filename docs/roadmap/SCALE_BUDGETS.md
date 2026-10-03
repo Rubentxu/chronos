@@ -107,9 +107,15 @@ Duas consecuencias que importan para budgutar:
 
 ## 3. Baseline medido a 1M de eventos
 
+> **ADVERTENCIA — estas filas describen código que ya no existe.** La tabla se midió en
+> `814325a8`, **antes** de R2.2 (`3c3bb256`), que sustituyó el `read_from_seq` que clonaba el log
+> entero por página por una ventana en *slice*. La reconciliación está medida, no supuesta, en
+> [§3.1](#31-la-tabla-de-3-mide-codigo-ya-sustituido). Las filas de `poll` y RSS **no** son
+> comparables con las de `summarize`/`rollup`: R2.2 no cambió las primeras y sí las segundas.
+
 Con backend segmentado real y registros decodificables.
 
-| Operación | Medido a 1M |
+| Operación | Medido a 1M (código de `814325a8`) |
 |---|---|
 | `poll(limit=100)` | p50 **622,5 ms** / p95 **642,5 ms** (7 reps) |
 | `summarize` (cubos 1 s) | **1.222,7 s** (1 rep) |
@@ -118,7 +124,48 @@ Con backend segmentado real y registros decodificables.
 | RSS pico (`VmHWM`) | **~843 MB** |
 | First response (replay + 1er poll) | **~1.784 ms** (replay 1.451 ms + poll 333 ms) |
 
-### 3.1 Dos lecturas honestas de esta tabla
+### 3.1 La tabla de §3 mide código ya sustituido
+
+**La discrepancia está resuelta, y por medición directa.** Un worker que implementó D2
+midió `summarize` a 1M en **11,2 s** frente a los 1.222,7 s de esta tabla, y la declaró sin
+reconciliar. La hipótesis era que la tabla era anterior al arreglo del clon; se comprobó
+contra el historial y luego **se midió**:
+
+| Árbol | `read_from_seq` | `summarize` a 1M |
+|---|---|---|
+| `814325a8` (§3) | clonaba el log entero por página | **no completó en 600 s** |
+| `c16f9913` (actual) | ventana en *slice* | **11,6 s** |
+
+La fila de arriba se ejecutó en un worktree del mismo commit que escribió esta tabla
+(`git worktree add /tmp/chronos-preR22 814325a8`), con el mismo test y la misma máquina.
+Falló por timeout a los 600 s, que es el comportamiento que el propio test ya describía en su
+cabecera antes de que nadie lo ejecutara.
+
+**La aritmética explica el mecanismo y no sólo lo corrobora.** `poll(100)` son 622,5 ms:
+*una* lectura de página clona 1M de registros. `summarize` recorre ~977 páginas, y cada
+`read_page` hace 2 llamadas de `SCAN_CHUNK=512`; cada una clonaba el log entero. ~977 × 2 ×
+622,5 ms ≈ **1.217 s**, que es el orden de magnitud exacto de los 1.222,7 s registrados. El
+coste cuadrático de la agregación **era** el clon de R2.2, no la carga de la máquina.
+
+**Consecuencias, y son las que importan:**
+
+1. **La mejora de R2.2 es mucho mayor de lo registrado.** El cambio de `poll` se documentó como
+   0,92×/0,94× de cociente cabeza/cola; para la agregación es de **>51×** frente al peor caso
+   medido, y superior si se toma la cifra de §3. El arreglo no quitó una constante: quitó un
+   término cuadrático.
+2. **La tabla de §3 no puede seguir usándose para argumentar nada sobre el código actual.** Las
+   filas de `summarize` y `rollup` miden un defecto ya resuelto. Las de `poll` y RSS no cambiaron
+   con R2.2 y siguen siendo válidas como referencia — pero miden `poll`, no la agregación.
+3. **El techo de 60 s de D2 no muerde a 1M en esta máquina.** No porque el techo sea excesivo,
+   sino porque el recorrido cabe holgadamente. La decisión se sostiene por lo que garantiza
+   (un tope con ancla de reanudación), no por una cifra que ya no aplica.
+
+*Pendiente y **no** medido: volver a levantar el p95 de `poll` y el RSS con el arreglo en
+sitio, para que las filas no-agregación tengan una cifra que sí corresponda al código actual.
+No se hace aquí porque §8 ya registra que 20 muestras a 1M cuestan ~6,8 h por operación, y esa
+medida pertenece a la lane de certificación, no a un cierre documental.*
+
+### 3.2 Dos lecturas honestas de la tabla de §3
 
 **(a) El `poll` de 333 ms de "first response" y el `poll` de 622,5 ms no son la misma medición.**
 La cifra de 622,5 ms es a 1M. La de 333 ms pertenece a la cadena de first response, cuyo tamaño
@@ -192,7 +239,7 @@ clon es el término dominante.
 | El coste es O(N del log total), no O(limit) | El clon precede al `limit` (`memory.rs:560` vs `:577`) |
 | Pedir 1 evento cuesta lo mismo que pedir 100 | Mismo clon, mismo recorrido, distinto `limit` |
 | El coste **no** depende de la posición del cursor | A 1M, cabeza p50 567-580 ms vs cola 581-596 ms, dentro del ruido |
-| Cada llamada asigna ~422 MB transitorios | ≈ 1× el RSS de la sesión (§3.1b) |
+| Cada llamada asigna ~422 MB transitorios | ≈ 1× el RSS de la sesión (§3.2b) |
 
 Que el coste no dependa de la posición **no es una buena noticia hoy**: es la firma de que *todo*
 es O(N). Una lectura benar acotada también sería insensible a la posición, pero por una razón
@@ -349,7 +396,7 @@ Anclas que existen y **no** sirven aquí, y por qué:
 | Ancla candidata | Por qué no ancla B2 |
 |---|---|
 | `poll` p50 622,5 ms a 1M | Es el coste **con** el clon. Es una cota superior que se derrumbará al arreglarlo; budgetizarla hoy sería presupuestar un defecto. |
-| `poll` 333 ms de first response | Sesión de tamaño no consta (§3.1a) y también está contaminada por el clon. |
+| `poll` 333 ms de first response | Sesión de tamaño no consta (§3.2a) y también está contaminada por el clon. |
 | H1.5 `events_read` ≤ 50 ms a 10k | Otra tool, otro tamaño, **debug build**, y kernel 7.2.4 (§1.2). |
 | Techo de 60 s de D2 | Es un **techo**, no un objetivo de rendimiento. Acota el daño; no dice cuál es el coste razonable de una ventana. |
 
@@ -670,7 +717,7 @@ citadas, no reproducidas por mí**, y así se declaran.
 - La curva de crecimiento 1k→128k y sus exponentes 1,3→2,5 (§4.5).
 - La proyección previa que subestimó 13 %-69 % (§1.3): la registré como advertencia metodológica,
   sin cifra que comprobar.
-- El tamaño de sesión del `poll` de 333 ms de first response (§3.1a).
+- El tamaño de sesión del `poll` de 333 ms de first response (§3.2a).
 
 ### A.3 Correcciones al encargo de partida
 
