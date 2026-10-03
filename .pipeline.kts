@@ -35,6 +35,14 @@
 //     test-workspace-lib        1421 tests, la superficie unitaria completa
 //     architecture-contracts    --strict-no-gaps con base=HEAD~1
 //     test-sandbox-read-path    E2E sobre el wire real (pre-existente)
+//     feature-matrix-truth      --all-targets --all-features (añadido 2026-10-03)
+//
+//   NOTA 2026-10-03 (feature-matrix-truth). Los recuentos de arriba
+//   ("9 stages, 18 steps", 5.4 min / 323s) son la medición del run
+//   863f0be3 del 2026-10-01 y NO se reescriben: son un hecho. Este stage
+//   eleva el gate a 10 stages y 19 steps. El gate completo con este stage
+//   no se ha vuelto a medir todavía; el coste del propio check sí está medido
+//   en 35.2s incremental sobre host compartido.
 //
 //   TIER 2 (CHRONOS_FULL_GATE=1, replica integral de ci.yml):
 //     test-workspace-integration  --workspace --tests --exclude chronos-e2e
@@ -65,6 +73,34 @@ pipeline {
         stage("workspace-check") {
             // cargo check --workspace: acota tiempo evitando compilar deps pesadas.
             sh("cd $REPO && cargo check --workspace --message-format=short 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0")
+        }
+
+        // ---------------------------------------------------------------
+        // feature-matrix-truth  (REC-C0.2 — Feature-matrix truth)
+        //
+        // Por qué este stage existe: `cargo check --workspace` compila la
+        // combinación HABITUAL de features (default). Toda feature que no
+        // sea default queda sin verificar: es código que el gate certifica
+        // como verde sin haberlo compilado nunca.
+        //
+        // Eso no era teórico. `chronos-native` tiene la feature
+        // `perf_counters` (no default), y sus diez referencias usaban
+        // `super::perf::*` desde dentro de `mod imp` — donde `super` es el
+        // módulo `ptrace_tracer`, no la raíz del crate, así que la ruta no
+        // existía. Seis gates T4 consecutivos de este repo pasaron en
+        // verde sin detectarlo, porque ninguno compilaba esa feature.
+        //
+        // El comando es copia literal de
+        // .github/workflows/architecture-contracts.yml:34, que es donde la CI
+        // remota lo detecta. La cabecera de este archivo ya fija la política:
+        // "si la CI remota corre algo, este gate lo corre". Este stage es esa
+        // política cumplida, no política inventada.
+        //
+        // Coste medido 2026-10-03: 35.2s (incremental, host compartido). Es
+        // un `check`, no un `build`: no compila deps de release ni enlaza.
+        // -----------------------------------------------------------------
+        stage("feature-matrix-truth") {
+            sh("cd $REPO && cargo check --workspace --all-targets --all-features 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0")
         }
 
         stage("build-domain") {

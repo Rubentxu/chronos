@@ -219,7 +219,7 @@ mod imp {
         syscall_entry_pids: std::collections::HashSet<i32>,
         /// Performance counter handles (feature-gated).
         #[cfg(feature = "perf_counters")]
-        perf_handles: Vec<super::perf::PerfCounterHandle>,
+        perf_handles: Vec<crate::perf::PerfCounterHandle>,
     }
 
     impl PtraceTracer {
@@ -757,7 +757,7 @@ mod imp {
         /// feature is enabled. Opens HW_CPU_CYCLES and HW_INSTRUCTIONS counters.
         #[cfg(feature = "perf_counters")]
         pub fn open_perf_counters(&mut self, pid: Pid) -> Result<(), TraceError> {
-            use super::perf::{PerfCounterConfig, PerfCounterType};
+            use crate::perf::{PerfCounterConfig, PerfCounterType};
 
             // Open cycle counter
             let cycle_config = PerfCounterConfig::new(PerfCounterType::Cycle);
@@ -795,9 +795,9 @@ mod imp {
         fn open_single_counter(
             &mut self,
             pid: Pid,
-            config: super::perf::PerfCounterConfig,
-        ) -> Result<super::perf::PerfCounterHandle, TraceError> {
-            use super::perf::counters::{
+            config: crate::perf::PerfCounterConfig,
+        ) -> Result<crate::perf::PerfCounterHandle, TraceError> {
+            use crate::perf::counters::{
                 perf_event_open, PerfCounterType, PERF_HW_BRANCH_MISSES, PERF_HW_CACHE_MISSES,
                 PERF_HW_CPU_CYCLES, PERF_SW_CPU_CLOCK, PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE,
             };
@@ -815,7 +815,7 @@ mod imp {
             let fd = perf_event_open(type_, config_val, pid.as_raw(), -1, None)
                 .map_err(|e| TraceError::CaptureFailed(format!("perf_event_open failed: {}", e)))?;
 
-            Ok(super::perf::PerfCounterHandle::from_fd(
+            Ok(crate::perf::PerfCounterHandle::from_fd(
                 fd,
                 config.counter_type,
             ))
@@ -826,8 +826,8 @@ mod imp {
         /// Returns a snapshot with all counter values, or `None` if counters
         /// could not be read (e.g., counters were not opened due to permission denied).
         #[cfg(feature = "perf_counters")]
-        pub fn read_perf_counters(&self) -> Result<super::perf::PerfCountersSnapshot, TraceError> {
-            use super::perf::PerfCountersSnapshot;
+        pub fn read_perf_counters(&self) -> Result<crate::perf::PerfCountersSnapshot, TraceError> {
+            use crate::perf::PerfCountersSnapshot;
 
             let mut cycles = None;
             let mut instructions = None;
@@ -835,8 +835,8 @@ mod imp {
             for handle in &self.perf_handles {
                 match handle.read() {
                     Ok(value) => match handle.counter_type() {
-                        super::perf::PerfCounterType::Cycle => cycles = Some(value),
-                        super::perf::PerfCounterType::Instruction => instructions = Some(value),
+                        crate::perf::PerfCounterType::Cycle => cycles = Some(value),
+                        crate::perf::PerfCounterType::Instruction => instructions = Some(value),
                         _ => {}
                     },
                     Err(e) => {
