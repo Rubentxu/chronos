@@ -36,6 +36,8 @@
 //     architecture-contracts    --strict-no-gaps con base=HEAD~1
 //     test-sandbox-read-path    E2E sobre el wire real (pre-existente)
 //     feature-matrix-truth      --all-targets --all-features (añadido 2026-10-03)
+//     ci-toolchain-parity       lint con la toolchain de la CI (añadido 2026-10-03)
+//     production-bin-build      cargo build --bin chronos-mcp (añadido 2026-10-03)
 //
 //   NOTA 2026-10-03 (feature-matrix-truth). Los recuentos de arriba
 //   ("9 stages, 18 steps", 5.4 min / 323s) son la medición del run
@@ -54,6 +56,18 @@
 //   stages y 20 steps. Coste SIN MEDIR: depende de si el host tiene la
 //   toolchain de la CI (en cuyo caso re-copia el lint) o no (en cuyo caso
 //   para y lo dice).
+//
+//   NOTA 2026-10-03 (production-bin-build). TERCER guard, tercer incidente del
+//   mismo tipo: el commit b8ba75ae pasó fmt, clippy --all-targets y 107/107
+//   tests, y el Sandbox Debt Sentinel lo rechazó con E0599 porque el BINARIO DE
+//   PRODUCCIÓN no compilaba. `mod tests` en
+//   `crates/chronos-mcp/src/server.rs` no está gated con `#[cfg(test)]` por
+//   decisión pre-existente (server.rs:4318), y rustc elimina las fns con
+//   `#[test]`/`#[tokio::test]` cuando no hay harness pero SÍ compila una `fn`
+//   desnuda. Tres helpers nuevos llamaban a una API gated por dev-dependency
+//   (`create_for_tests`), que en `cargo build` no existe. Con este stage el
+//   gate local son 12 stages y 21 steps y corre el comando literal de
+//   `sandbox-debt-sentinel.yml:45`.
 //
 //   TIER 2 (CHRONOS_FULL_GATE=1, replica integral de ci.yml):
 //     test-workspace-integration  --workspace --tests --exclude chronos-e2e
@@ -156,6 +170,39 @@ pipeline {
         // -----------------------------------------------------------------
         stage("ci-toolchain-parity") {
             sh("""cd $REPO && CI_VER="1.99.0" && LOCAL_VER=$(rustc --version | cut -d' ' -f2) && echo "clippy local: $LOCAL_VER | CI (último run observado): $CI_VER" && if [ "$LOCAL_VER" = "$CI_VER" ]; then echo 'PARIDAD OK: el gate local lint corre con la misma toolchain que la CI remota'; else echo "DRIFT DETECTADO: local=$LOCAL_VER != CI=$CI_VER. Un lint nuevo puede pasar aqui y rechazar en remoto. Re-ejecutando el lint con la toolchain exacta de la CI."; if rustup toolchain list | grep -q "^$CI_VER-"; then CARGO_TARGET_DIR=/tmp/chronos-parity-target cargo +$CI_VER clippy --workspace --all-targets -- -D warnings 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0; else echo "PARIDAD NO VERIFICADA: la toolchain $CI_VER no está instalada en este host. Instálala con 'rustup toolchain install $CI_VER --component clippy' y repite el gate. Esta stage no declara PASS sin verificar."; exit 1; fi; fi""")
+        }
+
+        stage("production-bin-build") {
+            // -----------------------------------------------------------------
+            // ¿Por qué este stage existe: TERCER caso del mismo modo de fallo.
+            //
+            // 1. feature-matrix-truth: el gate certificaba código que NUNCA se
+            //    había compilado (una feature no-default).
+            // 2. ci-toolchain-parity: el gate certificaba código compilado con
+            //    OTRO compilador (lint nuevo de clippy 1.99).
+            // 3. este: el gate certificaba código que sólo compilaba bajo el
+            //    harness de test, y el binario de PRODUCCIÓN no compilaba.
+            //
+            // El 2026-10-03, el commit b8ba75ae pasó fmt, clippy
+            // --all-targets y 107/107 tests, y el Sandbox Debt Sentinel lo
+            // rechazó con E0599. Motivo: `mod tests` en
+            // crates/chronos-mcp/src/server.rs NO está gated con
+            // `#[cfg(test)]` (decisión pre-existente explícita, server.rs:4318),
+            // así que se compila en el build normal; rustc elimina las fns
+            // anotadas con `#[test]`/`#[tokio::test]` cuando no hay harness, pero
+            // una `fn` desnuda SÍ se compila. Tres helpers nuevos llamaban a
+            // `SessionExecutionLog::create_for_tests`, que está gated
+            // `#[cfg(any(test, feature = "test-utils"))]`, y en
+            // `cargo build` las dev-dependencies no existen. E0599.
+            //
+            // El comando es LITERALMENTE el de sandbox-debt-sentinel.yml:45. La
+            // política del gate ya decía "si la CI remota corre algo, este gate
+            // lo corre"; el gate incumplia su propia regla por tercera vez, y
+            // esta vez por una línea de diferencia.
+            //
+            // Coste: SIN MEDIR. No se inventa una cifra.
+            // -----------------------------------------------------------------
+            sh("""cd $REPO && echo "== build de produccion (sin harness de test) ==" && cargo build --bin chronos-mcp 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0""")
         }
 
         stage("build-domain") {

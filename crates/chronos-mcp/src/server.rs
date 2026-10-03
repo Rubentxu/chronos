@@ -5945,6 +5945,7 @@ mod tests {
     /// Register a log holding `events`, and return the (log, SessionId) pair
     /// so a test can append more evidence afterwards the way a live probe
     /// keeps doing.
+    #[cfg(test)]
     #[allow(dead_code)]
     fn rec_c1_7_log_with(
         tag: &str,
@@ -5978,6 +5979,7 @@ mod tests {
 
     /// A second, non-noisy event whose `event_id` is above the fixture's, so
     /// it is genuinely new evidence rather than a re-delivery.
+    #[cfg(test)]
     #[allow(dead_code)]
     fn rec_c1_7_later_event(id: u64) -> TraceEvent {
         use chronos_domain::SourceLocation;
@@ -6002,6 +6004,7 @@ mod tests {
     /// buffer. `ProbeService::stop` and `ProbeService::session_snapshot` both
     /// hand `build_and_store_engine` the result of this call, which is why
     /// the drained evidence is provably already in the log.
+    #[cfg(test)]
     #[allow(dead_code)]
     fn rec_c1_7_native_drain(
         log: &chronos_services::session_log::SessionExecutionLog,
