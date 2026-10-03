@@ -540,27 +540,80 @@ con `#[ignore]` y su coste registrado. Es el hogar coherente con la convención 
 
 ---
 
-## 8. Un budget que hoy no puede existir: el p95 de `summarize`/`rollup` a 1M
+## 8. El p95 de `summarize`/`rollup` a 1M — **CERRADO 2026-10-04**
 
-No es un budget pendiente; es un **requisito de diseño** que debe resolverse antes de que ese
-budget pueda fijarse.
+> **El requisito de diseño que esta sección declaraba, y por qué bloqueaba.**
+>
+> No era un budget pendiente; era un **requisito de diseño** que debía resolverse antes de que ese
+> budget pudiera fijarse. Una sola llamada a `summarize` a 1M costaba ~1.223 s, y una distribución p95
+> exige 20 muestras como mínimo:
+>
+> ```
+> 20 × 1.222,7 s ≈ 24.454 s ≈ 6,8 h   por operación
+> 20 × 1.231,8 s ≈ 24.636 s ≈ 6,8 h   por operación
+> ```
+>
+> ~6,8 h por operación, ~13,6 h para ambas, **en un host ocioso y exclusivo**. Budgetizar un p95 que
+> costaría medio día de cómputo por medición es un budget que nadie va a medir, y por tanto un budget
+> que nunca va a fallar: es la forma exacta del defecto que la regla de §0 prohíbe.
+>
+> **Opciones para el gate de R2.1** (a decidir por el operador; este documento no las eligió):
+> reducir el p95 a un tamaño representativo y declarar la extrapolación como no medida; sustituir
+> p95 por una aserción de coste total sobre un único caso de 1M; o arreglar §4.6 primero y
+> re-medir. En las tres, la cifra de 1.223 s seguía siendo el dato que había que tener delante.
 
-Una sola llamada a `summarize` a 1M cuesta ~1.223 s. Una distribución p95 exige 20 muestras como
-mínimo:
+**Se ejecutó la tercera opción, y por eso el bloqueo se disolvió solo.** §4.6 era el clon de la página
+completa detrás de `read_from_seq` (§4.2), y R2.2 lo eliminó; el ledger registra ese cambio como
+**>51x** sobre agregación y dice expresamente que quita un término **cuadrático**, no una constante. La
+cifra de la que dépendía todo el argumento ya no era la cifra del árbol. 20 muestras pasaron de ~6,8 h
+a **minutos**: el bloqueo se levantó porque cambió la cantidad sobre la que estaba calculado, no
+porque se reinterpretara.
 
-```
-20 × 1.222,7 s ≈ 24.454 s ≈ 6,8 h   por operación
-20 × 1.231,8 s ≈ 24.636 s ≈ 6,8 h   por operación
-```
+**Medido el 2026-10-04** sobre una única sesión de 1.000.000 de eventos sembrada con la fábrica de
+producción y agregada por el servidor MCP (mismo camino que §7.3), 20 muestras por operación, con un
+warm-up descartado por operación:
 
-~6,8 h por operación, ~13,6 h para ambas, **en un host ocioso y exclusivo**. Budgetizar un p95
-que costaría medio día de cómputo por medición es un budget que nadie va a medir, y por tanto un
-budget que nunca va a fallar: es la forma exacta del defecto que la regla de §0 prohíbe.
+| Operación | p50 | p95 | max | min | p95/p50 |
+|---|---|---|---|---|---|
+| `summarize` | **11,847 s** | **12,662 s** | 12,708 s | 11,285 s | **1,07** |
+| `rollup` | **11,691 s** | **12,491 s** | 12,817 s | 11,388 s | **1,07** |
 
-**Opciones para el gate de R2.1** (a decidir por el operador; este documento no las elige):
-reducir el p95 a un tamaño representativo y declarar la extrapolación como no medida; sustituir
-p95 por una aserción de coste total sobre un único caso de 1M; o arreglar §4.6 primero y
-re-medir. En las tres, la cifra de 1.223 s sigue siendo el dato que hay que tener delante.
+Seed 34,9 s · 26.971.843 bytes de segmento · 9:43 de reloj de pared en total · RSS pico **602.208 KB**.
+
+**Lo que dice la distribución, que es lo que una muestra única no podía decir:** el coste es
+**estable**, no bimodal. La operación completa abarca ~13 % entre su muestra más rápida y su más
+lenta, y el p95 queda un 7 % por encima de la mediana. §8 no tenía forma de distinguir "lento" de
+"variable", y son problemas distintos: uno es coste, el otro apunta a una ruta que a veces se salta
+trabajo. A 1M, con 40 agregados completos sobre el log entero, la respuesta es lo primero.
+
+**Lo que este budget NO es.** No es un umbral portable: §0 prohíbe fijar una cifra que nadie pueda
+re-medir, y un p95 medido en una máquina compartida es exactamente eso. Es una **caracterización de
+carga en un host concreto a un tamaño concreto**, y la huella del host se imprime en cada ejecución
+(kernel `7.2.7-ogc1.1.fc44.x86_64`, 64 cpus lógicos, build de debug) precisamente para que el número
+no se use fuera del contexto que lo produjo.
+
+**Vive en:** `chronos-sandbox/tests/scale_aggregate_p95_1m.rs`. El p95 de 1M es `#[ignore]` con su
+motivo y su coste, por la misma razón que el resto de los lanes de escala (§7.5). El guard que
+distingue "estable" de "bimodal" (`p95 ≤ 2 × p50`) tiene su propia prueba de no-vacuidad **en el
+lazo normal y sin coste**, porque una aserción cuyo umbral nunca se ha visto rechazar una distribución
+mala es un comentario con un `assert!` pegado:
+`the_steadiness_threshold_separates_steady_from_bimodal` afirma que un conjunto constante la satisface,
+que 2 muestras lentas de 20 la rechazan (p95 = 60 s contra p50 = 12 s), y que **una** muestra extrema
+de 20 no la activa — que es exactamente la propiedad por la que se eligieron 20 muestras, y por la que
+`max` sigue reportándola en vez de esconderla. Su no-vacuidad está medida: haciendo que `rank` devuelva
+siempre la mediana, el test cae en rojo en `the slow mode must be what p95 finds`.
+
+**El umbral de 2× es deliberadamente holgado** frente al 1,07 observado. Su trabajo es detectar una
+ruta distinta — un salto de coste de un orden de magnitud entre llamadas — no acotar el jitter del
+host, y un umbral ajustado a la medición habría sido un generador de flakes que no habría detectado
+nada nuevo.
+
+El fixture —la sesión de 1M, el servidor y las llamadas de agregado— vive ahora en
+`chronos-sandbox/tests/common/`, compartido con `scale_execution_log_1m.rs`: los targets de
+integración no se importan entre sí, así que sin ese módulo el segundo lane habría llevado una segunda
+copia del seeder, y una segunda copia del fixture es una segunda copia de lo que decide si los números
+significan algo.
+
 
 ---
 
@@ -626,12 +679,45 @@ Consecuencia sobre sus propias aserciones: su comentario registra que `summarize
 tanto **las aserciones de total de 1.000.000 para `summarize` y `rollup` no están demostradas en
 verde a 1M**; las de `poll` sí se describen como correctas.
 
+> **CORREGIDO POR MEDICIÓN (2026-10-04).** La conclusión de arriba era correcta cuando se escribió y
+> ya no lo es. El lane se re-ejecutó entero con el código actual y **pasa en verde a 1M**:
+>
+> ```
+> seeded 1000000 events in 35.7s (26971843 segment bytes on disk)
+> summarize answered in 11.5s: {"bucket_count":2,"bucket_size_ns":1000000000, ... "total_events":1000000}
+> rollup answered in 11.9s
+> read path served 1000000 events: PASS   (80.07s)
+> ```
+>
+> Las dos aserciones de total que esta sección declaraba no demostradas **están demostradas**, con
+> ~50× de margen sobre el techo de 600 s. Lo que la sección acertaba —que la grabación in-tree
+> abortada no demostraba nada— sigue siendo cierto, y la razón también: el arreglo de R2.2 es lo
+> que convirtió un agregado de 1.223 s en uno de 11,5 s.
+>
+> **Aviso de referencias.** Las citas `fichero:línea` de esta sección apuntan a la revisión
+> **pre-refactor** de `scale_execution_log_1m.rs`. Ese fichero se movió después sobre el módulo
+> compartido `chronos-sandbox/tests/common/` (fixture de 1M, arranque del servidor y llamadas de
+> agregado), con lo que las líneas se desplazan. El contenido que se cita no cambió: el lane se
+> re-ejecutó tras el refactor y reimprime las mismas salidas. Lo único que dejó de ser cierto son
+> los números de línea, y se conservan como estaban porque reescribirlos apuntaría a un fichero
+> que ya no contiene esas líneas.
+>
+> **Lo que §9.4 sigue señalando, y sigue siendo verdad:** el fallo de D3 **no** se ejercita. El
+> `bucket_size_ns: 1000000000` del propio payload lo demuestra sin depender de la lectura del
+> artículo: 1.000.000 de eventos separados 1.000 ns ocupan exactamente ~1 s, así que el índice
+> absoluto de cubo no pasa de 1 y el crecimiento O(índice absoluto) de D3 no puede aparecer en este
+> test. Siguen abiertas la caracterización de D3 (punto 4 de §10) y la medición con timestamps
+> epoch.
+
+
 ### 9.5 Discrepancia entre las dos grabaciones de 1M — abierta, no resuelta
 
 | Fuente | Fecha | Host | `summarize` a 1M | RSS |
 |---|---|---|---|---|
 | Test in-tree (`scale_execution_log_1m.rs:137-141`) | 2026-10-02 | **con carga ~17** | **pasó de 600 s** (abortado por timeout) | **~1,5 GB** |
 | Medición de §3 | posterior | ocioso | **1.222,7 s** (completado) | ~424 MB / pico ~843 MB |
+| Lane de 1M con C4 en sitio (§10) | 2026-10-03 | ocioso | 11,8 s | 603.292 KB |
+| **Lane de p95, 42 agregados (§8)** | **2026-10-04** | **ocioso, 64 cpus** | **11,85 s (p50)** | **602.208 KB** |
 
 No son necesariamente contradictorias: la grabación in-tree fue abortada a los 600 s, así que su
 duración es una **cota inferior** y su RSS una **muestra a mitad de recorrido**, no un pico. Pero
@@ -639,6 +725,16 @@ el RSS es la única de las dos cifras que **no** se explica por esa asimetría: 
 recorrido es mayor que el pico de 843 MB de la ejecución completa, lo que no encaja con un perfil
 de crecimiento monótono. No elijo ganador. Queda registrado como discrepancia abierta; no afecta
 a ningún contrato de §7, que son todos relativos.
+
+> **Cuarta grabación (2026-10-04): lo que se puede afirmar sin elegir ganador.** Las dos cifras
+> **bajas** —603.292 KB y 602.208 KB, con un 0,18 % de diferencia entre ellas— pertenecen ambas a
+> mediciones que pasan por el read path corregido, y la segunda es un caso **más exigente**: no son
+> dos agregados sino **42** sobre el mismo log de 1M, y el RSS no crece entre ellos (el pico se
+> observó estable en ~949 MB en el proceso servidor durante toda la serie). Las dos cifras **altas**
+> —843 MB y ~1,5 GB— pertenecen a las dos mediciones anteriores al arreglo de §4.6. Eso es una
+> **correlación consistente con la ruta**, no una explicación: estas cuatro mediciones siguen sin
+> tocar la discrepancia real, que es la que hay **entre** las dos cifras altas.
+
 
 ---
 
@@ -667,9 +763,15 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
    medición (2026-10-03).** B2 era el ancla del presupuesto de `poll` esperando el coste sin el
    clon, y ahora hay dos: el de `read_from_seq` (R2.2) y el de `read_after` (C4, §7.4). La cifra
    que faltaba era "qué paga un poll cuando no hay nada nuevo", y esa ya no depende de N.
-3. **Resolver la estrategia de p95** de los agregados a 1M (§8). Bloqueante por coste, no por
-   dificultad: 20 muestras a ~1.223 s son ~6,8 h por operacion. **Sin cambio de estado**: la
-   medicion de una sola muestra que hay ahora abajo no es un p95 y no se presenta como tal.
+3. ~~**Resolver la estrategia de p95** de los agregados a 1M (§8).~~ **CERRADO por medición
+   (2026-10-04).** Era el punto que decía *"bloqueante por coste, no por dificultad: 20 muestras a
+   ~1.223 s son ~6,8 h por operación"*, y la vía de salida que el propio artículo señalaba —"arreglar
+   §4.6 primero y re-medir"— era la que R2.2 había tomado ya. Con `summarize` a 11,85 s (p50), las
+   20 muestras son minutos. **p50 11,847 s · p95 12,662 s · p95/p50 = 1,07** para `summarize`, y
+   **11,691 s / 12,491 s / 1,07** para `rollup`: el coste es estable, no bimodal, que era la
+   pregunta que una muestra única no podía responder. Detalle, no-vacuidad del guard y qué **no** es
+   este budget en §8.
+
 4. **Caracterizar D3**: una medicion que use timestamps epoch, que la actual no ejercita (§9.4).
 5. **Resolver la discrepancia de RSS** entre las dos grabaciones (§9.5). Se deja sin elegir
    ganador a proposito. **Tercera grabación el 2026-10-03** sobre el lane de 1M con C4 en sitio:
@@ -706,6 +808,10 @@ Dos cosas dice esto y una no:
   `read_from_seq`. Lo que arregla es el camino de **consumidor**, el de `read_after`.
 - **No dice nada del p95.** Una muestra no es una distribucion, y §8 sigue_blocked por coste. La
   cifra de 11,8 s es un punto, no un percentil, y no se usa como si lo fuera.
+  **SUPERADO (2026-10-04): §8 está cerrado** y la regla que enuncia este punto sigue en pie.** El
+  p95 se midió aparte —20 muestras por operación en `scale_aggregate_p95_1m.rs`, no leídas de esta
+  cifra— y por eso los dos datos pueden convivir sin contradecirse: 11,8 s sigue siendo un punto, y
+  el p95 es p50 11,847 s / p95 12,662 s. Ver §8.
 
 **Hallazgos posteriores que este documento no recogia:**
 
