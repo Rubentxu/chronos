@@ -665,6 +665,26 @@ esa extensión es trabajo pendiente, no una mentira documental.
 Estado: `ResourceLimits` se instancia sólo en `server.rs:6744` y `server.rs:6751`, ambos `#[test]`
 dentro de `mod tests`. Cero enforcement en el read path.
 
+> **SUPERADO (2026-10-04) — el segundo párrafo era verdad, el primero ya no.** Que
+> `ResourceLimits` se declare en dos `#[test]` de `server.rs` sigue siendo cierto, pero dejó de
+> implicar lo que implicaba: desde R2.3 el tipo vive en `chronos-services::read_budget` y
+> **`ReadPathService::new` lo obtiene con `ResourceLimits::default()`** (`read_path.rs:157`), o sea
+> que producción recibe el techo D2 sin configurar nada. El "cero enforcement" de la última frase
+> era la afirmación correcta en su momento y es falsa hoy: el enforcement existe y está probado
+> modo por modo. `server.rs` mantiene el `pub use` (`:132`) para que
+> `chronos_mcp::server::ResourceLimits` siga resolviendo, igual que con `tools_params`.
+>
+> **El detalle que este artículo no recogía, y que tiene consecuencia operativa.** El default es
+> `max_events: 1_000_000` y `charge_page` corta con `>` estricto (`read_budget.rs:238`). Luego el
+> techo de eventos cae **exactamente** sobre el objetivo de 1M de R2.1, sin holgura por encima: una
+> sesión de 1.000.000 se agrega entera, y una de 1.000.001 **no** — se detiene y ofrece su ancla de
+> reanudación. No es un defecto: la parada es honesta y reanudable, que es exactamente el contrato
+> de D2. Pero significa que "1M eventos dentro de budget" es cierto **en el borde**, no más allá, y
+> que un lector que lo lea como "1M o más" se equivoca. Medido el 2026-10-04: los 42 agregados
+> completos del lane de p95 (§8) corrieron sobre una sesión de exactamente 1.000.000 y ninguno
+> tocó el techo, lo que confirma el borde por el lado bueno y deja el otro sin medir.
+
+
 ### 9.4 La caracterización in-tree de 1M no ejercita el fallo de D3
 
 `scale_execution_log_1m.rs` siembra timestamps monotónicos desde ~0 hasta ~1 s
@@ -754,11 +774,53 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
 - **(8) en parte — los tests de contrato C1 y C2.** Escritos y verdes. C1 a 1M queda en target
   propio con `#[ignore]` y fuera del lazo rapido; C2 y el RED discriminante de forma estan en el
   lazo normal y cuestan menos de un segundo entre los dos. C3 (agregados) sigue pendiente.
+  **Actualizado 2026-10-03: C3 está CERRADO** (punto 6 de esta misma lista, commit `12659760`).
+  La frase se conserva porque el punto 8 enumera el estado tal como estaba en la redacción; el
+  cierre de C3 es el punto 6, no el 8.
 
 **Abiertos:**
 
-1. **Mecanismo para D2**: enforcement de `timeout_secs = 60` en las operaciones del read path
-   (§5 D2, §9.3). Hoy no existe. Sigue siendo el primer pendiente.
+1. ~~**Mecanismo para D2**: enforcement de `timeout_secs = 60` en las operaciones del read path
+   (§5 D2, §9.3). **Hoy no existe. Sigue siendo el primer pendiente.**~~ **SUPERADO (2026-10-04) —
+   verificado en código, no reescrito por cortesía.** Esta línea se redactó sobre
+   `main @ 3aa99c0b`, **antes** de R2.3, y su premisa dejó de regir. Lo verificado hoy:
+   - `crates/chronos-services/src/read_budget.rs` define `ReadBudget`, `BudgetExceeded`,
+     `BudgetLimit` y `ResourceLimits`; `ResourceLimits::default()` es exactamente
+     `{ max_events: 1_000_000, timeout_secs: 60 }`, o sea **el techo que D2 decidió**.
+   - El presupuesto se acuña en los tres modos que leen páginas: `read_path.rs:229` (`poll`),
+     `read_path.rs:268` (`summarize`), y los helpers de agregado de `virtualization.rs:318` y
+     `:387`, que reciben `&mut ReadBudget` como **parámetro**, de modo que una firma nueva no
+     puede saltárselo sin dejar de compilar.
+   - `ReadPathService::new` (`read_path.rs:157`) construye con `ResourceLimits::default()`, y
+     `limits()` (`read_path.rs:178`) existe *para* que un test lo lea: el accessor se añadió con
+     ese propósito y el test llegó después.
+   - Cobertura por modo, cada uno con su no-vacuidad: `poll`
+     (`d2_poll_under_default_limits_still_serves_the_full_batch`,
+     `d2_poll_clamps_a_request_to_the_event_ceiling`), `summarize`
+     (`d2_summarize_stops_at_its_deadline_instead_of_running_on`,
+     `d2_the_event_ceiling_stops_the_walk_when_the_clock_is_generous`,
+     `d2_a_ceiling_stop_is_not_an_empty_result`,
+     `d2_the_ceiling_message_is_usable_by_an_agent`,
+     **`d2_the_production_service_carries_the_decided_ceiling`**), `rollup`
+     (`d2_rollup_stops_at_its_deadline_instead_of_running_on`) y el cuarto modo, que **no** lee
+     páginas y por eso debe seguir respondiendo sin presupuesto (`d2_causality_status_scans_no_pages`).
+   - El test de AC6 lleva la no-vacuidad dentro: el **mismo** constructor sobre el **mismo** log,
+     con el reloj reconfigurado a cero, se detiene. El valor que el servicio guarda es
+     demostrablemente el valor que el servicio aplica, así que el `60` de la primera mitad no es
+     texto inerte.
+   - Y el borde está pineado con su semántica exacta: `charge_page` corta con `>` estricto
+     (`read_budget.rs:238`), y `the_event_ceiling_trips_independently_of_the_clock` lo afirma
+     (`charge_page(100, 100)` dentro; `charge_page(1, 101)` fuera).
+
+   **Lo que este bloque NO encontró, y conviene decir con la misma claridad:** se buscó un hueco
+   AC6 —"el doc afirma que ningún camino de producción llega al bucle sin presupuesto y nada lo
+   prueba"— y **no existe**. El test existe, con nombre distinto al del criterio que lo nombra, y
+   cubre además el modo que no lee páginas. Anotado porque el intento fallido es la clase de
+   resultado que no se registra y luego se vuelve a intentar.
+
+   **Consecuencia práctica:** este punto no es trabajo pendiente. Quien lo retome no tiene que
+   construir nada; si "implementa" D2 por encima de lo que ya existe, añade un segundo techo
+   sobre un mecanismo que ya funciona y ya está probado.
 2. ~~**Anclar B2** una vez observado el coste de `poll` sin el clon (§6.2).~~ **CERRADO por
    medición (2026-10-03).** B2 era el ancla del presupuesto de `poll` esperando el coste sin el
    clon, y ahora hay dos: el de `read_from_seq` (R2.2) y el de `read_after` (C4, §7.4). La cifra
