@@ -336,9 +336,16 @@ fn gap_replaying_preserves_consumer_cursor_view() {
             ..Default::default()
         })
         .unwrap();
+    // The gap must occupy a seq the session has NOT written. A gap declares
+    // evidence that was lost, so declaring a seq that already holds a record
+    // is contradictory evidence, and `record_gap` refuses it at the write
+    // boundary: the resulting segment would break replay's chaining and could
+    // never be reopened. Use the next unallocated seq, which is what the real
+    // overflow path does via `allocate_seq_for_gap`.
+    let gap_seq = seq.next();
     log.record_gap(chronos_log::Gap::new(
-        seq,
-        seq,
+        gap_seq,
+        gap_seq,
         GapReason::ProcessDetached,
         "test",
     ))

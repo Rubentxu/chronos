@@ -45,6 +45,20 @@ impl RecordEntry {
             RecordEntry::Gap(g) => g.last_missing,
         }
     }
+
+    /// The earliest seq this entry occupies. A record occupies exactly one;
+    /// a gap occupies its whole declared range.
+    fn span_first(&self) -> EventSeq {
+        match self {
+            RecordEntry::Record(r) => r.seq,
+            RecordEntry::Gap(g) => g.first_missing,
+        }
+    }
+
+    /// The latest seq this entry occupies.
+    fn span_last(&self) -> EventSeq {
+        self.reach()
+    }
 }
 
 /// The per-session entry list, plus the one fact `read_from_seq` needs in
@@ -105,6 +119,34 @@ impl SessionEntries {
             "seeked a list already known to be out of reach order"
         );
         self.entries.partition_point(|e| e.reach() < from_seq)
+    }
+
+    /// Whether any entry already in the list occupies any seq in
+    /// `[first, last]`. Used by `record_gap` to refuse a gap that would
+    /// contradict evidence the session already holds.
+    ///
+    /// A `Record` occupies the single seq `r.seq`; a `Gap` occupies its whole
+    /// `[first_missing, last_missing]`. Two closed ranges intersect when
+    /// `a.first <= b.last && b.first <= a.last`, so a gap that touches an
+    /// existing entry at either end counts as an overlap — a gap and a record
+    /// sharing one seq is exactly as contradictory as sharing many.
+    ///
+    /// Cost is `O(log n + k)` while the list is in reach order: the seek
+    /// lands on the first entry that can reach `first`, and the scan stops at
+    /// the first entry that starts after `last`. `k` is the number of entries
+    /// the proposed gap would touch, which is **zero** for a legitimate gap —
+    /// so the common case is a binary search and nothing else. A disordered
+    /// list falls back to a full scan, because there is nothing to seek into.
+    fn intersects(&self, first: EventSeq, last: EventSeq) -> bool {
+        let start = if self.reach_disordered {
+            0
+        } else {
+            self.first_reachable(first)
+        };
+        self.entries[start..]
+            .iter()
+            .take_while(|e| e.span_first() <= last)
+            .any(|e| e.span_last() >= first)
     }
 }
 
@@ -499,6 +541,40 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         }
         if gap.last_missing >= *allocator {
             *allocator = gap.last_missing.next();
+        }
+
+        // A gap declares evidence that WAS LOST. If the range it declares lost
+        // is already occupied — by a record, or by an earlier gap — the log is
+        // now asserting two contradictory things about the same seq, and that
+        // state is not recoverable: `build_replay_plan` walks the entries in
+        // order and requires each to start where the previous ended, so a
+        // revisiting entry breaks the chaining and the segment can never be
+        // reopened. A log you can write to and then cannot open is worse than
+        // one that refuses the write, so the refusal happens here, at the
+        // boundary, while the caller still gets a useful error.
+        //
+        // This is checked against the real entries, NOT against the allocator.
+        // "Below the allocator" is not a legitimate category: every production
+        // path keeps the entries tiling the seq space (`append` takes the next
+        // seq, the overflow path reserves its own with `allocate_seq_for_gap`),
+        // so there is no real hole underneath — a gap down there can only step
+        // on a record or on another gap, and both make the segment unreadable.
+        // Asking the entries is therefore both the correct question and the one
+        // that stays right if tiling is ever violated.
+        {
+            let session = records.get(&session_id);
+            let conflicts =
+                session.is_some_and(|s| s.intersects(gap.first_missing, gap.last_missing));
+            if conflicts {
+                return Err(LogError::InvalidGap {
+                    reason: format!(
+                        "range [{}, {}] overlaps evidence the session already holds: \
+                         a gap declaring seqs that are present is contradictory, and \
+                         the resulting segment cannot be reopened",
+                        gap.first_missing.0, gap.last_missing.0
+                    ),
+                });
+            }
         }
 
         records
@@ -1362,6 +1438,32 @@ mod c1_c2_read_from_seq {
         (log, s)
     }
 
+    /// Build a reach-disordered entry list **without** going through
+    /// `record_gap`.
+    ///
+    /// `record_gap` now refuses any gap that overlaps evidence the session
+    /// already holds, so the reach-disordered state is no longer constructible
+    /// through the public API: `append` takes the next seq and stays ordered,
+    /// `replay_record` `assert!`s before it can push out of order, and
+    /// `record_gap` refuses. That is the correct outcome — the state was
+    /// evidence that could not be reopened.
+    ///
+    /// So `SessionEntries::reach_disordered` and the reader's scan fallback are
+    /// now defence in depth with no current trigger. They stay, and stay
+    /// tested, because the difference between them is a correct page and a
+    /// silently wrong one if any future path ever produces the state, and
+    /// because "no current trigger" is a statement about today, not a proof
+    /// about tomorrow. This seam is how the tests reach it, and it bypasses the
+    /// guard on purpose: what is under test here is the *reader*, not the API.
+    fn force_entry(log: &InMemoryExecutionLog, s: &SessionId, entry: RecordEntry) {
+        log.records
+            .lock()
+            .expect("records lock poisoned")
+            .entry(s.clone())
+            .or_default()
+            .push(entry);
+    }
+
     /// The overflow path's shape: `SegmentedExecutionLog::append` reserves the
     /// seq with `allocate_seq_for_gap` and records a single-seq gap at it, so
     /// the gap is written at the allocator and the next append continues after
@@ -1436,16 +1538,16 @@ mod c1_c2_read_from_seq {
         for _ in 0..10 {
             log.append_raw(s.clone(), 0, "ev").unwrap();
         }
-        log.record_gap(
-            s.clone(),
-            Gap::new(
+        force_entry(
+            &log,
+            &s,
+            RecordEntry::Gap(Gap::new(
                 EventSeq::new(3),
                 EventSeq::new(5),
                 GapReason::KernelRingOverflow,
                 "late",
-            ),
-        )
-        .expect("record_gap still accepts a gap below the allocator");
+            )),
+        );
 
         let reaches = reaches(&log, &s);
         assert_eq!(
@@ -1469,16 +1571,16 @@ mod c1_c2_read_from_seq {
         for _ in 0..10 {
             log.append_raw(s.clone(), 0, "ev").unwrap();
         }
-        log.record_gap(
-            s.clone(),
-            Gap::new(
+        force_entry(
+            &log,
+            &s,
+            RecordEntry::Gap(Gap::new(
                 EventSeq::new(3),
                 EventSeq::new(5),
                 GapReason::KernelRingOverflow,
                 "late",
-            ),
-        )
-        .unwrap();
+            )),
+        );
         log.append_raw(s.clone(), 0, "ev").unwrap();
         assert_eq!(reaches(&log, &s).last(), Some(&10));
         assert!(
@@ -1541,16 +1643,16 @@ mod c1_c2_read_from_seq {
         for _ in 0..10 {
             log.append_raw(s.clone(), 0, "ev").unwrap();
         }
-        log.record_gap(
-            s.clone(),
-            Gap::new(
+        force_entry(
+            &log,
+            &s,
+            RecordEntry::Gap(Gap::new(
                 EventSeq::new(3),
                 EventSeq::new(5),
                 GapReason::KernelRingOverflow,
                 "late",
-            ),
-        )
-        .unwrap();
+            )),
+        );
         assert!(!is_reach_ordered(&log, &s));
 
         let entries = entries_of(&log, &s);
@@ -1596,16 +1698,16 @@ mod c1_c2_read_from_seq {
             log.append_raw(s.clone(), 0, "ev").unwrap();
         }
         for _ in 0..2 {
-            log.record_gap(
-                s.clone(),
-                Gap::new(
+            force_entry(
+                &log,
+                &s,
+                RecordEntry::Gap(Gap::new(
                     EventSeq::ZERO,
                     EventSeq::new(2),
                     GapReason::KernelRingOverflow,
                     "late",
-                ),
-            )
-            .unwrap();
+                )),
+            );
         }
         assert_eq!(reaches(&log, &s), vec![0, 1, 2, 3, 4, 2, 2]);
         assert!(!is_reach_ordered(&log, &s));
@@ -1637,18 +1739,21 @@ mod c1_c2_read_from_seq {
                     let mut ok = true;
                     for g in [g1, g2] {
                         let hi = (g + 2).min(n_appends);
-                        if log
-                            .record_gap(
-                                s.clone(),
-                                Gap::new(
-                                    EventSeq::new(g),
-                                    EventSeq::new(hi),
-                                    GapReason::KernelRingOverflow,
-                                    "grid",
-                                ),
-                            )
-                            .is_err()
-                        {
+                        // Bypasses `record_gap` on purpose: this grid exists to
+                        // compare a seek against a full walk on lists that are
+                        // out of reach order, and those are exactly the lists the
+                        // public `record_gap` now refuses to build.
+                        force_entry(
+                            &log,
+                            &s,
+                            RecordEntry::Gap(Gap::new(
+                                EventSeq::new(g),
+                                EventSeq::new(hi),
+                                GapReason::KernelRingOverflow,
+                                "grid",
+                            )),
+                        );
+                        if false {
                             ok = false;
                             break;
                         }
