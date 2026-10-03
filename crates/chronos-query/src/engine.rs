@@ -20,8 +20,34 @@ pub use crate::expr_eval::{EvalError, ExprEvaluator};
 
 /// The query engine — holds trace data and indices for fast queries.
 pub struct QueryEngine {
-    /// All events in the trace (ordered by event_id).
+    /// All events in the trace, in **log/drain order** — the order in which
+    /// they arrived, not sorted by `event_id`.
+    ///
+    /// That order is canonical. `chronos_services::projection::build_engine`
+    /// hands the engine the vector it read back from the execution log, and
+    /// the services layer derives causal edges from that vector order. This
+    /// field used to re-sort on every `merge`, which made a merge-grown
+    /// engine disagree with a rebuilt one for the same log (REC-C1.5);
+    /// ordering is the services layer's decision, not this one.
     events: Vec<TraceEvent>,
+    /// `event_id` → position in `events`, sorted by `(event_id, position)`.
+    ///
+    /// Lookups binary-search this instead of `events`, so a lookup is
+    /// correct whatever order `events` is in and `events` never has to be
+    /// sorted to be searchable. Kept in step with `events` by every
+    /// constructor and by `merge`.
+    ///
+    /// Cost, measured at 1M events: 16.0 B/event (`size_of::<(u64, u32)>()`
+    /// is padded to 16 by alignment, against 12 B of payload), ~16 MB total.
+    /// A `HashMap<u64, u32>` of the same 1M entries measured 31.2 B/event,
+    /// so this is ~2x cheaper — and it is the structure the memory-bounded
+    /// 1M-event sessions have to afford.
+    ///
+    /// The `u32` position caps an engine at `u32::MAX` events. That is far
+    /// past the 1M-event target, and the cap is a truncation, not a wrap,
+    /// because positions come from `enumerate` on a `Vec` that cannot
+    /// exceed `isize::MAX` elements in the first place.
+    event_id_lookup: Vec<(u64, u32)>,
     /// Shadow index (address → event IDs).
     shadow_index: Option<ShadowIndex>,
     /// Temporal index (timestamp → event IDs).
@@ -70,9 +96,25 @@ pub struct FunctionSaliencyScore {
 }
 
 impl QueryEngine {
+    /// Build the `event_id` → position lookup for `events`.
+    ///
+    /// Sorted by `(event_id, position)`. Sorting the position as the
+    /// tie-break is what makes a duplicated `event_id` resolve to its
+    /// lowest position; see [`Self::get_event_by_id`].
+    fn build_event_id_lookup(events: &[TraceEvent]) -> Vec<(u64, u32)> {
+        let mut lookup: Vec<(u64, u32)> = events
+            .iter()
+            .enumerate()
+            .map(|(pos, e)| (e.event_id, pos as u32))
+            .collect();
+        lookup.sort_unstable_by_key(|(event_id, pos)| (*event_id, *pos));
+        lookup
+    }
+
     /// Create a new query engine from a vec of events (no indices).
     pub fn new(events: Vec<TraceEvent>) -> Self {
         Self {
+            event_id_lookup: Self::build_event_id_lookup(&events),
             events,
             shadow_index: None,
             temporal_index: None,
@@ -88,6 +130,7 @@ impl QueryEngine {
         temporal_index: TemporalIndex,
     ) -> Self {
         Self {
+            event_id_lookup: Self::build_event_id_lookup(&events),
             events,
             shadow_index: Some(shadow_index),
             temporal_index: Some(temporal_index),
@@ -104,6 +147,7 @@ impl QueryEngine {
         causality_index: CausalityIndex,
     ) -> Self {
         Self {
+            event_id_lookup: Self::build_event_id_lookup(&events),
             events,
             shadow_index: Some(shadow_index),
             temporal_index: Some(temporal_index),
@@ -151,11 +195,11 @@ impl QueryEngine {
     /// Merge new events into the engine and rebuild all indices.
     ///
     /// Events whose `event_id` already exists in the engine are
-    /// deduplicated (the existing entry wins). New events may carry ids
-    /// below the current maximum; the merged set is left sorted in
-    /// ascending `event_id` order, which `get_event_by_id` requires. The
-    /// shadow, temporal, causality, and performance indices are fully
-    /// rebuilt so queries reflect the union of old + new events.
+    /// deduplicated (the existing entry wins). New events are **appended**:
+    /// the resulting vector stays in the log/drain order it arrived in, and
+    /// an incoming id may land below the current maximum. The shadow,
+    /// temporal, causality, and performance indices are fully rebuilt so
+    /// queries reflect the union of old + new events.
     pub fn merge(&mut self, new_events: Vec<TraceEvent>) {
         if new_events.is_empty() {
             return;
@@ -167,23 +211,21 @@ impl QueryEngine {
                 .into_iter()
                 .filter(|e| existing_ids.insert(e.event_id)),
         );
-        // The extend above is a pure append, so the order is broken
-        // whenever an incoming id is not greater than the current
-        // maximum. Unsorted, `get_event_by_id`'s binary search
-        // returns None for events that exist — no panic, just a missing
-        // answer. Re-sort before rebuilding the indices (which scan the
-        // vec linearly and are therefore order-independent).
+        // No sort. Log/drain order is canonical for `events`, and this used
+        // to contradict a decision already made elsewhere:
+        // `chronos_services::projection::build_engine` feeds an engine
+        // straight from the vector it read back from the execution log,
+        // without sorting, because the services layer derives causal edges
+        // from the vector order. Sorting here meant `merge` and `rebuild`
+        // answered the same log in different orders — REC-C1.5 — so the
+        // next time either path ran produced a different projection of the
+        // same evidence.
         //
-        // An earlier version of this comment justified the sort with a
-        // "second capture run reusing the same session id re-mints ids
-        // from 1". That scenario is not reachable: every capture run
-        // mints a fresh session UUID, so two runs never share a session
-        // and their id spaces cannot overlap. The sort stays — it is
-        // still the invariant `get_event_by_id` requires, and callers can
-        // reach this method from outside — but the stated reason was
-        // wrong, and a comment that names an impossible cause stops being
-        // checked.
-        self.events.sort_by_key(|e| e.event_id);
+        // Nothing needed `events` sorted any more: `get_event_by_id`
+        // binary-searches `event_id_lookup`, which is order-independent by
+        // construction. The indices below scan the vec linearly and were
+        // always order-independent.
+        self.event_id_lookup = Self::build_event_id_lookup(&self.events);
         self.rebuild_indices();
     }
 
@@ -197,17 +239,59 @@ impl QueryEngine {
         self.performance_index = Some(indices.performance);
     }
 
-    /// Get an event by its ID using binary search.
+    /// Get an event by its ID, in `O(log n)`, independently of event order.
     ///
-    /// Requires events to be sorted by event_id. `merge` restores that
-    /// order after every merge, so an engine grown through it is always
-    /// sorted; an engine built by `new`/`with_indices` inherits the
-    /// caller's order.
+    /// Searches [`Self::event_id_lookup`] rather than `events`, so this is
+    /// correct for any engine — including a log-derived one, whose ids are
+    /// not ascending because frame events minted from a timestamp
+    /// (`event_id == entry_monotonic_ns`) and flushed at the tail of the
+    /// log on process kill arrive with ids that descend again.
+    ///
+    /// The previous implementation ran `binary_search_by_key` over
+    /// `events` itself, which is only valid on a sorted slice. On a
+    /// log-derived engine it silently returned `None` for events that were
+    /// present (and could return the wrong element), which ADR-0004 ("No
+    /// Silent Lies") exists to forbid.
+    ///
+    /// # Duplicated `event_id`
+    ///
+    /// **`event_id` is not unique across capture sources.** Adapters mint
+    /// `next_event_id` independently — the Python adapter, the browser
+    /// adapter, and the eBPF ring-buffer producer each keep their own
+    /// counter — so a session that mixes two sources can carry the same id
+    /// twice. This is **recorded debt, not a fixed bug**: the engine
+    /// neither rejects nor merges such a pair.
+    ///
+    /// The rule here is deterministic: a duplicated id resolves to the
+    /// **lowest position in `events`**, i.e. the first occurrence in log
+    /// order. `event_id_lookup` is sorted by `(event_id, position)` and the
+    /// lookup takes the first entry not below the id, so the earliest
+    /// occurrence always wins. The old binary search returned an arbitrary
+    /// match, so this is a strict improvement — but the collision is still
+    /// wrong data, and a caller that needs the other occurrence has no
+    /// public way to reach it. Pinned by
+    /// `duplicated_event_id_resolves_to_the_first_occurrence_in_log_order`.
     pub fn get_event_by_id(&self, event_id: u64) -> Option<&TraceEvent> {
-        self.events
-            .binary_search_by_key(&event_id, |e| e.event_id)
-            .ok()
-            .map(|i| &self.events[i])
+        self.position_of_event_id(event_id)
+            .map(|pos| &self.events[pos])
+    }
+
+    /// Position in `events` of the event a lookup for `event_id` resolves to.
+    ///
+    /// `None` iff no event carries that id. Shared by [`Self::get_event_by_id`]
+    /// and by callers that need the log position of a resolved event, which
+    /// the index already knows and a scan would have to rediscover.
+    fn position_of_event_id(&self, event_id: u64) -> Option<usize> {
+        // `partition_point` is the first entry not below `event_id`. Because
+        // the lookup is sorted by `(event_id, position)`, that is the lowest
+        // position carrying the id when there is one — the duplicate rule.
+        let slot = self
+            .event_id_lookup
+            .partition_point(|(id, _)| *id < event_id);
+        self.event_id_lookup
+            .get(slot)
+            .filter(|(id, _)| *id == event_id)
+            .map(|(_, pos)| *pos as usize)
     }
 
     /// Execute a query and return matching events with pagination.
@@ -395,40 +479,44 @@ impl QueryEngine {
     /// Uses FunctionEntry/FunctionExit events to build a virtual stack.
     /// Only considers events from the same thread as the target event.
     ///
+    /// The walk covers the target event and everything before it **in log
+    /// order** — the canonical order of `events`. For an engine whose ids
+    /// happen to ascend, that is the same set of events a
+    /// "stop at `event_id > at_event_id`" walk would cover, so this is not a
+    /// behaviour change for those; for a log-derived engine it is the
+    /// difference between a stack and a truncated one, because an event
+    /// with a higher id can sit earlier in the log.
+    ///
     /// # When the event cannot be resolved
     ///
     /// Returns no frames when `at_event_id` does not resolve to an event of
     /// this engine, and an empty result then means "the thread is unknown",
     /// not "the stack was empty at that point".
     ///
-    /// Resolution goes through [`Self::get_event_by_id`], a binary search that
-    /// requires the log to be sorted by `event_id`. An unsorted log can miss an
-    /// event that is really present: frame events minted from a timestamp
-    /// (`event_id == entry_monotonic_ns`) and flushed at the tail of the log
-    /// on process kill arrive with ids that descend again, and a log built by
-    /// `new`/`with_indices` keeps the caller's order. The thread to walk is
-    /// unknown in that case, and this used to answer with thread 1 -- a
-    /// well-formed stack belonging to a different thread, indistinguishable
-    /// from a correct answer. Declining is the only answer that cannot be
-    /// wrong; sorting the log is a separate decision owned by the services
-    /// layer, which derives causal edges from the vector order.
+    /// Resolution goes through [`Self::get_event_by_id`], which is
+    /// order-independent. It used to be a binary search over a vector that
+    /// was not required to be sorted, so an id that *was* present could fail
+    /// to resolve; the thread to walk was then unknown, and this answered
+    /// with thread 1 — a well-formed stack belonging to a different thread,
+    /// indistinguishable from a correct answer. Declining is still the only
+    /// answer that cannot be wrong, and it is still what happens when the
+    /// id is genuinely absent: the lookup cannot fail to resolve a present
+    /// event any more, so `None` now means "not in this engine".
     pub fn reconstruct_call_stack(&self, at_event_id: u64) -> Vec<StackFrame> {
-        // Find the thread_id of the target event. There is no safe default
-        // thread: guessing one reports another thread's frames as if they were
-        // the answer to this query.
-        let target_thread = match self.get_event_by_id(at_event_id) {
-            Some(e) => e.thread_id,
+        // Resolve the target to a position once: it gives both the thread to
+        // walk and the end of the walk. There is no safe default thread —
+        // guessing one reports another thread's frames as if they were the
+        // answer to this query.
+        let target_pos = match self.position_of_event_id(at_event_id) {
+            Some(pos) => pos,
             None => return Vec::new(),
         };
+        let target_thread = self.events[target_pos].thread_id;
 
         let mut stack: Vec<StackFrame> = Vec::new();
         let mut depth: u32 = 0;
 
-        for event in &self.events {
-            if event.event_id > at_event_id {
-                break;
-            }
-
+        for event in &self.events[..=target_pos] {
             // Only track events from the target thread
             if event.thread_id != target_thread {
                 continue;
@@ -562,12 +650,12 @@ impl QueryEngine {
             .collect()
     }
 
-    /// Get the first event (by event_id).
+    /// Get the first event (first in log order, not lowest `event_id`).
     pub fn first_event(&self) -> Option<&TraceEvent> {
         self.events.first()
     }
 
-    /// Get the last event (by event_id).
+    /// Get the last event (last in log order, not highest `event_id`).
     pub fn last_event(&self) -> Option<&TraceEvent> {
         self.events.last()
     }
@@ -1216,20 +1304,34 @@ mod tests {
         assert!(stack.is_empty());
     }
 
-    /// Regression: an event id that IS in the log can still be unresolvable,
-    /// because `get_event_by_id` binary-searches a vector that is not required
-    /// to be sorted. The old code answered with thread 1, so the caller got a
-    /// complete, plausible call stack belonging to a different thread -- the
-    /// worst shape for a consumer, indistinguishable from a correct answer.
+    /// Two contracts on the same non-ascending log, one per half of what this
+    /// test used to assert.
+    ///
+    /// The old test asserted that `get_event_by_id(20)` returns `None` on an
+    /// unsorted log — that is, it asserted the *bug* was correct behaviour,
+    /// because the old binary search over an unsorted vector genuinely failed
+    /// there. It was a characterisation of the defect, not a specification.
+    /// With the order-independent lookup the premise is inverted: id 20 is
+    /// present, so it resolves, and the engine must answer with thread 2's
+    /// own frame.
+    ///
+    /// What the test was really written to protect is still protected, and is
+    /// now asserted in the only form it can be: **an event that is genuinely
+    /// absent must not be answered with some other thread's stack.** The old
+    /// code had no such guard at all — it defaulted to thread 1, so an
+    /// unresolvable id produced a complete, plausible call stack belonging to
+    /// a different thread, the worst shape for a consumer because it is
+    /// indistinguishable from a correct answer. Id 21 below is absent, and
+    /// thread 1 is two frames deep by then, so a resurrected default would
+    /// answer with two wrong frames rather than accidentally agreeing.
     ///
     /// Frame events minted from a timestamp (`event_id == entry_monotonic_ns`)
     /// and flushed at the tail of the log on process kill arrive with ids that
-    /// descend again, which is where the unsorted log comes from.
+    /// descend again, which is where a non-ascending log comes from.
     #[test]
-    fn test_reconstruct_call_stack_unresolvable_id_does_not_borrow_thread_one() {
+    fn test_reconstruct_call_stack_resolves_non_ascending_log_and_never_borrows_another_thread() {
         // Ids 5, 20, 15, 12, 10: the target (id 20, thread 2) is followed by a
-        // strictly descending tail, so the vector is unsorted and the binary
-        // search never compares against index 1.
+        // strictly descending tail, so the vector is not ascending by id.
         let engine = QueryEngine::new(vec![
             make_event(5, 100, 1, EventType::FunctionEntry, "t1_outer", 0x1000),
             make_event(20, 200, 2, EventType::FunctionEntry, "t2_target", 0x4000),
@@ -1238,39 +1340,92 @@ mod tests {
             make_event(10, 500, 1, EventType::Custom, "t1_inner", 0x2000),
         ]);
 
-        // Premise 1: the target event really is in this log.
+        // Premise: the target event really is in this log.
         assert!(
             engine.events().iter().any(|e| e.event_id == 20),
             "the target event must exist, or this scenario proves nothing"
         );
-        // Premise 2: the binary search cannot see it. Thread 1 is two frames
-        // deep at id 20, so the old fallback answered with two wrong frames
-        // rather than accidentally agreeing with the honest answer.
-        assert!(
-            engine.get_event_by_id(20).is_none(),
-            "an unsorted log is the premise of this test"
+
+        // Inverted half: the lookup no longer depends on the vector being
+        // ascending, so a present id resolves.
+        let resolved = engine.get_event_by_id(20);
+        assert_eq!(
+            resolved.map(|e| e.thread_id),
+            Some(2),
+            "a present id must resolve on a non-ascending log; the order-independent \
+             lookup does not require ascending ids"
         );
 
-        // Same log, sorted: now the query is answerable and does answer, with
-        // the open thread 2 frame. Without this, "returns no frames" could
-        // pass by returning no frames for every input.
+        let stack = engine.reconstruct_call_stack(20);
+        let frames: Vec<&str> = stack.iter().map(|f| f.function.as_str()).collect();
+        assert_eq!(
+            frames,
+            vec!["t2_target"],
+            "the target thread's own open frame, and nothing from thread 1"
+        );
+
+        // Control: the same events, sorted, must answer identically. This is
+        // what "returns the right frames" used to be checked against, and it
+        // now also pins that the log-order walk agrees with the id-order walk
+        // when ids do ascend.
         let mut sorted_events = engine.events().to_vec();
         sorted_events.sort_by_key(|e| e.event_id);
         let sorted_stack = QueryEngine::new(sorted_events).reconstruct_call_stack(20);
         let sorted_frames: Vec<&str> = sorted_stack.iter().map(|f| f.function.as_str()).collect();
         assert_eq!(
-            sorted_frames,
-            vec!["t2_target"],
-            "the sorted log must still answer, with the target thread's frame"
+            frames, sorted_frames,
+            "the same log must reconstruct the same stack whether or not it ascends by id"
         );
 
-        let stack = engine.reconstruct_call_stack(20);
-        let frames: Vec<&str> = stack.iter().map(|f| f.function.as_str()).collect();
+        // Preserved half: a genuinely absent id still declines. Without this,
+        // "answers correctly" could pass by a lookup that never declines.
+        let absent = engine.reconstruct_call_stack(21);
         assert!(
-            frames.is_empty(),
-            "an unresolvable event id must not borrow another thread's stack; \
-             got {frames:?} (thread 1) for an event on thread 2: {stack:?}"
+            absent.is_empty(),
+            "an event id absent from the engine must not borrow another thread's stack; \
+             got {absent:?} for id 21, which is not in the log at all"
         );
+    }
+
+    /// The walk is bounded by the target's position in the log, not by
+    /// `event_id > at_event_id`.
+    ///
+    /// A log-derived engine is in log order, and an event with a higher id can
+    /// sit earlier in it. A walk that stopped at the first id above the target
+    /// would break on the very first event here and report an empty stack for
+    /// a target three frames deep — a silent wrong answer, the same class of
+    /// lie as the thread-1 default this replaced.
+    #[test]
+    fn test_reconstruct_call_stack_walks_log_order_not_event_id_order() {
+        // Ids descend: 30, 10, 5. The target is id 5 at the end, and every
+        // event is thread 1, so the expected stack is all three frames
+        // innermost-first.
+        let engine = QueryEngine::new(vec![
+            make_event(
+                30,
+                100,
+                1,
+                EventType::FunctionEntry,
+                "earliest_by_id",
+                0x1000,
+            ),
+            make_event(10, 200, 1, EventType::FunctionEntry, "middle", 0x2000),
+            make_event(5, 300, 1, EventType::FunctionEntry, "latest_by_id", 0x3000),
+        ]);
+
+        let stack = engine.reconstruct_call_stack(5);
+        let frames: Vec<&str> = stack.iter().map(|f| f.function.as_str()).collect();
+        assert_eq!(
+            frames,
+            vec!["latest_by_id", "middle", "earliest_by_id"],
+            "every event before the target in log order is on the stack, even the \
+             ones whose ids are higher than the target's"
+        );
+
+        // Absent id on the same engine: declines rather than returning the
+        // three frames above.
+        let absent = engine.reconstruct_call_stack(7);
+        assert!(absent.is_empty(), "id 7 is not in this log; got {absent:?}");
     }
 
     #[test]
@@ -1768,8 +1923,13 @@ mod tests {
         assert_eq!(all[0].event_id, engine.events[0].event_id);
     }
 
+    /// Renamed from `test_get_event_by_id_binary_search_correctness`: the
+    /// lookup no longer binary-searches `events`, so the old name pinned an
+    /// implementation detail that no longer exists. What it actually checks —
+    /// that every id in a large space resolves to the right event and that
+    /// ids outside it do not resolve — is what the name now says.
     #[test]
-    fn test_get_event_by_id_binary_search_correctness() {
+    fn test_get_event_by_id_resolves_hits_and_misses_over_1000_ids() {
         // Create 1000 events with sequential IDs
         let events: Vec<TraceEvent> = (0..1000u64)
             .map(|i| {
@@ -2323,15 +2483,19 @@ mod tests {
         assert_eq!(before, after);
     }
 
-    // Regression: a merge that backfills a gap BELOW the current maximum
-    // must leave `events` in ascending event_id order. A pure append makes
-    // `get_event_by_id`'s binary search miss an event that exists, and it
-    // does so silently (None, no panic). The gapped base set is the shape
-    // the MCP path stores: noise filtering drops some ids, and a second
-    // capture run on the same session re-mints ids from 1, so a dropped id
-    // arrives later and lands under the current maximum.
+    // Regression: a merge that backfills a gap BELOW the current maximum used
+    // to be repaired by re-sorting `events`, because `get_event_by_id` binary
+    // searched it and a pure append made id 3 unreachable. `merge` no longer
+    // sorts — log order is canonical — so this test now pins the two things
+    // that replace that repair: the id stays findable through the lookup
+    // index, and the appended event lands at the tail instead of being moved
+    // into id order.
+    //
+    // The gapped base set is the shape the MCP path stores: noise filtering
+    // drops some ids, so a later drain can carry an id lower than the
+    // current maximum.
     #[test]
-    fn test_engine_merge_backfills_lower_gap_keeps_order() {
+    fn test_engine_merge_backfills_lower_gap_keeps_log_order() {
         let mut engine = QueryEngine::new(vec![
             make_event(0, 100, 1, EventType::FunctionEntry, "gap_main", 0x1000),
             make_event(2, 200, 1, EventType::FunctionEntry, "gap_helper", 0x2000),
@@ -2352,10 +2516,10 @@ mod tests {
         )]);
         assert_eq!(engine.event_count(), 6);
 
-        // The backfilled event is the discriminating lookup: with a pure
-        // append the vec is [0, 2, 4, 6, 8, 3] and id 3 is unreachable.
-        // Probe the whole id space at once so a regression reports every
-        // id the binary search lost, not just the first one asserted.
+        // The backfilled event is the discriminating lookup: it sits under
+        // the current maximum, so a lookup that required ascending ids would
+        // lose it. Probe the whole id space at once so a regression reports
+        // every id that went missing, not just the first one asserted.
         let missing: Vec<u64> = [0u64, 1, 2, 3, 4, 6, 8]
             .iter()
             .copied()
@@ -2384,8 +2548,114 @@ mod tests {
             Some(MonotonicNs::from(500))
         );
 
-        // The documented invariant: events are ordered by event_id.
+        // The documented invariant: merge appends, it does not reorder. The
+        // backfilled id 3 stays at the tail, which is what keeps
+        // `merge(log)` and `rebuild(log)` in the same order (REC-C1.5).
         let ids: Vec<u64> = engine.events().iter().map(|e| e.event_id).collect();
-        assert_eq!(ids, vec![0, 2, 3, 4, 6, 8]);
+        assert_eq!(
+            ids,
+            vec![0, 2, 4, 6, 8, 3],
+            "merge must append in arrival order; re-sorting by event_id here is \
+             the REC-C1.5 divergence returning"
+        );
+    }
+
+    /// `event_id` is **not** unique across capture sources, and a duplicated
+    /// id has to resolve to *something* deterministic.
+    ///
+    /// This is **recorded debt, not a fixed bug.** Adapters mint
+    /// `next_event_id` independently — `chronos-python`'s adapter
+    /// (`crates/chronos-python/src/adapter.rs`), the browser adapter
+    /// (`crates/chronos-browser/src/adapter.rs`) and the eBPF ring-buffer
+    /// producer (`crates/chronos-ebpf/src/ring_buffer.rs`) each keep their
+    /// own counter starting from their own base — so a session that mixes two
+    /// sources can carry the same `event_id` twice. Nothing in the engine
+    /// detects, rejects or merges such a pair, and this test does not claim
+    /// it should; it pins the behaviour so that a later decision to
+    /// disambiguate (namespace ids per source, carry a source tag, refuse
+    /// the projection) shows up here as a deliberate change.
+    ///
+    /// The rule: a duplicated id resolves to the **first occurrence in log
+    /// order** (lowest position in `events`). This is reachable today because
+    /// `merge` dedups by id, but the constructors do not — and
+    /// `projection::build_engine` builds through `with_indices`, feeding the
+    /// engine whatever the log holds.
+    ///
+    /// Before the order-independent lookup this was an *arbitrary* match:
+    /// `binary_search_by_key` documents no guarantee about which of several
+    /// equal elements it returns. So this test turns an unspecified answer
+    /// into a specified one; it does not repair the underlying collision.
+    #[test]
+    fn duplicated_event_id_resolves_to_the_first_occurrence_in_log_order() {
+        // Two events share id 7, as two capture sources would mint it. The
+        // engine is built the way the services layer builds one: straight
+        // from the log, with no dedup pass.
+        let engine = QueryEngine::new(vec![
+            make_event(3, 100, 1, EventType::FunctionEntry, "first_source", 0x1000),
+            make_event(7, 200, 1, EventType::FunctionEntry, "python_source", 0x2000),
+            make_event(
+                7,
+                300,
+                2,
+                EventType::FunctionEntry,
+                "browser_source",
+                0x3000,
+            ),
+            make_event(9, 400, 1, EventType::FunctionExit, "first_source", 0x1000),
+        ]);
+
+        // Both events are retained: the collision is not silently repaired.
+        let ids: Vec<u64> = engine.events().iter().map(|e| e.event_id).collect();
+        assert_eq!(
+            ids,
+            vec![3, 7, 7, 9],
+            "the engine must not drop or merge a colliding pair on its own"
+        );
+
+        // The rule: first occurrence in log order wins, deterministically.
+        let resolved = engine.get_event_by_id(7).expect("id 7 is present twice");
+        assert_eq!(
+            resolved.thread_id, 1,
+            "the earlier occurrence (thread 1, the python_source frame) must win, \
+             every time, not whichever match the search happened to land on"
+        );
+        assert_eq!(
+            resolved.location.function.as_deref(),
+            Some("python_source"),
+            "the lookup must return the first occurrence in log order"
+        );
+
+        // Repeated calls agree — the old binary search had no such promise.
+        for _ in 0..8 {
+            assert_eq!(
+                engine.get_event_by_id(7).map(|e| e.thread_id),
+                Some(1),
+                "the tie-break must be deterministic across calls"
+            );
+        }
+
+        // A merge that re-presents the colliding id does not change which
+        // occurrence answers: the existing one wins the dedup and stays put.
+        let mut engine = engine;
+        engine.merge(vec![make_event(
+            7,
+            999,
+            42,
+            EventType::FunctionEntry,
+            "third_source",
+            0x9999,
+        )]);
+        assert_eq!(
+            engine.get_event_by_id(7).map(|e| e.thread_id),
+            Some(1),
+            "merge must not displace the first occurrence"
+        );
+        assert_eq!(
+            engine
+                .get_event_by_id(7)
+                .map(|e| e.location.function.as_deref()),
+            Some(Some("python_source")),
+            "merge must not overwrite the first occurrence's payload either"
+        );
     }
 }

@@ -4930,6 +4930,527 @@ mod tests {
         );
     }
 
+    // ─── REC-C1.5: rebuild(log) == maintained_projection(log) ───────────────
+    //
+    // `chronos_services::projection::build_engine` and
+    // `ChronosServer::build_and_store_engine` are the only two ways a
+    // `QueryEngine` comes into existence in this process, and REC-C1.5 asks
+    // for the equivalence between them. Nothing asserted it. The test above
+    // checks the noise predicate on the server side only, against a hardcoded
+    // id list, and never writes a log at all — so the two builders were
+    // covered separately and never against each other. The nearest thing
+    // outside this file,
+    // `chronos-sandbox/tests/rec_c1_7_projection_restart_equivalence.rs`,
+    // does not close the gap either: it calls the gate, so both sides of its
+    // comparison are projections built by `build_engine`.
+    //
+    // Every comparison below reads `engines` **directly**, never through
+    // `gate_projection` / `ensure_projection`. Those are not neutral
+    // observers: on a cache miss `ensure_projection` overwrites the `engines`
+    // entry (`server.rs:776`) before the caller can look at it, so gating in
+    // between would compare a rebuild against a rebuild and the maintained
+    // engine under test would already have been replaced by its own
+    // comparison.
+    //
+    // Ordering is the load-bearing assertion and nothing here sorts. A sorted
+    // comparison passes for any two engines holding the same event *set*,
+    // which is exactly the class of divergence this requirement is about:
+    // `build_and_store_engine` receives events carrying no `seq` and keeps
+    // the caller's order, while `build_engine` derives order from log
+    // position.
+
+    /// A fixture that populates every index `IndexBuilder` builds —
+    /// `temporal` (all events), `shadow` (function and memory addresses),
+    /// `causality` (variable and memory writes), `performance`
+    /// (`FunctionEntry` call counts) — plus one event both paths must
+    /// independently drop as noise.
+    ///
+    /// The returned order is the caller's to choose: the tests below write it
+    /// to the log in exactly this order, and log position is what
+    /// `build_engine` derives its ordering from.
+    #[allow(dead_code)]
+    fn rec_c1_5_fixture() -> Vec<TraceEvent> {
+        use chronos_domain::SourceLocation;
+
+        // ids 10/20/30/40 are ascending, so `fixture()` is also the
+        // event_id-ascending ordering the merge path preserves.
+        vec![
+            TraceEvent::new(
+                10,
+                MonotonicNs::from(1_000),
+                1,
+                EventType::FunctionEntry,
+                SourceLocation::new("main.c", 10, "main", 0x1000),
+                EventData::Function {
+                    name: "main".to_string(),
+                    signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                },
+            ),
+            TraceEvent::new(
+                20,
+                MonotonicNs::from(2_000),
+                1,
+                EventType::VariableWrite,
+                SourceLocation::new("main.c", 11, "main", 0x2000),
+                EventData::Variable(VariableInfo::local("counter", "1", "i32", 0x2000)),
+            ),
+            TraceEvent::new(
+                30,
+                MonotonicNs::from(3_000),
+                1,
+                EventType::MemoryWrite,
+                SourceLocation::new("main.c", 12, "main", 0x2000),
+                EventData::Memory {
+                    address: 0x2000,
+                    size: 8,
+                    data: Some(vec![1, 2, 3, 4]),
+                },
+            ),
+            TraceEvent::new(
+                40,
+                MonotonicNs::from(4_000),
+                1,
+                EventType::FunctionEntry,
+                SourceLocation::new("work.c", 20, "work", 0x3000),
+                EventData::Function {
+                    name: "work".to_string(),
+                    signature: None,
+                    symbol_id: None,
+                    invocation_id: None,
+                    parent_invocation_id: None,
+                },
+            ),
+            // ptrace register snapshot: `Custom`/`Registers` is noise, and
+            // both builders must drop it on their own.
+            TraceEvent::new(
+                50,
+                MonotonicNs::from(5_000),
+                1,
+                EventType::Custom,
+                SourceLocation::default(),
+                EventData::Registers(Default::default()),
+            ),
+        ]
+    }
+
+    /// Append `events` to `log` in the given order, as JSON-encoded
+    /// `TraceEvent` records — the producer contract `events_log_read::decode`
+    /// (shared with `projection::build_engine`) reads back.
+    #[allow(dead_code)]
+    fn append_events_to_log(
+        log: &chronos_services::session_log::SessionExecutionLog,
+        session_id: &chronos_log::SessionId,
+        events: &[TraceEvent],
+    ) {
+        for event in events {
+            let payload = chronos_log::ExecutionPayload::new(
+                serde_json::to_vec(event).expect("encode trace event"),
+                "trace_event",
+            );
+            log.append(chronos_log::NewExecutionRecord {
+                kind: chronos_log::ExecutionKind::Raw,
+                session_id: session_id.clone(),
+                monotonic_ns: event.timestamp_ns.get(),
+                payload,
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
+                captured_at_unix_ns: None,
+            })
+            .expect("append record to the test execution log");
+        }
+    }
+
+    /// Event ids in engine order — the thing `merge` is allowed to change.
+    #[allow(dead_code)]
+    fn engine_ids(engine: &QueryEngine) -> Vec<u64> {
+        engine.events().iter().map(|e| e.event_id).collect()
+    }
+
+    /// A structural fingerprint of the answers a `QueryEngine` gives through
+    /// each of its four indices, so the two engines can be compared on more
+    /// than their event slice.
+    ///
+    /// **This is not index equality, and cannot be.** `QueryEngine` exposes no
+    /// accessor for `shadow_index` / `temporal_index` / `causality_index` /
+    /// `performance_index` (the only one is
+    /// `causality_index_is_configured()`, a bool), and the four index types
+    /// derive `Debug, Clone, Default` but not `PartialEq`
+    /// (`chronos-domain/src/index/{shadow,temporal,causality,performance}.rs`).
+    /// So this compares the *answers those indices produce*, which is strictly
+    /// weaker than comparing the indices: an index could hold a structurally
+    /// different state that these five probes happen not to expose, and the
+    /// comparison would still pass. Recorded as the known hole rather than
+    /// papered over.
+    ///
+    /// One normalisation, applied to the perf rows only: see the comment on
+    /// the sort below. The event slice is never sorted anywhere in this file's
+    /// new tests — engine order is the property under test.
+    #[allow(dead_code)]
+    fn index_answer_fingerprint(engine: &QueryEngine, session: &str) -> serde_json::Value {
+        use chronos_domain::query::{CausalityQuery, PerfQuery, TraceQuery};
+        use chronos_domain::TimestampNs;
+
+        // temporal: a time-range query only uses the index when both ends are set.
+        let temporal = engine.execute(
+            &TraceQuery::new(session)
+                .time_range(TimestampNs::from(0), TimestampNs::from(10_000))
+                .pagination(100, 0),
+        );
+        // shadow: `get_memory_at` resolves the address through shadow and then
+        // binary-searches the event vec, so this also depends on the engine's
+        // events being id-sorted.
+        let memory = engine.get_memory_at(0x2000, TimestampNs::from(10_000));
+        // causality: full lineage of the written address.
+        let causality = engine.query_causality(
+            &CausalityQuery::new(session)
+                .by_address(0x2000)
+                .with_full_lineage(),
+        );
+        // performance: call counts, ordered by call count.
+        let performance = engine.query_perf(&PerfQuery::new(session).top(10).sort_by_calls());
+
+        // The one field here whose order is not a property of the engine:
+        // `PerformanceIndex::top_functions_by_calls`
+        // (`chronos-domain/src/index/performance.rs:136`) collects from a
+        // `HashMap` and then stable-sorts by `Reverse(call_count)`, so a tie
+        // in call_count is broken by that map's own iteration order — which
+        // differs between two independently constructed indexes even when
+        // both are correct. Comparing that order fails at random. Sorting by
+        // `address`, a total key with one row per function, keeps the
+        // comparison sensitive to a missing or extra function while dropping
+        // an ordering the engine never chose.
+        let mut performance = serde_json::to_value(performance).expect("perf serialises");
+        if let Some(functions) = performance
+            .get_mut("functions")
+            .and_then(|f| f.as_array_mut())
+        {
+            functions.sort_by_key(|f| f.get("address").and_then(|a| a.as_u64()).unwrap_or(0));
+        }
+
+        serde_json::json!({
+            "temporal_range": serde_json::to_value(temporal).expect("temporal serialises"),
+            "shadow_memory_at": format!("{memory:?}"),
+            "causality": serde_json::to_value(causality).expect("causality serialises"),
+            "performance": performance,
+            "causality_index_configured": engine.causality_index_is_configured(),
+        })
+    }
+
+    /// REC-C1.5: the equivalence, on a log whose append order is also
+    /// ascending in `event_id` — the ordering a tracer's own event ids
+    /// produce.
+    ///
+    /// `build_and_store_engine` is driven twice so both of its branches run:
+    /// the from-scratch build (`server.rs:869-881`) on the first drain, and
+    /// the cumulative `merge` refresh (`server.rs:858-866`) on the second,
+    /// which carries only the events the first drain had not seen. The log
+    /// holds all five records; the maintained engine must end up holding the
+    /// four non-noisy ones, in the same order `build_engine` derives.
+    ///
+    /// The noise event is present in the log *and* in the second drain, so
+    /// each side has to drop it on its own rather than inheriting the other's
+    /// decision.
+    #[tokio::test]
+    async fn rec_c1_5_rebuild_equals_maintained_projection_over_a_real_log() {
+        let sid = "rec-c1-5-equivalence";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-5-equivalence-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        let events = rec_c1_5_fixture();
+        append_events_to_log(&log, &session_id, &events);
+        log.flush().expect("flush the appended records");
+
+        // Drain 1 -> from-scratch branch. Drain 2 -> merge branch.
+        server
+            .build_and_store_engine(sid, events[..2].to_vec(), Language::Rust)
+            .await;
+        server
+            .build_and_store_engine(sid, events[2..].to_vec(), Language::Rust)
+            .await;
+
+        let rebuilt = projection::build_engine(&log)
+            .expect("rebuild from the log")
+            .engine;
+        let engines = server.engines.lock().await;
+        let maintained = engines
+            .get(sid)
+            .expect("build_and_store_engine must have registered an engine");
+
+        assert_eq!(
+            maintained.event_count(),
+            4,
+            "the five-record log must project to four events; the Custom/Registers \
+             record is noise and neither builder may keep it"
+        );
+        assert_eq!(
+            maintained.event_count(),
+            rebuilt.event_count(),
+            "the maintained projection and the rebuild disagree on how many events \
+             they hold"
+        );
+
+        // Ids first, in order: this is the assertion that would fail on an
+        // ordering divergence, and its message is readable.
+        assert_eq!(
+            engine_ids(maintained),
+            engine_ids(&rebuilt),
+            "event ids differ between the maintained projection and the rebuild, \
+             in order"
+        );
+        // Then the events themselves, not just their ids.
+        assert_eq!(
+            maintained.events(),
+            rebuilt.events(),
+            "the same event ids do not mean the same events in the same order"
+        );
+
+        // Index-backed answers, as far as the public surface allows.
+        assert_eq!(
+            index_answer_fingerprint(maintained, sid),
+            index_answer_fingerprint(&rebuilt, sid),
+            "the two engines answer differently through their indices"
+        );
+    }
+
+    /// REC-C1.5, second half: the equivalence also holds for a log whose
+    /// append order is not ascending in `event_id`.
+    ///
+    /// `rebuild(log)` is defined by log position, so it returns the events in
+    /// the order they were written: ids `[30, 10, 40, 20]`. The from-scratch
+    /// branch of `build_and_store_engine` hands the caller's order straight to
+    /// `QueryEngine::with_indices` and therefore also returns
+    /// `[30, 10, 40, 20]`.
+    ///
+    /// The `merge` branch used not to. `QueryEngine::merge` deduped the
+    /// incoming events and then sorted `events` by `event_id`
+    /// unconditionally, so one cumulative refresh was enough to reorder the
+    /// maintained engine to `[10, 20, 30, 40]` while the rebuild stayed at
+    /// `[30, 10, 40, 20]`. Same four events, different order: the divergence
+    /// this test now pins as *absent*.
+    ///
+    /// Log/drain order is canonical for a query engine — the services layer
+    /// derives causal edges from the vector order it read from the log — and
+    /// `merge` no longer re-sorts, so a merge-grown engine and a rebuilt one
+    /// answer the same log in the same order. This test is what keeps that
+    /// true for the non-ascending case specifically, which the first test
+    /// above cannot reach (its fixture ascends).
+    #[tokio::test]
+    async fn rec_c1_5_rebuild_equals_maintained_projection_when_log_order_is_not_event_id_ascending(
+    ) {
+        let sid = "rec-c1-5-order-divergence";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-5-order-divergence-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        // Same fixture, written to the log in a non-ascending order.
+        let fixture = rec_c1_5_fixture();
+        let written = vec![
+            fixture[2].clone(),
+            fixture[0].clone(),
+            fixture[3].clone(),
+            fixture[1].clone(),
+            fixture[4].clone(),
+        ];
+        assert_eq!(
+            written.iter().map(|e| e.event_id).collect::<Vec<_>>(),
+            vec![30, 10, 40, 20, 50],
+            "the fixture must actually be written out of event_id order, or this \
+             test proves nothing"
+        );
+        append_events_to_log(&log, &session_id, &written);
+        log.flush().expect("flush the appended records");
+
+        let rebuilt = projection::build_engine(&log)
+            .expect("rebuild from the log")
+            .engine;
+        assert_eq!(
+            engine_ids(&rebuilt),
+            vec![30, 10, 40, 20],
+            "build_engine must order by log position, dropping the noise record"
+        );
+
+        // First drain: the from-scratch branch, fed the same order the log
+        // holds. This one agrees with the rebuild.
+        server
+            .build_and_store_engine(sid, written.clone(), Language::Rust)
+            .await;
+        {
+            let engines = server.engines.lock().await;
+            let maintained = engines
+                .get(sid)
+                .expect("engine registered on the first drain");
+            assert_eq!(
+                maintained.events(),
+                rebuilt.events(),
+                "the from-scratch branch must hand the caller's order through \
+                 unchanged, exactly as build_engine hands the log order through"
+            );
+        }
+
+        // Second drain: a cumulative refresh over events the engine already
+        // has — the shape `probe_drain` / `session_snapshot` produce. Every
+        // incoming id is a duplicate, so nothing is appended; the only thing
+        // that could still change the order is a merge that re-sorts.
+        server
+            .build_and_store_engine(sid, written, Language::Rust)
+            .await;
+
+        let engines = server.engines.lock().await;
+        let maintained = engines.get(sid).expect("engine still registered");
+
+        // The event SET is unchanged, and in the SAME order as the rebuild:
+        // one cumulative refresh must not reorder a projection of the same
+        // evidence. Ids first, because that is what an ordering divergence
+        // shows up in.
+        assert_eq!(
+            engine_ids(maintained),
+            vec![30, 10, 40, 20],
+            "after one cumulative refresh the maintained engine must still be in \
+             log order; a re-sort by event_id here is the REC-C1.5 divergence \
+             returning"
+        );
+        assert_eq!(
+            engine_ids(&rebuilt),
+            vec![30, 10, 40, 20],
+            "the rebuild is defined by log position and must not have moved"
+        );
+        assert_eq!(
+            maintained.events(),
+            rebuilt.events(),
+            "REC-C1.5: rebuild(log) and maintained_projection(log) must be the same \
+             events in the same order, for a log whose append order is not \
+             event_id-ascending"
+        );
+    }
+
+    /// The `engines` slot is contested: two writers, and the gated handlers
+    /// see whichever ran last.
+    ///
+    /// `build_and_store_engine` (`server.rs:835`) writes `engines` and
+    /// `session_languages` but never `projection_meta`, so the engine it
+    /// stores is invisible to the gate. `ensure_projection` (`server.rs:750`)
+    /// fast-paths on `projection_meta`, so on a miss it rebuilds from the log
+    /// and replaces the entry at `server.rs:776`.
+    ///
+    /// The consequence is the one this test records: a drain that delivered a
+    /// subset of the log leaves the maintained engine holding fewer events
+    /// than the log contains, and the ungated `execution_log_read` /
+    /// `Causality` arm — the only reader of `engines` that does not gate
+    /// first (`server.rs:3640`) — answers from that subset, while
+    /// `execution_query` / `state_query` / `trace_slice` gate first
+    /// (`server.rs:1051`, `1103`, `3422`) and get the full log. Two different
+    /// engines for the same session in the same process, selected by which
+    /// tool the agent called.
+    ///
+    /// **RECORDED DEFECT, not a specification.** The counts below are the
+    /// observed behaviour, asserted so the evidence survives. When the slot
+    /// stops being contested these assertions turn red and the test must be
+    /// rewritten; until then they are the measurement, and reporting the
+    /// numbers as a passing equivalence would be false.
+    #[tokio::test]
+    async fn rec_c1_5_ensure_projection_replaces_the_maintained_engine_recorded_defect() {
+        let sid = "rec-c1-5-contested-slot";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-5-contested-slot-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        // The log holds all four non-noisy events...
+        let events = rec_c1_5_fixture();
+        append_events_to_log(&log, &session_id, &events);
+        log.flush().expect("flush the appended records");
+
+        // ...but a drain delivered only the first two.
+        server
+            .build_and_store_engine(sid, events[..2].to_vec(), Language::Rust)
+            .await;
+
+        {
+            let engines = server.engines.lock().await;
+            let maintained = engines.get(sid).expect("engine registered by the drain");
+            assert_eq!(
+                maintained.event_count(),
+                2,
+                "the drain only ever saw two events, so the maintained engine \
+                 holds two"
+            );
+        }
+        assert!(
+            !server.projection_meta.lock().await.contains_key(sid),
+            "build_and_store_engine must not publish projection metadata, which is \
+             why its engine is invisible to the gate"
+        );
+
+        // A gated handler arrives. It gates first, misses, rebuilds from the
+        // log and replaces the entry.
+        let meta = server
+            .gate_projection(sid)
+            .await
+            .expect("the log is readable, so the gate must pass");
+        assert_eq!(
+            meta.completeness,
+            projection::ProjectionCompleteness::Full,
+            "the log is intact; this is not a retention case"
+        );
+        {
+            let engines = server.engines.lock().await;
+            let after_gate = engines
+                .get(sid)
+                .expect("the gate must leave an engine behind");
+            assert_eq!(
+                after_gate.event_count(),
+                4,
+                "RECORDED DEFECT: the gate replaced the maintained engine with one \
+                 built from the log. The ungated Causality read at server.rs:3640 \
+                 now sees 4 events where, one tool call earlier, it saw 2 — \
+                 same session, same process."
+            );
+        }
+    }
+
     /// A session with no log never gets a projection.
     ///
     /// The error is `ExecutionLogUnavailable`, not `SessionNotFound`, and that
