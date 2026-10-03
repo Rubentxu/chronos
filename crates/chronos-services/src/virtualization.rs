@@ -98,14 +98,25 @@ pub enum AggregateError {
     /// for a 1 ns bucket over a 10-second session is still asking for ten
     /// million buckets, and `bucket_size_ns` is a client-supplied field.
     /// Failing here with a nameable field beats a multi-gigabyte `Vec`.
+    ///
+    /// **The message states a rule, not a suggested width, and that is
+    /// deliberate.** An earlier version of this error carried a
+    /// `suggested_bucket_size_ns` computed from the span reached so far, and a
+    /// wire test caught it being a false promise: the walk stops at the first
+    /// bucket it cannot hold, so that span is a *prefix* of the session, and a
+    /// caller who followed the suggestion got refused again a few events
+    /// later. The only width that can be named here without knowing the rest of
+    /// the session is the rule the caller applies itself.
     #[error(
-        "summarize needs more buckets than it will hold: the session spans \
+        "summarize needs more buckets than it will hold: the walk reached a span of \
          {span_ns} ns, which is {buckets_needed} buckets of {requested_bucket_size_ns} ns, \
-         over the cap of {max_buckets}. Widen `bucket_size_ns` (at least \
-         {suggested_bucket_size_ns} ns for this span)."
+         over the cap of {max_buckets}. Widen `bucket_size_ns`: the cap admits a span of \
+         {max_buckets} buckets, so the width must exceed the session's full span in ns divided \
+         by {max_buckets}. The span above is what this walk reached, not the session's full \
+         extent, so treat it as the floor of the requirement and not the requirement."
     )]
     TooManyBuckets {
-        /// Span between the first and last event observed, in nanoseconds.
+        /// Span the walk had reached when it refused, in nanoseconds.
         span_ns: u64,
         /// Buckets that width would need across that span.
         buckets_needed: u64,
@@ -113,8 +124,6 @@ pub enum AggregateError {
         requested_bucket_size_ns: u64,
         /// The declared cap, so the message names the limit it hit.
         max_buckets: u64,
-        /// The narrowest width that would fit this span under the cap.
-        suggested_bucket_size_ns: u64,
     },
 }
 
@@ -431,7 +440,6 @@ pub fn summarize_log(
                     buckets_needed: idx + 1,
                     requested_bucket_size_ns: bucket_size_ns,
                     max_buckets: MAX_BUCKETS,
-                    suggested_bucket_size_ns: span_ns / MAX_BUCKETS + 1,
                 });
             }
             *counts.entry(idx).or_insert(0) += 1;
@@ -1069,9 +1077,11 @@ mod tests {
         let tmp =
             std::env::temp_dir().join(format!("virt_d3_cap_{}", uuid::Uuid::new_v4().simple()));
         let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
-        // 3 ms of session asked for at one nanosecond per bucket: 3 million
-        // buckets, over the cap of one million.
-        for i in 0..2u64 {
+        // Three events 3 ms apart, so the session's full extent is 6 ms while
+        // the walk refuses at the first event past the cap — 3 ms. A two-event
+        // fixture would have its prefix equal its whole extent, and could not
+        // tell "prefix" apart from "requirement".
+        for i in 0..3u64 {
             push_event_at(&log, i + 1, i * 3_000_000);
         }
         let cursor = EventsCursorV1::start(session);
@@ -1085,60 +1095,104 @@ mod tests {
             buckets_needed,
             requested_bucket_size_ns,
             max_buckets,
-            suggested_bucket_size_ns,
         } = err
         else {
             panic!("a bucketing refusal must be TooManyBuckets, got {err:?}");
         };
         assert_eq!(requested_bucket_size_ns, 1, "names the width asked for");
         assert_eq!(max_buckets, MAX_BUCKETS, "names the cap it hit");
-        assert_eq!(span_ns, 3_000_000, "names the span it measured");
         assert!(
             buckets_needed > MAX_BUCKETS,
             "the refusal must be over the cap, not near it: {buckets_needed}"
         );
+        // The reported span is what the walk reached, NOT the session's extent.
+        // This is the assertion the wire test then depends on: if the error
+        // reported the full extent, a caller could size a retry from it.
         assert!(
-            suggested_bucket_size_ns > 1,
-            "the suggestion must differ from what was refused, or the caller \
-             has nothing to change: {suggested_bucket_size_ns}"
+            span_ns > 0 && span_ns < 6_000_000,
+            "the walk refuses at the first bucket it cannot hold, so the span it reports is a \
+             prefix of the 6 ms session, not the whole of it: {span_ns}"
         );
 
         // The message is what a client actually receives, so it has to name
-        // the knob. A refusal that does not say what to change is a dead end.
+        // the knob AND mark its own figure as a floor. A refusal that does not
+        // say what to change is a dead end, and one whose figure is read as the
+        // requirement is a detour.
         let rendered = AggregateError::TooManyBuckets {
             span_ns,
             buckets_needed,
             requested_bucket_size_ns,
             max_buckets,
-            suggested_bucket_size_ns,
         }
         .to_string();
         assert!(
             rendered.contains("bucket_size_ns"),
             "names the field: {rendered}"
         );
+        assert!(
+            rendered.contains("not the session's full extent"),
+            "must mark the reported span as a floor rather than the requirement: {rendered}"
+        );
     }
 
-    /// The same bucketing, once the caller obeys the suggestion, answers.
+    /// A width sized from the session's **full** extent answers; one sized from
+    /// the prefix the refusal reported does not.
     ///
-    /// A guard that only proves the refusal would pass with a cap so low that
-    /// no request ever succeeded — the D2 ceiling lesson, applied to buckets.
+    /// This is the half the message cannot supply, and the reason it states a
+    /// rule instead of a number. The walk stops at the first bucket it cannot
+    /// hold, so it never learns how long the session really is; an earlier
+    /// version of the error named a width computed from that prefix and a wire
+    /// test caught the number being wrong — following it got refused again a
+    /// few events later. The caller knows the session, or can widen until it
+    /// stops being refused; this test stands in for a caller that does.
     #[test]
-    fn d3_the_suggested_width_is_actually_accepted() {
-        let session = sid();
-        let tmp =
-            std::env::temp_dir().join(format!("virt_d3_suggest_{}", uuid::Uuid::new_v4().simple()));
-        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
-        for i in 0..2u64 {
-            push_event_at(&log, i + 1, i * 3_000_000);
-        }
+    fn d3_only_a_width_derived_from_the_full_session_span_is_accepted() {
+        /// Total span of the fixture below: 3 ms.
+        const SESSION_SPAN_NS: u64 = 3_000_000;
+        /// The prefix the walk reaches before refusing at a 1 ns width.
+        const PREFIX_AT_REFUSAL_NS: u64 = 2_000_000;
+
+        let build = || {
+            let session = sid();
+            let tmp = std::env::temp_dir()
+                .join(format!("virt_d3_span_{}", uuid::Uuid::new_v4().simple()));
+            let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+            for i in 0..2u64 {
+                push_event_at(&log, i + 1, i * SESSION_SPAN_NS);
+            }
+            (session, log)
+        };
+
+        // Sized from the whole session, plus a nanosecond so integer division
+        // cannot land exactly on the cap.
+        let (session, log) = build();
         let cursor = EventsCursorV1::start(session);
         let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+        let summary = summarize_log(
+            &log,
+            &cursor,
+            SESSION_SPAN_NS / MAX_BUCKETS + 1,
+            &mut budget,
+        )
+        .expect("a width sized from the full session must answer");
+        assert_eq!(summary.total_events, 2);
 
-        let suggested = 3_000_000u64 / MAX_BUCKETS + 1;
-        let summary = summarize_log(&log, &cursor, suggested, &mut budget)
-            .expect("the width the refusal suggested must be accepted");
-        assert_eq!(summary.total_events, 2, "and it must cover the whole log");
+        // Sized from the prefix: one nanosecond short, so the walk refuses
+        // again — for the same declared reason, not a new one.
+        let (session, log) = build();
+        let cursor = EventsCursorV1::start(session);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+        let err = summarize_log(
+            &log,
+            &cursor,
+            PREFIX_AT_REFUSAL_NS / MAX_BUCKETS,
+            &mut budget,
+        )
+        .expect_err("a width sized from the prefix must be refused again");
+        assert!(
+            matches!(err, AggregateError::TooManyBuckets { .. }),
+            "and it must refuse for the same declared reason: {err}"
+        );
     }
 
     /// A timestamp that goes backwards lands in the first bucket, and is still
