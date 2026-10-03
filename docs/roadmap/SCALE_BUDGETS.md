@@ -461,7 +461,49 @@ la misma causa raíz (§4.6).
 > constante declarada. El exponente local observado hoy crece hasta **2,5** (§4.5); conforme al
 > contrato, la curva debe tender a exponente 1.
 
-### 7.4 Dónde viven estos tests
+### 7.4 C4 — `read_after` debe costar O(nuevo), no O(N de la sesión) — **CERRADO 2026-10-03**
+
+> **Enunciado.** El coste de `read_after` es proporcional a lo que **devuelve**, no al tamaño de la
+> sesión. Un consumidor que ha alcanzado la cola no devuelve nada y no debe pagar nada.
+>
+> **Por qué es un contrato y no una optimisation.** El estado que importa no es la primera lectura
+> sino la de **reposo**: un consumidor atrapado en la cola pregunta "qué hay nuevo" en cada tick.
+> Con el clon, esa llamada asignaba el log entero para descubrir que no había pasado nada.
+
+**Medido antes y después**, con el allocator contando, mismo consumidor atrapado en la cola:
+
+| N | antes (B por llamada) | después (B por llamada) |
+|---|---|---|
+| 20 | 4.910 | 30 |
+| 200.000 | **48.800.030** | **30** |
+| cociente N-grande/N-pequeño | 9.939x (sesión 10.000x mayor) | **1,0x** |
+
+Y en **tiempo**, que es la capa que un contador de asignaciones no ve:
+
+| N | antes | solo sin el clon | después |
+|---|---|---|---|
+| 20 | 0,002 ms | 0,002 ms | 0,002 ms |
+| 200.000 | 9,455 ms | 3,832 ms | **0,002 ms** |
+| 1.000.000 | 51,236 ms | 23,353 ms | **0,003 ms** |
+
+La columna intermedia importa: **quitar el clon no basta**. C1/C2 ya lo advertían —"invisible to
+allocations, which is why the cost-is-flat-in-N assertion here is a necessary but not sufficient
+guard"— y la medición lo confirma. Quedaban dos recorridos O(N): el mínimo de `oldest_seq` y el
+bucle de filtrado. El primero se cierra cortocircuitando con el invariante `oldest_seq <= tail_seq`;
+el segundo, con el mismo `first_reachable(last_seq + 1)` que `read_from_seq` ya usaba, porque ambas
+ramas del filtro reducen a la misma predicción `reach() >= last_seq + 1`.
+
+**El coste ya no sigue a la sesión**, que es literalmente el enunciado del contrato. A 1M son
+0,003 ms frente a 51,2 ms: ~17.000x, y plano en vez de lineal.
+
+**Vive en:** `crates/chronos-log/tests/c4_read_after_cost_contract.rs` (un solo `#[test]`, porque el
+allocator que cuenta es process-global) y
+`crates/chronos-log/tests/read_after_seek_equivalence.rs` + los dos tests in-crate del módulo
+`memory::c1_c2_read_from_seq`. La afirmación de que el **tiempo** es plano no es un test: es una
+medición, y por eso vive en `crates/chronos-log/examples/timing_probe.rs`. Una aserción de reloj en
+el lazo rápido sería un gate flaky, que es exactamente lo que C1 se niega a ser.
+
+### 7.5 Dónde viven estos tests
 
 En el target ya existente y **ya fuera del hot path**:
 `chronos-sandbox/tests/scale_execution_log_1m.rs`, que es su propio target y por tanto no alarga
@@ -598,15 +640,45 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
 
 1. **Mecanismo para D2**: enforcement de `timeout_secs = 60` en las operaciones del read path
    (§5 D2, §9.3). Hoy no existe. Sigue siendo el primer pendiente.
-2. **Anclar B2** una vez observado el coste de `poll` sin el clon (§6.2). El clon ya no esta, asi
-   que el numero se puede derivar; es trabajo corto una vez hecho.
+2. ~~**Anclar B2** una vez observado el coste de `poll` sin el clon (§6.2).~~ **CERRADO por
+   medición (2026-10-03).** B2 era el ancla del presupuesto de `poll` esperando el coste sin el
+   clon, y ahora hay dos: el de `read_from_seq` (R2.2) y el de `read_after` (C4, §7.4). La cifra
+   que faltaba era "qué paga un poll cuando no hay nada nuevo", y esa ya no depende de N.
 3. **Resolver la estrategia de p95** de los agregados a 1M (§8). Bloqueante por coste, no por
-   dificultad: 20 muestras a ~1.223 s son ~6,8 h por operacion.
+   dificultad: 20 muestras a ~1.223 s son ~6,8 h por operacion. **Sin cambio de estado**: la
+   medicion de una sola muestra que hay ahora abajo no es un p95 y no se presenta como tal.
 4. **Caracterizar D3**: una medicion que use timestamps epoch, que la actual no ejercita (§9.4).
 5. **Resolver la discrepancia de RSS** entre las dos grabaciones (§9.5). Se deja sin elegir
-   ganador a proposito.
+   ganador a proposito. **Tercera grabación el 2026-10-03** sobre el lane de 1M con C4 en sitio:
+   pico de RSS **603.292 KB (~589 MB)**, pared con los ~843 MB de la grabación anterior y los
+   ~1,5 GB del test in-tree con el host cargado. Las tres siguen sin un ganador, y la diferencia
+   entre elles es probablemente de ruta (proceso que siembra + servidor + cliente en un caso,
+   solo lectura en otro), no de código. **No se elige ganador aqui**; lo que se anota es que la
+   cifra mas baja pertenece a la medicion que pasa por el camino corregido.
 6. **C3** para los agregados, si se decide que los agregados son parte de la superficie
    certificable y no solo de la exploracion.
+
+### Medición de una sola muestra, 2026-10-03, con C4 en sitio
+
+Lane `scale_execution_log_1m` ejecutado entero de verdad (`--ignored --nocapture`):
+
+```
+seeded 1000000 events in 32.5s
+segment bytes on disk: 26971843
+summarize answered in 11.8s   total_events: 1000000
+rollup answered in 11.8s
+read path served 1000000 events: PASS   (82.32s)
+Maximum resident set size: 603.292 KB
+```
+
+Dos cosas dice esto y una no:
+
+- **Dice que el camino de lectura sirve 1M de punta a punta con C4 en sitio**, que es lo que el
+  arreglo tenía que preservar. `summarize` 11,8 s y `rollup` 11,8 s son consistentes con los
+  11,6 s que R2.3 registro, o sea **neutro**: C4 no toca la agregacion, que va por
+  `read_from_seq`. Lo que arregla es el camino de **consumidor**, el de `read_after`.
+- **No dice nada del p95.** Una muestra no es una distribucion, y §8 sigue_blocked por coste. La
+  cifra de 11,8 s es un punto, no un percentil, y no se usa como si lo fuera.
 
 **Hallazgos posteriores que este documento no recogia:**
 
