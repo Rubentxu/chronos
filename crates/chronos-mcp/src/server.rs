@@ -3699,6 +3699,13 @@ further would be a Silent Lie."
                         serde_json::json!({
                             "mode": "rollup",
                             "session_id": params.session_id,
+                            // The counts below are per GROUP, and this says
+                            // what the group is. Without it, `invocation_count`
+                            // reads as a count of invocations while the read
+                            // path can only count threads — an agent would
+                            // draw a conclusion the numbers cannot support.
+                            "grouping_key": rollup.grouping_key.as_str(),
+                            "grouping_is_identity": rollup.grouping_key.is_identity(),
                             "invocation_count": rollup.invocation_count,
                             "total_events": rollup.total_events,
                             "mean_per_invocation": rollup.mean_per_invocation,

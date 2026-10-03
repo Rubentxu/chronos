@@ -56,8 +56,8 @@
 //!   `events_log_read::rec_c1_3_retention_gap_tests`, not by the monotonicity
 //!   test that used to carry the `rec_c1_03_` prefix.
 
-use crate::events_cursor::EventsCursorV1;
 use crate::error::ServiceError;
+use crate::events_cursor::EventsCursorV1;
 use crate::read_budget::{BudgetExceeded, ReadBudget};
 
 /// Why an aggregation walk stopped before covering the log.
@@ -150,26 +150,87 @@ impl EventSummary {
     }
 }
 
-/// Per-invocation rollup aggregating events by their invocation.
+/// What a rollup's counts were actually grouped by.
 ///
-/// Per ADR-0029 §3.2: real implementation groups events by
-/// `chronos_invocation_id` and aggregates counts. Stub here for
-/// post-M10.4 follow-up.
+/// This exists because the field names alone cannot say it. The read path
+/// does not yet have `chronos_invocation_id`, so `rollup_log` groups by
+/// `thread_id` — and a number called `invocation_count` that is really a
+/// thread count is a claim the computation does not support. An agent reading
+/// `invocation_count: 1` over a million single-thread events would conclude
+/// the program made one call, when the truth is that it made one call on one
+/// thread, and the number of calls is simply not known.
+///
+/// The direction of the error is worth stating, because the original comment
+/// got it backwards. Per-thread event counts are an **upper** bound on
+/// per-invocation counts (every invocation runs on a thread, so a thread
+/// carries at least as many events as any single invocation on it). But the
+/// group **count** is a **lower** bound: 3 invocations on 1 thread report
+/// `invocation_count: 1`. So the aggregate understates how many invocations
+/// there were and overstates how heavy each one was.
+///
+/// Carrying the key on the value makes the number self-describing, and it is
+/// what the module's own doc had promised: the grouping key "can be replaced
+/// without changing the public signature". With M10.6 this flips to
+/// [`Self::InvocationId`] and no consumer has to change to stay correct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollupGroupingKey {
+    /// Grouped by `thread_id` — the current state, a proxy, not an identity.
+    ThreadId,
+    /// Grouped by `chronos_invocation_id` — a real identity. Post-M10.6.
+    InvocationId,
+}
+
+impl RollupGroupingKey {
+    /// The wire name, so the MCP response and the type cannot disagree.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RollupGroupingKey::ThreadId => "thread_id",
+            RollupGroupingKey::InvocationId => "chronos_invocation_id",
+        }
+    }
+
+    /// Whether the grouping key is a real identity rather than a proxy.
+    ///
+    /// `false` means these counts describe **threads**, and no claim about
+    /// invocations may be derived from them.
+    pub fn is_identity(self) -> bool {
+        matches!(self, RollupGroupingKey::InvocationId)
+    }
+}
+
+/// Per-group rollup aggregating events by their grouping key.
+///
+/// Per ADR-0029 §3.2 the intent is to group by `chronos_invocation_id`. Until
+/// the read path carries that field, the grouping is by `thread_id` and
+/// [`Self::grouping_key`] says so. The `invocation_*` field names are kept for
+/// wire compatibility; read them as "per group", and check `grouping_key`
+/// before concluding anything about invocations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvocationRollup {
-    /// Total invocations seen.
+    /// Number of groups seen — invocations only if `grouping_key` is
+    /// [`RollupGroupingKey::InvocationId`], threads if it is
+    /// [`RollupGroupingKey::ThreadId`].
     pub invocation_count: u32,
-    /// Total events across all invocations.
+    /// Total events across all groups. Unambiguous: it is the walk's total.
     pub total_events: u64,
-    /// Mean events per invocation (rounded down).
+    /// Mean events per group (rounded down).
     pub mean_per_invocation: u64,
-    /// Max events in any single invocation.
+    /// Max events in any single group.
     pub max_per_invocation: u64,
+    /// What `invocation_count` and its siblings were grouped by. `None` is
+    /// not permitted on a rollup built by this crate: a value that cannot say
+    /// how it was grouped is precisely the ambiguity this field removes.
+    pub grouping_key: RollupGroupingKey,
 }
 
 impl InvocationRollup {
-    /// Build rollup from per-invocation event counts.
+    /// Build rollup from per-group event counts, declaring the key.
     pub fn from_invocation_counts(counts: &[u64]) -> Self {
+        Self::from_group_counts(counts, RollupGroupingKey::ThreadId)
+    }
+
+    /// Build a rollup from per-group counts under an explicit grouping key.
+    pub fn from_group_counts(counts: &[u64], grouping_key: RollupGroupingKey) -> Self {
         let invocation_count = counts.len() as u32;
         let total_events: u64 = counts.iter().sum();
         let mean_per_invocation = if invocation_count > 0 {
@@ -183,16 +244,19 @@ impl InvocationRollup {
             total_events,
             mean_per_invocation,
             max_per_invocation,
+            grouping_key,
         }
     }
 
-    /// Empty rollup (no invocations).
+    /// Empty rollup (no groups). The key is the default proxy, so an empty
+    /// answer cannot imply that invocations were counted when none were.
     pub fn empty() -> Self {
         Self {
             invocation_count: 0,
             total_events: 0,
             mean_per_invocation: 0,
             max_per_invocation: 0,
+            grouping_key: RollupGroupingKey::ThreadId,
         }
     }
 }
@@ -241,7 +305,8 @@ pub const DEFAULT_BUCKET_SIZE_NS: u64 = 1_000_000_000;
 /// preempt it.
 ///
 /// Whether the ceiling bites at a given size is a measurement, not an
-/// argument: SCALE_BUDGETS §3.1 records that the 1.222,7 s figure originally
+/// argument: SCALE_BUDGETS §3.1 records, by direct measurement, that the
+/// 1.222,7 s figure originally
 /// quoted here was measured against a `read_from_seq` that cloned the whole
 /// log on every page, and is not reproducible on current code. The ceiling
 /// stands on its own terms — it bounds the walk and reports where it stopped —
@@ -350,7 +415,10 @@ pub fn rollup_log(
     }
 
     let counts_vec: Vec<u64> = counts.values().copied().collect();
-    Ok(InvocationRollup::from_invocation_counts(&counts_vec))
+    Ok(InvocationRollup::from_group_counts(
+        &counts_vec,
+        RollupGroupingKey::ThreadId,
+    ))
 }
 
 #[cfg(test)]
@@ -873,6 +941,81 @@ mod tests {
     }
 
     // ======================================================================
+    // What the rollup counts, and that it says so.
+    //
+    // Found by `scale_execution_log_1m`, which asserted that records with no
+    // `invocation_id` must not be counted as invocations — and failed,
+    // because the walk groups by `thread_id` while the response field was
+    // called `invocation_count`. The test was right about the intent and had
+    // been unable to run (it was `#[ignore]`d *and* broken by a JSON-envelope
+    // bug), so the mismatch sat there unobserved. Repairing the test is what
+    // exposed it; the fix is on the value, not on the test.
+    // ======================================================================
+
+    /// A rollup must carry the key it grouped by, or its counts are
+    /// unreadable. This is the guard that keeps the two from drifting apart
+    /// again.
+    #[test]
+    fn a_rollup_declares_what_it_grouped_by() {
+        let rollup = InvocationRollup::from_invocation_counts(&[10, 20, 30]);
+        assert_eq!(rollup.grouping_key, RollupGroupingKey::ThreadId);
+        assert_eq!(rollup.grouping_key.as_str(), "thread_id");
+        assert!(
+            !rollup.grouping_key.is_identity(),
+            "a thread grouping is a proxy, not an identity"
+        );
+        assert_eq!(
+            rollup.invocation_count, 3,
+            "the counts themselves are unchanged"
+        );
+        assert_eq!(rollup.total_events, 60);
+    }
+
+    /// The empty rollup must not imply that invocations were counted.
+    #[test]
+    fn an_empty_rollup_does_not_claim_to_have_counted_invocations() {
+        let rollup = InvocationRollup::empty();
+        assert_eq!(rollup.total_events, 0);
+        assert_eq!(rollup.invocation_count, 0);
+        assert_eq!(
+            rollup.grouping_key,
+            RollupGroupingKey::ThreadId,
+            "an empty rollup still declares its key rather than leaving it ambiguous"
+        );
+    }
+
+    /// The bound the old comment got backwards, pinned so it cannot be
+    /// re-inverted: per-thread event counts are an UPPER bound on
+    /// per-invocation counts, and the group count is a LOWER bound.
+    ///
+    /// Three invocations sharing a thread is the concrete case the old
+    /// reasoning got wrong.
+    #[test]
+    fn thread_grouping_understates_the_invocation_count_and_overstates_the_mean() {
+        // The truth: 3 invocations, 1000 events each, all on one thread.
+        let truth_invocation_count = 3u32;
+        let truth_mean_per_invocation = 1000u64;
+
+        // What the walk actually measures: one group carrying all 3000.
+        let measured = InvocationRollup::from_group_counts(&[3_000], RollupGroupingKey::ThreadId);
+
+        assert!(
+            measured.invocation_count < truth_invocation_count,
+            "a thread grouping UNDERSTATES how many invocations there were: \
+             reported {}, truth {truth_invocation_count}",
+            measured.invocation_count
+        );
+        assert!(
+            measured.mean_per_invocation > truth_mean_per_invocation,
+            "a thread grouping OVERSTATES how heavy each invocation was: \
+             reported {}, truth {truth_mean_per_invocation}",
+            measured.mean_per_invocation
+        );
+        // What IS correct without any interpretation: the total.
+        assert_eq!(measured.total_events, 3_000);
+    }
+
+    // ======================================================================
     // The Silent Lie: a mid-walk read failure must not become a complete
     // aggregate.
     //
@@ -896,8 +1039,7 @@ mod tests {
     fn log_with_poisoned_record(tag: &str, valid: u64, poison_at: u64) -> SessionExecutionLog {
         use std::env;
         let session = sid();
-        let tmp =
-            env::temp_dir().join(format!("virt_lie_{tag}_{}", uuid::Uuid::new_v4().simple()));
+        let tmp = env::temp_dir().join(format!("virt_lie_{tag}_{}", uuid::Uuid::new_v4().simple()));
         let log = SessionExecutionLog::create_for_tests(&tmp, session).expect("log");
 
         for i in 0..valid {
@@ -1024,8 +1166,10 @@ mod tests {
         // A budget stop, from a clean log under a zero-second ceiling.
         use std::env;
         let session = sid();
-        let tmp = env::temp_dir()
-            .join(format!("virt_distinguish_budget_{}", uuid::Uuid::new_v4().simple()));
+        let tmp = env::temp_dir().join(format!(
+            "virt_distinguish_budget_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let clean_log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
         for i in 0..VALID_BEFORE_POISON {
             let event = TraceEvent::new(
