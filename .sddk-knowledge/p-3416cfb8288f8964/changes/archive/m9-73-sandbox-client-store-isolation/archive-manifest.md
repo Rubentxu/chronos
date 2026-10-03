@@ -95,7 +95,7 @@ Two commits:
 | source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `e67e3fbcfee7a96628e0b80e09cf5b8c2cdafe9313ba447600240a2260927978` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
-| test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `624587627dd845906f2b8557729d640f161154e5448885d9cf4aa33c3b5d2648` |
+| test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `a6c5834a633f1fcc25a5ccaec26fb7ae0e9cb529e6ac3a0058f977e42c52a12e` |
 | docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `13350229f5ab3dc456f928b96e39999550eda60533167164894a14af886075d3` |
