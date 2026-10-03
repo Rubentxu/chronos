@@ -1505,3 +1505,236 @@ mod rec_c1_6_wire_facts_tests {
         assert_eq!(json["history_truncated"], true);
     }
 }
+
+/// UAT-REC-C1-03 — gap truth produced by REAL retention loss.
+///
+/// The wire UAT (`chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs`)
+/// injects a `Gap` entry with `record_gap`, so it proves the REPORTING half:
+/// a read crossing a recorded gap says `gap_detected`. It does not prove the
+/// PRODUCING half — that bounded retention loss makes evidence disappear and
+/// a read then refuses to call what it returns complete. Nothing in the corpus
+/// did that: `rec_c1_6_wire_facts_tests` passes a hand-written `retained_from`
+/// to `read_page_with` with a fake reader, so its boundary was an argument,
+/// not a retention decision.
+///
+/// This module does the real thing and nothing else. No `Gap` is recorded
+/// anywhere in it: `RETIRED` records are flushed to segment files, the
+/// retention port advances the boundary, and the backend reclaims the
+/// retired segments. The evidence is genuinely gone, so the read has to
+/// notice on its own — which is exactly the sentence the UAT demands.
+#[cfg(test)]
+mod rec_c1_3_retention_gap_tests {
+    use super::rec_c1_3_tests::push;
+    use super::*;
+    use chronos_log::SessionId;
+
+    /// Appended before the retention pass, then genuinely lost.
+    const RETIRED: u64 = 100;
+    /// Appended after, and therefore still served.
+    const KEPT: u64 = 40;
+    /// The first seq the log can serve after the retention pass.
+    const BOUNDARY: u64 = RETIRED;
+    /// A position inside the interval that retention removes.
+    const INSIDE_THE_LOSS: u64 = 50;
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "rec-c1-3-retention-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    /// How many durable segment files the log currently has on disk.
+    ///
+    /// Counts by extension rather than by name, so it stays honest if the
+    /// naming ever changes. It is the difference between "the boundary moved
+    /// on paper" and "the bytes were actually reclaimed".
+    fn segment_files(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("seg"))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Seed `RETIRED` records, flush them so they are durable segments, seed
+    /// `KEPT` more, then run one real retention pass that retires the prefix.
+    ///
+    /// The intermediate flush is load-bearing: the backend only advances the
+    /// boundary over segments that are WHOLLY retired and already flushed, so
+    /// without it the pass would be a silent no-op and everything below would
+    /// pass vacuously. The `boundary_moved` assertion is the guard for that.
+    /// The log, its directory, its session, and how many segment files it
+    /// had BEFORE the retention pass — the only way to show afterwards that
+    /// bytes were actually reclaimed rather than merely marked retired.
+    fn truncated_log() -> (SessionExecutionLog, std::path::PathBuf, SessionId, usize) {
+        let session_id = SessionId::new("rec-c1-3-retention-gap");
+        let dir = tmpdir("gap");
+        let owned = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).expect("log");
+        let handle = owned.handle();
+
+        for i in 0..RETIRED {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        owned.flush().expect("flush retired prefix");
+        for i in RETIRED..RETIRED + KEPT {
+            push(&handle, i, EventType::FunctionEntry);
+        }
+        owned.flush().expect("flush surviving suffix");
+
+        let segments_before = segment_files(&dir);
+        assert!(
+            segments_before > 0,
+            "the prefix must be durable before retention can retire it"
+        );
+        let outcome = owned
+            .advance_retained_from(EventSeq::new(BOUNDARY))
+            .expect("retention must accept a forward boundary");
+        assert!(
+            outcome.boundary_moved,
+            "retention must actually move the boundary; a no-op would leave \
+             this whole module vacuous"
+        );
+        assert_eq!(owned.retained_from(), EventSeq::new(BOUNDARY));
+        (owned, dir, session_id, segments_before)
+    }
+
+    #[test]
+    fn retention_loss_makes_the_read_refuse_instead_of_reporting_complete() {
+        let (log, dir, session_id, segments_before) = truncated_log();
+        let segments_after = segment_files(&dir);
+        assert!(
+            segments_after < segments_before,
+            "retention must physically reclaim the retired segments \
+             (files before: {segments_before}, after: {segments_after})"
+        );
+
+        // ---- The read that crosses the lost interval. ----
+        //
+        // The position asked for is inside the interval retention removed, so
+        // the honest answers are "here is the boundary" or "here is a page
+        // scoped to the surviving range". Reporting a complete page over that
+        // range — or silently restarting at zero — is the Silent Lie the UAT
+        // forbids. The contract is fail-closed, so this is the typed error.
+        let crossing = EventsCursorV1::start(session_id.clone())
+            .advanced_to(EventSeq::new(INSIDE_THE_LOSS))
+            .expect("a position inside the loss is a syntactically valid cursor");
+        match read_page(&log, &crossing, 64, &LogReadFilters::default()) {
+            Err(ServiceError::CursorStale {
+                requested_next_seq,
+                retained_from_seq,
+            }) => {
+                assert_eq!(
+                    requested_next_seq, INSIDE_THE_LOSS,
+                    "the error must name the seq the caller asked for"
+                );
+                assert_eq!(
+                    retained_from_seq, BOUNDARY,
+                    "the error must name the boundary the log can serve"
+                );
+            }
+            Err(other) => panic!("expected a typed CursorStale, got {other:?}"),
+            Ok(page) => panic!(
+                "a read crossing retired evidence returned a page claiming {:?} \
+                 over [{}, {}); it must never report complete",
+                page.completeness.status,
+                page.completeness.from_seq,
+                page.completeness.to_seq_exclusive
+            ),
+        }
+
+        // ---- The read that starts exactly at the boundary. ----
+        //
+        // This one legitimately succeeds, and its `complete` verdict is only
+        // honest because it is scoped to the examined range: `from_seq` pins
+        // that the range starts at the boundary, and the retention facts
+        // disclose that everything before it is gone.
+        let anchored = EventsCursorV1::start(session_id.clone())
+            .advanced_to(EventSeq::new(BOUNDARY))
+            .expect("the boundary is a legal position");
+        let page = read_page(&log, &anchored, 64, &LogReadFilters::default())
+            .expect("a cursor at the boundary must be served");
+        assert_eq!(
+            page.records.len(),
+            KEPT as usize,
+            "only the records retention kept may come back"
+        );
+        assert_eq!(
+            page.records.first().map(|e| e.event_id),
+            Some(BOUNDARY),
+            "the first record served must be the first one retention kept"
+        );
+        assert!(
+            page.records.iter().all(|e| e.event_id >= BOUNDARY),
+            "no retired record may be served as evidence: {:?}",
+            page.records.iter().map(|e| e.event_id).collect::<Vec<_>>()
+        );
+        assert_eq!(page.completeness.from_seq, BOUNDARY);
+        assert_eq!(
+            page.completeness.scope,
+            CompletenessReport::SCOPE_EXAMINED_RANGE
+        );
+        assert_eq!(page.completeness.to_seq_exclusive, BOUNDARY + KEPT);
+        assert_eq!(page.retention.retained_from_seq, BOUNDARY);
+        assert!(
+            page.retention.history_truncated,
+            "a non-zero boundary means history WAS truncated and the page must say so"
+        );
+    }
+
+    #[test]
+    fn the_loss_survives_restart_and_is_not_resurrected_from_disk() {
+        // Retention that only holds in memory would be a temporary lie. The
+        // boundary is committed to the manifest and the retired segments are
+        // gone, so a reopened log must answer identically: the lost interval
+        // stays lost, and the surviving records stay readable.
+        let (log, dir, session_id, _segments_before) = truncated_log();
+        let segments_after_retention = segment_files(&dir);
+        drop(log);
+
+        let reopened = SessionExecutionLog::reopen_existing_for_tests(&dir, session_id.clone())
+            .expect("reopen over a truncated log");
+        assert_eq!(
+            reopened.retained_from(),
+            EventSeq::new(BOUNDARY),
+            "the boundary must come back from the manifest, not from memory"
+        );
+        assert_eq!(
+            segment_files(&dir),
+            segments_after_retention,
+            "reopening must not resurrect the reclaimed segments"
+        );
+
+        let crossing = EventsCursorV1::start(session_id.clone())
+            .advanced_to(EventSeq::new(INSIDE_THE_LOSS))
+            .expect("valid cursor");
+        let err = read_page(&reopened, &crossing, 64, &LogReadFilters::default())
+            .expect_err("the retired interval must stay unserveable after restart");
+        assert!(
+            matches!(
+                err,
+                ServiceError::CursorStale {
+                    requested_next_seq: INSIDE_THE_LOSS,
+                    retained_from_seq: BOUNDARY,
+                }
+            ),
+            "restart must reproduce the same typed refusal, got {err:?}"
+        );
+
+        let anchored = EventsCursorV1::start(session_id)
+            .advanced_to(EventSeq::new(BOUNDARY))
+            .expect("the boundary is a legal position");
+        let page = read_page(&reopened, &anchored, 64, &LogReadFilters::default())
+            .expect("the surviving range must still be readable after restart");
+        assert_eq!(page.records.len(), KEPT as usize);
+        assert_eq!(page.records.first().map(|e| e.event_id), Some(BOUNDARY));
+        assert!(page.retention.history_truncated);
+    }
+}

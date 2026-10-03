@@ -212,3 +212,100 @@ fn unchanged_default_skips_field_in_wire_json() {
         text
     );
 }
+
+/// TEST 5 — the missing ordering case: seq, monotonic time and wall
+/// clock are THREE things, not one thing with two spellings.
+///
+/// Tests 1..4 keep all four dimensions ascending in lockstep, which
+/// cannot distinguish "three independent dimensions" from "one
+/// dimension copied three times" — a fixture that only ever agrees is
+/// compatible with exactly the coupling the UAT forbids. This fixture is
+/// built so the three orderings DISAGREE:
+///
+/// ```text
+///   seq                : 0 < 1 < 2 < 3            strictly ascending
+///   monotonic_ns       : 1000 = 1000 < 2000 = 2000 non-decreasing, with TIES
+///   captured_at_unix_ns : strictly DESCENDING       wall clock stepped back
+/// ```
+///
+/// The ties are the load-bearing part. Monotonic time repeats across
+/// records whose `seq` differs, so no strictly-increasing function of
+/// `seq` can produce `monotonic_ns`: a sequence-only fixture therefore
+/// cannot be serialized as monotonic nanoseconds. The descending wall
+/// clock then rules out the remaining reading — that `captured_at_unix_ns`
+/// is monotonic time in a different unit — because it moves backwards
+/// while both other dimensions move forwards.
+#[test]
+fn three_time_dimensions_order_independently() {
+    const WALL_BASE: u64 = 1_700_000_000_000_000_000;
+
+    // (seq, monotonic_ns, captured_at_unix_ns) per record.
+    let fixture: [(u64, u64, u64); 4] = [
+        (0, 1_000, WALL_BASE + 30_000),
+        (1, 1_000, WALL_BASE + 20_000),
+        (2, 2_000, WALL_BASE + 10_000),
+        (3, 2_000, WALL_BASE),
+    ];
+    let session_id = SessionId::new("rec-c1-8-uat-c1-05-ordering");
+
+    // The orderings themselves, asserted on the FIXTURE first. If these
+    // ever stop holding, the round-trip below would prove nothing.
+    let seqs: Vec<u64> = fixture.iter().map(|f| f.0).collect();
+    let walls: Vec<u64> = fixture.iter().map(|f| f.2).collect();
+    assert!(
+        seqs.windows(2).all(|w| w[1] > w[0]),
+        "seq must be strictly ascending, got {seqs:?}"
+    );
+    assert!(
+        walls.windows(2).all(|w| w[1] < w[0]),
+        "wall clock must be strictly DESCENDING here, got {walls:?}"
+    );
+    let monotonic: Vec<u64> = fixture.iter().map(|f| f.1).collect();
+    assert!(
+        monotonic.windows(2).all(|w| w[1] >= w[0]),
+        "monotonic_ns must be non-decreasing, got {monotonic:?}"
+    );
+    assert!(
+        monotonic
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            < monotonic.len(),
+        "monotonic_ns must REPEAT for this fixture to prove anything: \
+         distinct values here would just be a third copy of seq \
+         ({monotonic:?})"
+    );
+    assert_ne!(
+        monotonic, seqs,
+        "monotonic_ns must not be a copy of seq: {monotonic:?} vs {seqs:?}"
+    );
+
+    for (seq, monotonic_ns, wall) in fixture {
+        let r = ExecutionRecord {
+            session_id: session_id.clone(),
+            seq: chronos_log::EventSeq::new(seq),
+            monotonic_ns,
+            kind: chronos_log::ExecutionKind::Raw,
+            payload: ExecutionPayload::new(vec![seq as u8], "ordering"),
+            invocation_id: None,
+            parent_invocation_id: None,
+            symbol_id: None,
+            captured_at_unix_ns: Some(wall),
+        };
+        // Round-trip through the wire shape: this is what would rewrite a
+        // dimension if any of the three were derived from another.
+        let text = serde_json::to_string(&r).expect("encode");
+        let de: ExecutionRecord = serde_json::from_str(&text).expect("decode");
+
+        assert_eq!(de.seq.0, seq, "seq was rewritten at seq={seq}");
+        assert_eq!(
+            de.monotonic_ns, monotonic_ns,
+            "monotonic_ns was rewritten at seq={seq}"
+        );
+        assert_eq!(
+            de.captured_at_unix_ns,
+            Some(wall),
+            "wall clock was rewritten at seq={seq}"
+        );
+    }
+}
