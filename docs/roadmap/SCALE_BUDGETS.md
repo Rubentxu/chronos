@@ -367,6 +367,54 @@ realmente poblados**.
 segundo**, luego el índice absoluto máximo es 1. D3 responde a un modo de fallo que la
 caracterización actual no ejercita. Ver §9.4.
 
+> **IMPLEMENTADO 2026-10-04 (R2.8). El bucketing ahora es relativo, y la derivación de arriba
+> era aritmíticamente correcta pero describía el reloj equivocado.**
+>
+> `summarize_log` indexa por `(ts - origen) / bucket_size_ns`, con el origen fijado en el primer
+> registro leído, y acumula en un `BTreeMap` en vez de un `Vec` denso: memoria **O(cubos
+> poblados)**, que es literalmente lo que D3 prometerse. La resta es `saturating_sub` a propósito,
+> porque el índice relativo introduce una resta que la versión absoluta no hacía, y un reloj que
+> salta hacia atrás debe caer en el cubo 0 y no en un índice de 10¹⁹.
+>
+> **Dos correcciones a este artículo, y la segunda es la que importa:**
+>
+> 1. **La cifra de ~14 GB no describe el camino de producción.** Se derivó de timestamps *epoch*,
+>    pero quien escribe los registros en producción es `chronos_native::invocation_tracker`
+>    (`mono_ns`, `active.entry_monotonic_ns`), o sea **tiempo desde el arranque**, no epoch. Con el
+>    ancho por defecto de 1 s, el índice absoluto es pues el *uptime* del host en segundos: ~3,15 ×
+>    10⁷ en un año de uptime, o sea ~252 MB por llamada — grave, pero no los ~14 GB que la fórmula
+>    sugería. La fórmula estaba bien; el reloj que se le atribuyó, no.
+> 2. **El artículo no menciona el caso que sí es fatal, y es peor que el que sí menciona.**
+>    `bucket_size_ns` es un campo **del cliente** (`ExecutionLogReadParams`, con
+>    `#[serde(default = ...)]`, y `server.rs` solo rechazaba el `0`). Con `bucket_size_ns: 1` el
+>    índice absoluto es el timestamp en nanosegundos, y `resize(idx + 1, 0)` pedía del orden de
+>    10¹⁸ entradas **antes de leer un solo registro**. Eso no es un coste alto: es un
+>    agotamiento de memoria alcanzable desde un argumento de herramienta.
+>
+> **Por qué el arreglo relativo no basta solo, y por qué hay un tope.** D3 hace gratuito el
+> *origen*, pero el *span* sigue siendo del cliente: pedir cubos de 1 ns sobre 10 s de sesión son
+> diez millones de cubos. El tope `MAX_BUCKETS = 1.000.000` está **declarado, no medido**, y a 1 s
+> admite un span de ~11,6 días, que cubre cualquier captura monotonic. Pasarse devuelve
+> `AggregateError::TooManyBuckets`, un tercer motivo de parada que **no** se colapsa en los otros
+> dos: nombra `bucket_size_ns`, dice cuántos cubos harían falta y cuál es el ancho más estrecho
+> que cabría. Un rechazo que no dice qué cambiar es un callejón sin salida; y truncar en silencio
+> sería exactamente la mentira que D2 y ADR-0004 existen para impedir.
+>
+> **No-vacuidad medida en los dos guards que importan.** Quitando la comprobación del tope, el
+> guard cae en rojo con `Ok(EventSummary { total_events: 2, bucket_count: 2, … })` — la versión
+> absoluta respondía encantada. Sustituyendo `saturating_sub` por una resta simple, el guard del
+> reloj atrás cae en rojo con `attempt to subtract with overflow`. Y hay un tercer guard que evita
+> que el tope sea tan bajo que nada pase nunca: el ancho que el rechazo sugiere tiene que ser
+> aceptado de verdad.
+>
+> **Lo que este arreglo cambia en la respuesta.** Con bucketing relativo, una sesión cuyo primer
+> evento no está en el origen del reloj ve `bucket_count` más bajo: la sesión de 1M del lane, que
+> ocupaba 2 cubos absolutos, ocupa **1** relativo. Los tres números que el resumen expone
+> (`total_events`, `bucket_count`, `mean_per_bucket`) no cambian de significado —siguen contando
+> eventos y cubos poblados— pero el valor de `bucket_count` sí es ahora una propiedad de la
+> sesión y no de la edad de la máquina, que es el punto.
+
+
 ---
 
 ## 6. Re-derivación: qué budgets sobreviven a D1
@@ -834,7 +882,16 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
    pregunta que una muestra única no podía responder. Detalle, no-vacuidad del guard y qué **no** es
    este budget en §8.
 
-4. **Caracterizar D3**: una medicion que use timestamps epoch, que la actual no ejercita (§9.4).
+4. ~~**Caracterizar D3**: una medicion que use timestamps epoch, que la actual no ejercita (§9.4).~~
+   **CERRADO (2026-10-04, R2.8) — pero no como una caracterización: como un arreglo.** El punto
+   pedía *medir* un fallo, y al medirlo resultó que el fallo no hipotético sino abierto: D3 ya
+   estaba **decidido** (§5) y el código seguía la decisión al revés. Así que el trabajo no fue
+   medir sino implementar lo decidido, y el defecto resultó ser **peor de lo que §5 derivaba**:
+   no un coste de ~14 GB por una captura epoch —cifra que además atrib timestamps al reloj
+   equivocado, porque producción escribe *monotonic*— sino un agotamiento de memoria alcanzable
+   desde un argumento de cliente (`bucket_size_ns`), que §5 no mencionaba. Detalle, derivaciones
+   corregidas, no-vacuidad y el cambio en la respuesta del lane en §5 D3. **Con esto, §10 queda con
+   un único punto abierto, el 5**, que se deja sin resolver a propósito.
 5. **Resolver la discrepancia de RSS** entre las dos grabaciones (§9.5). Se deja sin elegir
    ganador a proposito. **Tercera grabación el 2026-10-03** sobre el lane de 1M con C4 en sitio:
    pico de RSS **603.292 KB (~589 MB)**, pared con los ~843 MB de la grabación anterior y los
