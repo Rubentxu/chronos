@@ -614,13 +614,104 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
                 .copied()
         };
 
-        let records_snapshot = {
+        // C4 of SCALE_BUDGETS §7, and the third arm of this same defect
+        // family. This used to take `records.get(&session_id).cloned()` — a
+        // full clone of the session `Vec` — and then walk the owned copy,
+        // paying O(N) of the session in transient allocations before the cursor
+        // filter got a say. The comment above it said so in as many words
+        // ("this arm keeps its own full-clone cost, which is a separate open
+        // item"), and it had production callers the whole time: `analytics`,
+        // `call_graph`, the segmented backend, and through it
+        // `chronos_capture::session_feed`.
+        //
+        // What that costs is not the first read, it is the IDLE one. A
+        // consumer that has caught up asks "what is new", gets nothing, and
+        // used to allocate the entire log to learn it: measured at 48.8 MB per
+        // call on a 200k-event session, 9,939x the cost of the same call on a
+        // 20-event session — a linear clone signature, and a poll loop paying
+        // it every tick.
+        //
+        // So: read under the lock and clone only what is RETURNED, the same
+        // shape `read_from_seq` already uses. What is returned does not change;
+        // what it costs to return it does.
+        //
+        // The two early exits below have to happen BEFORE the cursor is
+        // persisted, which is what returning from inside the old `match` on the
+        // owned snapshot achieved. `Early` carries them out of the lock scope
+        // so the ordering is preserved rather than implied.
+        enum Early {
+            /// The session is not in the map at all.
+            Missing,
+            /// The caller's cursor is older than the oldest retained seq.
+            Stale(LogError),
+        }
+
+        let mut out_records: Vec<ExecutionRecord> = Vec::new();
+        let mut out_gaps: Vec<Gap> = Vec::new();
+        let mut max_seq = effective_cursor.last_seq;
+
+        let early = {
             let records = self.records.lock().expect("records lock poisoned");
-            records.get(&session_id).cloned()
+            match records.get(&session_id) {
+                None => Some(Early::Missing),
+                Some(entries) => {
+                    // The oldest seq currently in the log, read by reference —
+                    // this walk is O(N) in time but allocates nothing, and it
+                    // has to see every entry because a gap can be the oldest
+                    // thing present.
+                    let oldest_seq = entries
+                        .entries
+                        .iter()
+                        .map(|e| match e {
+                            RecordEntry::Record(r) => r.seq,
+                            RecordEntry::Gap(g) => g.first_missing,
+                        })
+                        .min()
+                        .unwrap_or(EventSeq::ZERO);
+
+                    if !fresh && effective_cursor.last_seq < oldest_seq && stored.is_some() {
+                        Some(Early::Stale(LogError::CursorStale {
+                            consumer: consumer.clone(),
+                            expected: effective_cursor.last_seq,
+                            current: oldest_seq,
+                        }))
+                    } else {
+                        //   - fresh cursor: include every record (even seq#0).
+                        //   - cursor with last_seq = n: include records with seq > n.
+                        for entry in &entries.entries {
+                            match entry {
+                                RecordEntry::Record(r) => {
+                                    let include = fresh || r.seq > effective_cursor.last_seq;
+                                    if include {
+                                        if r.seq > max_seq {
+                                            max_seq = r.seq;
+                                        }
+                                        out_records.push(r.clone());
+                                    }
+                                }
+                                RecordEntry::Gap(g) => {
+                                    // Include any gap whose end is past the cursor.
+                                    // For a fresh cursor, include any gap that
+                                    // affects at least seq#0.
+                                    let include = if fresh {
+                                        g.last_missing > EventSeq::ZERO
+                                    } else {
+                                        g.last_missing > effective_cursor.last_seq
+                                    };
+                                    if include {
+                                        out_gaps.push(g.clone());
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    }
+                }
+            }
         };
 
-        let entries = match records_snapshot {
-            None => {
+        match early {
+            Some(Early::Missing) => {
                 if !fresh {
                     // Caller asked for records past seq 0; the session
                     // is empty.
@@ -632,63 +723,8 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
                     next_cursor: effective_cursor,
                 });
             }
-            Some(entries) => entries,
-        };
-
-        // Determine the oldest seq currently in the log. `.entries` reaches
-        // into the owned clone, which the loop below then consumes by value —
-        // so `read_after` allocates and copies exactly as much as it always
-        // did. Only `read_from_seq` was changed here; this arm keeps its own
-        // full-clone cost, which is a separate open item.
-        let oldest_seq = entries
-            .entries
-            .iter()
-            .map(|e| match e {
-                RecordEntry::Record(r) => r.seq,
-                RecordEntry::Gap(g) => g.first_missing,
-            })
-            .min()
-            .unwrap_or(EventSeq::ZERO);
-
-        if !fresh && effective_cursor.last_seq < oldest_seq && stored.is_some() {
-            return Err(LogError::CursorStale {
-                consumer,
-                expected: effective_cursor.last_seq,
-                current: oldest_seq,
-            });
-        }
-
-        // Collect records + gaps.
-        //   - fresh cursor: include every record (even seq#0).
-        //   - cursor with last_seq = n: include records with seq > n.
-        let mut out_records: Vec<ExecutionRecord> = Vec::new();
-        let mut out_gaps: Vec<Gap> = Vec::new();
-        let mut max_seq = effective_cursor.last_seq;
-        for entry in entries.entries {
-            match entry {
-                RecordEntry::Record(r) => {
-                    let include = fresh || r.seq > effective_cursor.last_seq;
-                    if include {
-                        if r.seq > max_seq {
-                            max_seq = r.seq;
-                        }
-                        out_records.push(r);
-                    }
-                }
-                RecordEntry::Gap(g) => {
-                    // Include any gap whose end is past the cursor.
-                    // For a fresh cursor, include any gap that
-                    // affects at least seq#0.
-                    let include = if fresh {
-                        g.last_missing > EventSeq::ZERO
-                    } else {
-                        g.last_missing > effective_cursor.last_seq
-                    };
-                    if include {
-                        out_gaps.push(g);
-                    }
-                }
-            }
+            Some(Early::Stale(err)) => return Err(err),
+            None => {}
         }
 
         let next_cursor = ConsumerCursor::at(consumer.clone(), max_seq);
