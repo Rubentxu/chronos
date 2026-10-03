@@ -203,12 +203,16 @@ pub struct ChronosServer {
     /// SessionExecutionLog via `chronos_services::projection::build_engine`.
     /// Used by the MCP-wrapper gate (`meta_is_full`) on execution_query,
     /// state_query, trace_slice to reject queries whose projection is
-    /// Truncated or Empty. Mirrored with `engines` in one direction only:
+    /// Truncated or Empty. Mirrored with `engines` in two directions:
     /// every entry here has a corresponding entry in `engines`, because
     /// `ensure_projection` inserts both under the same lock pair and
-    /// `cleanup_session_memory` evicts both. The converse does not hold —
-    /// `build_and_store_engine`, used by the live capture drains, registers
-    /// an engine without a projection, so `engines` can be a strict superset.
+    /// `cleanup_session_memory` evicts both; and the other way round, an
+    /// entry here is invalidated by `build_and_store_engine` whenever a
+    /// live-capture drain arrives for that session, so a surviving entry
+    /// always describes an `engines` slot that `build_engine` produced.
+    /// The converse does not hold — `build_and_store_engine`, used by the
+    /// live capture drains, registers an engine without a projection, so
+    /// `engines` can be a strict superset.
     /// The map is a cache, never an authority: a missing entry means "not
     /// projected yet", and the next query rebuilds it from the log.
     projection_meta: Arc<Mutex<HashMap<String, chronos_services::projection::ProjectionMeta>>>,
@@ -854,16 +858,73 @@ impl ChronosServer {
 
         let mut engines = self.engines.lock().await;
         let mut session_languages = self.session_languages.lock().await;
+        // REC-C1.7 mirror invariant, third direction. `projection_meta` is
+        // the gate's cache and its entry *is* the claim "this session's
+        // `engines` slot is `projection::build_engine(&log)`" — `Full`
+        // asserts verbatim equality and `projected_through` asserts the last
+        // seq the projection actually read (projection.rs:48-49, 64-65).
+        // This function never consulted it, so a drain over a session a
+        // query had already published mutated the certified engine in place
+        // while the surviving meta kept certifying it.
+        //
+        // The evidence says invalidate, do not mutate, and it says so for a
+        // reason that is not "merging is expensive": every native drain
+        // reads its events back out of the very log the projection came
+        // from (`canonical_drain::read_all_raw_events`, reached via
+        // `ProbeService::stop`/`session_snapshot`), so a drain cannot
+        // introduce evidence the log lacks and there is nothing to rescue by
+        // merging. What it can do is make the engine something
+        // `build_engine(&log)` never produced: `merge` is the *id-union* of
+        // engine and drain (engine.rs:207-213), while `build_engine` is the
+        // log's record list (projection.rs:138-144, no dedup), and `merge`
+        // also appends, so it can reorder and can silently drop a repeated
+        // `event_id`. `ensure_projection` treats a missing meta as its
+        // normal path (see the fast path above) and rebuilds from the
+        // canonical log, so dropping the entry makes the next gated query
+        // honest instead of freezing a meta whose `projected_through` is
+        // already behind the log's tail.
+        //
+        // Locked in the same order as `ensure_projection` (`engines`, then
+        // `projection_meta`) so the check and the decision cannot race a
+        // projection that is being published concurrently.
+        //
+        // The engine itself is deliberately left in the map. It is the
+        // capture path's own state — `SessionsService::save_session` reads
+        // this slot directly with no gate (sessions.rs:77-82) — and a
+        // reader that cannot use it must not destroy it. The next
+        // `ensure_projection` overwrites it.
+        let published_projection = self
+            .projection_meta
+            .lock()
+            .await
+            .remove(session_id)
+            .is_some();
 
         if let Some(existing) = engines.get_mut(session_id) {
-            // Cumulative refresh: merge new events into the existing engine
-            // and rebuild indices. m0-02-make-snapshots-cumulative (UAT-M0-02).
-            existing.merge(events);
-            info!(
-                "Refreshed query engine for session {} (cumulative, now {} events)",
-                session_id,
-                existing.event_count()
-            );
+            if published_projection {
+                info!(
+                    "Drain for session {} invalidated its published projection \
+                     instead of merging into the certified engine (engine still \
+                     holds {} events); the log is authoritative and already \
+                     holds everything the drain delivered, so the next gated \
+                     query rebuilds from it",
+                    session_id,
+                    existing.event_count()
+                );
+            } else {
+                // Cumulative refresh: merge new events into the existing
+                // engine and rebuild indices.
+                // m0-02-make-snapshots-cumulative (UAT-M0-02). This is the
+                // pure live-capture shape — no log backs the engine, so
+                // there is no projection to invalidate and the cumulative
+                // merge is the only way the session becomes queryable.
+                existing.merge(events);
+                info!(
+                    "Refreshed query engine for session {} (cumulative, now {} events)",
+                    session_id,
+                    existing.event_count()
+                );
+            }
         } else {
             // First snapshot: build from scratch.
             let mut builder = IndexBuilder::new();
@@ -5650,6 +5711,455 @@ mod tests {
             }
             other => panic!("expected ExecutionLogUnavailable, got {other:?}"),
         }
+    }
+
+    /// Register a log holding `events`, and return the (log, SessionId) pair
+    /// so a test can append more evidence afterwards the way a live probe
+    /// keeps doing.
+    #[allow(dead_code)]
+    fn rec_c1_7_log_with(
+        tag: &str,
+        sid: &str,
+        events: &[TraceEvent],
+    ) -> (
+        ChronosServer,
+        chronos_services::session_log::SessionExecutionLog,
+        chronos_log::SessionId,
+    ) {
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "{tag}-{sid}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+        append_events_to_log(&log, &session_id, events);
+        log.flush().expect("flush the appended records");
+        (server, log, session_id)
+    }
+
+    /// A second, non-noisy event whose `event_id` is above the fixture's, so
+    /// it is genuinely new evidence rather than a re-delivery.
+    #[allow(dead_code)]
+    fn rec_c1_7_later_event(id: u64) -> TraceEvent {
+        use chronos_domain::SourceLocation;
+        TraceEvent::new(
+            id,
+            MonotonicNs::from(id * 100),
+            1,
+            EventType::FunctionEntry,
+            SourceLocation::new("main.c", 10 + id as u32, "later", 0x1000 + id),
+            EventData::Function {
+                name: format!("fn_{id}"),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
+        )
+    }
+
+    /// The drain exactly as the live-capture path performs it: the events are
+    /// read back out of the session's own `ExecutionLog`, not out of a ring
+    /// buffer. `ProbeService::stop` and `ProbeService::session_snapshot` both
+    /// hand `build_and_store_engine` the result of this call, which is why
+    /// the drained evidence is provably already in the log.
+    #[allow(dead_code)]
+    fn rec_c1_7_native_drain(
+        log: &chronos_services::session_log::SessionExecutionLog,
+    ) -> Vec<TraceEvent> {
+        chronos_services::canonical_drain::read_all_raw_events(log)
+            .expect("a readable log must drain")
+            .events
+    }
+
+    /// REC-C1.7, the defect: a drain mutated a published projection in place
+    /// and the gate kept certifying the result.
+    ///
+    /// The sequence is the production one, in order: a query publishes the
+    /// projection (`gate_projection` -> `ensure_projection`), the probe keeps
+    /// capturing so the log grows, then the operator calls
+    /// `session_snapshot`, whose drain reaches `build_and_store_engine`.
+    ///
+    /// `build_and_store_engine` used to consult `engines` only, so the drain
+    /// took the cumulative-`merge` branch against the engine the gate had
+    /// just built *from the log*, and `projection_meta` — the gate's cache —
+    /// kept its entry. The entry is not bookkeeping: `Full` means "the engine
+    /// matches the log verbatim" and `projected_through` is "the last seq the
+    /// projection read" (projection.rs:48-49, 64-65). After the drain both
+    /// claims are unearned: the engine was written by `merge`, a function the
+    /// projection never runs, and the certified range stops short of the
+    /// log's tail. Every gated reader — `execution_query`, `state_query`,
+    /// `trace_slice`, `execution_log_read` — then fast-paths on that meta
+    /// (server.rs:751-753) and never rebuilds.
+    ///
+    /// Asserted as the absence of the corruption rather than as the
+    /// reproduction of it, so the test stays green in a fixed tree. Its
+    /// non-vacuity was established by reverting the guard and watching this
+    /// exact assertion fail; the failure message below is the one it printed.
+    #[tokio::test]
+    async fn rec_c1_7_a_drain_may_not_leave_a_meta_certifying_a_merge_made_engine() {
+        let sid = "rec-c1-7-drain-over-published";
+        let (server, log, session_id) =
+            rec_c1_7_log_with("rec-c1-7-drain", sid, &rec_c1_5_fixture());
+
+        // 1. A gated query publishes the projection: `Full`, certified
+        //    through the log's tail as it stands now.
+        let published = server
+            .gate_projection(sid)
+            .await
+            .expect("a readable log must project");
+        let tail_at_projection = log.handle().tail_seq();
+        assert_eq!(
+            published.completeness,
+            projection::ProjectionCompleteness::Full,
+            "fixture sanity: an untruncated log projects as Full"
+        );
+        assert_eq!(
+            published.projected_through, tail_at_projection,
+            "fixture sanity: the published meta certifies the log's current tail"
+        );
+
+        // 2. The probe keeps capturing. This is the ordinary case for a live
+        //    session between two `session_snapshot` calls.
+        let later = [rec_c1_7_later_event(60), rec_c1_7_later_event(70)];
+        append_events_to_log(&log, &session_id, &later);
+        log.flush().expect("flush the newer records");
+        let tail_after_capture = log.handle().tail_seq();
+        assert!(
+            tail_after_capture > tail_at_projection,
+            "fixture sanity: the log must have grown, or the certified range \
+             would still reach its tail and this test would prove nothing"
+        );
+
+        // 3. `session_snapshot` drains — out of the log, as the live path does.
+        let drain = rec_c1_7_native_drain(&log);
+        server
+            .build_and_store_engine(sid, drain, Language::Rust)
+            .await;
+
+        // The gate's cache must not still be vouching for this engine. Before
+        // the fix the meta survived here, and its `projected_through` was
+        // still the pre-capture tail: it claimed `Full` over a range the
+        // projection never read, for an engine `merge` had rewritten.
+        let surviving = server.projection_meta.lock().await.get(sid).cloned();
+        assert!(
+            surviving.is_none(),
+            "a drain over a session with a published projection must invalidate \
+             that projection, not merge into the engine it certifies. A surviving \
+             entry is a gate that fast-paths on stale coverage: {:?}",
+            surviving
+        );
+
+        // And the next gated query — the one an agent actually makes — has to
+        // produce a meta that certifies the log as it is *now*.
+        let refreshed = server
+            .gate_projection(sid)
+            .await
+            .expect("the log is still readable, so the next query must rebuild");
+        assert_eq!(
+            refreshed.projected_through, tail_after_capture,
+            "the rebuilt meta must certify the log's current tail, not the tail \
+             that was current when the drain happened"
+        );
+        let rebuilt = projection::build_engine(&log)
+            .expect("independent rebuild")
+            .engine;
+        let engines = server.engines.lock().await;
+        let served = engines.get(sid).expect("the rebuild left an engine");
+        assert_eq!(
+            served.events(),
+            rebuilt.events(),
+            "the engine a gated reader is served must be the log's projection"
+        );
+    }
+
+    /// The invariant itself, asserted as the disjunction rather than as "it
+    /// works".
+    ///
+    /// After any drain, for any session: either `projection_meta` has no
+    /// entry, or `engines[sid]` still equals `projection::build_engine(&log)`.
+    /// The second arm is not decorative — it is what a session with no
+    /// published projection must satisfy, and it is the arm a "just drop the
+    /// engine too" fix would break. Both arms are checked explicitly so this
+    /// test cannot pass by accident on either one.
+    #[tokio::test]
+    async fn rec_c1_7_after_a_drain_the_meta_is_gone_or_the_engine_is_the_log_projection() {
+        let sid = "rec-c1-7-invariant";
+        let (server, log, session_id) =
+            rec_c1_7_log_with("rec-c1-7-invariant", sid, &rec_c1_5_fixture());
+
+        // Publish, grow, drain — the same production sequence as above.
+        server
+            .gate_projection(sid)
+            .await
+            .expect("a readable log must project");
+        let later = [rec_c1_7_later_event(60), rec_c1_7_later_event(70)];
+        append_events_to_log(&log, &session_id, &later);
+        log.flush().expect("flush the newer records");
+        let drain = rec_c1_7_native_drain(&log);
+        server
+            .build_and_store_engine(sid, drain, Language::Rust)
+            .await;
+
+        let published_still = server.projection_meta.lock().await.contains_key(sid);
+        let rebuilt = projection::build_engine(&log)
+            .expect("independent rebuild")
+            .engine;
+        let engines = server.engines.lock().await;
+        let engine_is_the_projection = match engines.get(sid) {
+            Some(engine) => engine.events() == rebuilt.events(),
+            // No engine at all cannot be read behind the gate, so it cannot
+            // violate the invariant; `ensure_projection` will build one.
+            None => false,
+        };
+
+        assert!(
+            !published_still || engine_is_the_projection,
+            "INVARIANT BROKEN: projection_meta is published for '{sid}' but the \
+             engine it certifies is not projection::build_engine(&log). Either the \
+             meta must be invalidated by the drain, or the engine must still be \
+             the log's projection. published={published_still} \
+             engine_is_projection={engine_is_the_projection}"
+        );
+
+        // The disjunction is only meaningful if the second arm is reachable,
+        // so pin which arm this sequence actually took.
+        assert!(
+            !published_still,
+            "the drain must have invalidated the published projection; if this arm \
+             ever flips, the assertion above is no longer testing the invalidation"
+        );
+    }
+
+    /// The positive control: a drain for a session with **no** published
+    /// projection still does its cumulative merge.
+    ///
+    /// This is the pure live-capture shape — `session_start` + `probe_stop`,
+    /// and the browser probe, whose events come from the CDP adapter and have
+    /// no `ExecutionLog` at all (FIND-C2.2-04) and therefore can never hold a
+    /// `projection_meta` entry. It is also UAT-M0-02
+    /// (`m0-02-make-snapshots-cumulative`), and this project has repeatedly
+    /// found fixes that were satisfied by refusing drains outright. This is
+    /// the test that says the guard is narrow: the merge branch must remain
+    /// reachable and must keep accumulating.
+    ///
+    /// Non-vacuity: making the guard too broad — skipping the merge whenever
+    /// the engine is not a projection *by construction* rather than whenever a
+    /// projection is published — turns this red on the `event_count`, and the
+    /// existing
+    /// `rec_c1_5_rebuild_equals_maintained_projection_over_a_real_log` goes
+    /// red with it.
+    #[tokio::test]
+    async fn rec_c1_7_a_drain_with_no_published_projection_still_merges_cumulatively() {
+        let sid = "rec-c1-7-positive-control";
+
+        // A logless session: exactly what `probe_stop` on a fresh
+        // `session_start` leaves, and what the browser probe always is.
+        let server = ChronosServer::new();
+        assert!(
+            server.projection_meta.lock().await.is_empty(),
+            "fixture sanity: nothing is projected before the first drain"
+        );
+
+        // First drain: the from-scratch branch.
+        server
+            .build_and_store_engine(sid, vec![make_fn_event(0, 100, 1, "main")], Language::C)
+            .await;
+        {
+            let engines = server.engines.lock().await;
+            assert_eq!(
+                engines
+                    .get(sid)
+                    .expect("first drain registers")
+                    .event_count(),
+                1,
+                "the from-scratch branch must index the events it was given"
+            );
+        }
+
+        // Second and third drains: the cumulative merge, which is the whole
+        // point of UAT-M0-02.
+        server
+            .build_and_store_engine(sid, vec![make_fn_event(1, 200, 1, "helper")], Language::C)
+            .await;
+        server
+            .build_and_store_engine(sid, vec![make_fn_event(2, 300, 1, "main")], Language::C)
+            .await;
+
+        let engines = server.engines.lock().await;
+        let engine = engines
+            .get(sid)
+            .expect("the cumulative merge must leave the engine registered");
+        assert_eq!(
+            engine.event_count(),
+            3,
+            "three cumulative drains for a session with no published projection \
+             must accumulate three events. An engine stuck at 1 means the fix \
+             refused the drain, which is the failure mode this control exists \
+             to catch"
+        );
+        assert_eq!(
+            engine_ids(engine),
+            vec![0, 1, 2],
+            "the cumulative merge must keep the delivery order, so the session \
+             answers the history it actually captured"
+        );
+        assert!(
+            !server.projection_meta.lock().await.contains_key(sid),
+            "the live-capture path still must not publish projection metadata: a \
+             drain-sourced engine that could pass the gate would be a worse lie \
+             than the one REC-C1.7 removed"
+        );
+    }
+
+    /// The content half of the defect, and the reason invalidation is the
+    /// right shape rather than "merge is close enough".
+    ///
+    /// On the happy path — an append-only log, unique `event_id`s, a drain
+    /// that reads the whole log — `merge` happens to reconstruct the same
+    /// event list a rebuild would, because the drained vector is a prefix
+    /// extension of the projected one. That coincidence is not a guarantee,
+    /// and this log state shows why: the log holds two `Raw` records with the
+    /// same `event_id`.
+    ///
+    /// `build_engine` pushes every record it decodes (projection.rs:138-144)
+    /// and never deduplicates, so the log's record list is the truth and
+    /// holds both. `merge` is the id-union, first-wins
+    /// (engine.rs:207-213), so it silently drops one. A gate that still
+    /// holds `Full` would then certify an engine that is missing evidence the
+    /// log demonstrably has — and the missing event is gone from the only
+    /// structure a reader will consult, because the next gated query
+    /// fast-paths on the meta and never rebuilds.
+    ///
+    /// Honest scope: the in-tree native producer allocates `event_id`s from a
+    /// monotonic per-session counter, so it does not currently emit a repeat.
+    /// A repeated id is still a legal `ExecutionLog` — nothing in the log
+    /// contract makes ids unique — and the point of the test is the
+    /// *guarantee*, not the producer: after a drain, either the meta is gone
+    /// or the engine equals `build_engine(&log)`. Same conclusion if ids
+    /// collide, and if history retires (`retained_from` advancing after the
+    /// projection would leave the engine holding records the log no longer
+    /// has, under a `Full` that `build_engine` would itself refuse).
+    #[tokio::test]
+    async fn rec_c1_7_merge_is_not_a_projection_when_the_log_repeats_an_event_id() {
+        let sid = "rec-c1-7-repeated-id";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-7-repeated-id-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        // One record to begin with, so the repeat lands *after* the
+        // projection is published. That ordering is the whole test: a repeat
+        // already in the log when the projection runs is in the projected
+        // engine too, and a later drain re-adds nothing. The corruption needs
+        // the repeat to arrive while the session is live, between two
+        // snapshots — the same shape the two tests above use.
+        let first = make_fn_event(10, 100, 1, "twin");
+        append_events_to_log(&log, &session_id, &[first]);
+        log.flush().expect("flush the first record");
+
+        // 1. Publish: the engine holds one event, `Full` over seq 0.
+        server
+            .gate_projection(sid)
+            .await
+            .expect("a readable log must project");
+        {
+            let engines = server.engines.lock().await;
+            assert_eq!(
+                engines
+                    .get(sid)
+                    .expect("the gate left an engine")
+                    .event_count(),
+                1,
+                "fixture sanity: the projection of a one-record log holds one event"
+            );
+        }
+
+        // 2. The probe captures a second record that reuses the id. Nothing
+        //    in the `ExecutionLog` contract makes `event_id` unique.
+        let twin = make_fn_event(10, 200, 1, "twin");
+        append_events_to_log(&log, &session_id, &[twin]);
+        log.flush().expect("flush the repeated record");
+
+        let truth = projection::build_engine(&log).expect("rebuild").engine;
+        assert_eq!(
+            truth.event_count(),
+            2,
+            "fixture sanity: build_engine keeps every record it decodes, so a log \
+             with two same-id records projects to two events. If this ever fails \
+             the producer-side dedup changed and this test is no longer testing \
+             what it claims"
+        );
+
+        // 3. The drain reads both records back, and `merge` is asked to fold
+        //    them into an engine that already holds id 10.
+        let drain = rec_c1_7_native_drain(&log);
+        assert_eq!(
+            drain.len(),
+            2,
+            "fixture sanity: the drain must deliver both records, or the merge \
+             never sees the repeat and this test proves nothing"
+        );
+        server
+            .build_and_store_engine(sid, drain, Language::Rust)
+            .await;
+
+        // The evidence is genuinely lost from the engine, and this is true
+        // whichever arm of the fix was taken: the engine is not rebuilt on
+        // the drain, and `merge` is first-wins on `event_id`, so the second
+        // record never enters it. Without the meta being invalidated this is
+        // unrecoverable — the next gated query fast-paths and never rebuilds.
+        {
+            let engines = server.engines.lock().await;
+            let held = engines
+                .get(sid)
+                .expect("an engine is present")
+                .event_count();
+            assert!(
+                held < truth.event_count(),
+                "fixture sanity: this test exists because merge cannot represent a \
+                 repeated event_id, so the engine must be short a record the log \
+                 has. engine={held} log={}",
+                truth.event_count()
+            );
+        }
+
+        let published_still = server.projection_meta.lock().await.contains_key(sid);
+        let engines = server.engines.lock().await;
+        let engine_is_the_projection = engines
+            .get(sid)
+            .is_some_and(|e| e.events() == truth.events());
+
+        assert!(
+            !published_still || engine_is_the_projection,
+            "INVARIANT BROKEN on a log that repeats an event_id: a gate holding \
+             `Full` is certifying an engine that merge built by id-union, so it \
+             is missing a record build_engine has, and the gate will never rebuild \
+             it. published={published_still} \
+             engine_is_projection={engine_is_the_projection}"
+        );
     }
 
     #[tokio::test]
