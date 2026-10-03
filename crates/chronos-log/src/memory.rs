@@ -30,6 +30,84 @@ enum RecordEntry {
     Gap(Gap),
 }
 
+impl RecordEntry {
+    /// The earliest `from_seq` at which `read_from_seq` must examine this
+    /// entry — the value its reader-side skip test compares against.
+    ///
+    /// It is `r.seq` for a record (skipped while `r.seq < from_seq`) and
+    /// `g.last_missing` for a gap (skipped while `g.last_missing < from_seq`),
+    /// i.e. exactly the condition the reader already used. It exists as a
+    /// named function so the seek in `read_from_seq` and the scan it replaces
+    /// cannot drift apart: they read the same key.
+    fn reach(&self) -> EventSeq {
+        match self {
+            RecordEntry::Record(r) => r.seq,
+            RecordEntry::Gap(g) => g.last_missing,
+        }
+    }
+}
+
+/// The per-session entry list, plus the one fact `read_from_seq` needs in
+/// order to seek instead of scan: whether the list is still in non-decreasing
+/// `RecordEntry::reach` order.
+///
+/// **This is not a re-ordering, and it does not impose one.** The list stays
+/// append-only and authoritative in append order; nothing here sorts, and the
+/// reader still walks the list in that order. The flag only records whether
+/// the seek's precondition happens to hold, and it is *derived* at every push
+/// rather than assumed — the reason is that the precondition is false on a
+/// reachable state, see `reach_disordered`'s doc comment.
+#[derive(Debug, Default, Clone)]
+struct SessionEntries {
+    entries: Vec<RecordEntry>,
+    /// Sticky: set the first time an entry lands whose `reach` is below the
+    /// previous entry's, and never cleared. The list is append-only and
+    /// nothing ever reorders or removes from it, so once it is out of order
+    /// no later append can repair it — a flag that could flip back would be
+    /// a flag a reader could be misled by.
+    ///
+    /// It IS reachable. `record_gap` only rejects a gap starting *beyond* the
+    /// allocator; a gap whose whole range lies *below* it is accepted and
+    /// appended after higher seqs, so `reach` drops at that point. That state
+    /// is also self-contradictory evidence (a gap declaring seqs that are
+    /// present in the log), which strict replay later rejects, so the log
+    /// cannot be reopened — but it can exist in memory, and `read_from_seq`
+    /// must answer it correctly rather than binary-search a list that is not
+    /// sorted. When this is set, the reader scans, exactly as it always did.
+    reach_disordered: bool,
+}
+
+impl std::ops::Deref for SessionEntries {
+    type Target = [RecordEntry];
+
+    fn deref(&self) -> &[RecordEntry] {
+        &self.entries
+    }
+}
+
+impl SessionEntries {
+    /// The only way an entry enters the list, so the ordering fact is
+    /// maintained in exactly one place.
+    fn push(&mut self, entry: RecordEntry) {
+        if let Some(prev) = self.entries.last() {
+            if entry.reach() < prev.reach() {
+                self.reach_disordered = true;
+            }
+        }
+        self.entries.push(entry);
+    }
+
+    /// The first index whose entry can reach `from_seq`, or `len()` when none
+    /// can. Only meaningful while `!reach_disordered`.
+    fn first_reachable(&self, from_seq: EventSeq) -> usize {
+        debug_assert!(
+            !self.reach_disordered,
+            "seeked a list already known to be out of reach order"
+        );
+        self.entries.partition_point(|e| e.reach() < from_seq)
+    }
+}
+
 /// Identity-based secondary indexes used by the M2 read surface.
 /// Keyed by `SessionId` so each session has its own index namespace.
 type InvocationIndex = HashMap<Uuid, BTreeSet<EventSeq>>;
@@ -40,7 +118,7 @@ type SymbolIndex = HashMap<SymbolIndexKey, BTreeSet<EventSeq>>;
 #[derive(Debug, Default)]
 pub struct InMemoryExecutionLog {
     /// Records + gaps per session, in append order.
-    records: Mutex<HashMap<SessionId, Vec<RecordEntry>>>,
+    records: Mutex<HashMap<SessionId, SessionEntries>>,
     /// Per-session monotonic seq allocator (next seq to assign).
     next_seq: Mutex<HashMap<SessionId, EventSeq>>,
     /// Per-(session, consumer) high-water seq (last seq the consumer
@@ -258,7 +336,7 @@ impl InMemoryExecutionLog {
             // Linear scan; the per-key BTreeSet is small (typical
             // recursion depth is ≤32). For very wide keys, a
             // positional index over the Vec is a future cycle.
-            for entry in entries {
+            for entry in entries.iter() {
                 if let RecordEntry::Record(r) = entry {
                     if r.seq == s {
                         out.push(r.clone());
@@ -481,8 +559,13 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
             Some(entries) => entries,
         };
 
-        // Determine the oldest seq currently in the log.
+        // Determine the oldest seq currently in the log. `.entries` reaches
+        // into the owned clone, which the loop below then consumes by value —
+        // so `read_after` allocates and copies exactly as much as it always
+        // did. Only `read_from_seq` was changed here; this arm keeps its own
+        // full-clone cost, which is a separate open item.
         let oldest_seq = entries
+            .entries
             .iter()
             .map(|e| match e {
                 RecordEntry::Record(r) => r.seq,
@@ -505,7 +588,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         let mut out_records: Vec<ExecutionRecord> = Vec::new();
         let mut out_gaps: Vec<Gap> = Vec::new();
         let mut max_seq = effective_cursor.last_seq;
-        for entry in entries {
+        for entry in entries.entries {
             match entry {
                 RecordEntry::Record(r) => {
                     let include = fresh || r.seq > effective_cursor.last_seq;
@@ -555,12 +638,34 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
     ) -> Result<LogPage, LogError> {
         // Stateless: no cursor is read or written. Two callers with different
         // `from_seq` cannot interfere.
-        let entries = {
-            let records = self.records.lock().expect("records lock poisoned");
-            match records.get(session_id).cloned() {
-                Some(e) => e,
-                None => return Ok(LogPage::empty_at(from_seq)),
-            }
+        //
+        // C1/C2 of docs/roadmap/SCALE_BUDGETS.md §7. This used to clone the
+        // WHOLE session Vec before looking at `limit`, then walk it from index
+        // 0 discarding `seq < from_seq` — so one call cost O(N) of the session
+        // and ~1x the session in transient allocations, and `limit=1` cost the
+        // same as `limit=100`. Two separate costs had to go:
+        //
+        //   1. the clone, removed by reading under the lock and cloning only
+        //      what is returned (at most `limit` records);
+        //   2. the O(position) walk, removed by seeking to the first entry that
+        //      can reach `from_seq`.
+        //
+        // (2) is only legal while the list is in non-decreasing `reach` order,
+        // so the seek is gated on `SessionEntries::reach_disordered` — a fact
+        // derived at every push, not assumed. See that field's doc comment for
+        // the reachable state that breaks the order.
+        let records = self.records.lock().expect("records lock poisoned");
+        let Some(session) = records.get(session_id) else {
+            return Ok(LogPage::empty_at(from_seq));
+        };
+        let window: &[RecordEntry] = if session.reach_disordered {
+            // Out of order: walk it, exactly as this always has.
+            &session.entries
+        } else {
+            // Every entry before the first reachable one is skipped by the loop
+            // below, so starting there is the same walk minus that prefix —
+            // provably the same page, without paying for the prefix.
+            &session.entries[session.first_reachable(from_seq)..]
         };
 
         let mut out_records: Vec<ExecutionRecord> = Vec::new();
@@ -568,7 +673,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
         let mut examined_any = false;
         let mut max_examined = from_seq;
 
-        for entry in entries {
+        for entry in window {
             match entry {
                 RecordEntry::Record(r) => {
                     if r.seq < from_seq {
@@ -581,7 +686,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
                     if r.seq > max_examined {
                         max_examined = r.seq;
                     }
-                    out_records.push(r);
+                    out_records.push(r.clone());
                 }
                 RecordEntry::Gap(g) => {
                     // A gap is examined when its range reaches the position.
@@ -601,6 +706,7 @@ impl ExecutionLogBackend for InMemoryExecutionLog {
                 }
             }
         }
+        drop(records);
 
         Ok(LogPage {
             records: out_records,
@@ -1156,5 +1262,436 @@ mod rec_c1_3_read_from_seq {
         .unwrap();
         log.append_raw(s.clone(), 4, "after").unwrap();
         (log, s)
+    }
+}
+
+/// C1/C2 of `docs/roadmap/SCALE_BUDGETS.md` §7, and the ordering fact the
+/// seek in `read_from_seq` is allowed to rely on.
+///
+/// `read_from_seq` walks a `Vec<RecordEntry>` in append order and skips every
+/// entry whose `reach` is below `from_seq`. Skipping the *prefix* by
+/// `partition_point` instead of walking it is only equivalent while the list is
+/// in non-decreasing `reach` order, so these tests pin three separate things:
+///
+///   1. which write paths preserve that order (appends, the overflow gap,
+///      strict replay);
+///   2. which one does NOT (`record_gap` with a range below the allocator),
+///      because that is what `SessionEntries::reach_disordered` exists for;
+///   3. that a seek and a full walk return the SAME page either way, which is
+///      the property that actually keeps the optimization safe.
+#[cfg(test)]
+mod c1_c2_read_from_seq {
+    use super::*;
+    use crate::gap::GapReason;
+
+    /// The pre-optimisation walk, verbatim, kept here as the oracle. Every
+    /// equivalence assertion below compares the production path against this,
+    /// not against a hand-written expectation of what the new code "should"
+    /// return — otherwise the oracle and the bug would be written by the same
+    /// assumption.
+    fn reference_page(entries: &[RecordEntry], from_seq: EventSeq, limit: usize) -> LogPage {
+        let mut out_records: Vec<ExecutionRecord> = Vec::new();
+        let mut out_gaps: Vec<Gap> = Vec::new();
+        let mut examined_any = false;
+        let mut max_examined = from_seq;
+        for entry in entries {
+            match entry {
+                RecordEntry::Record(r) => {
+                    if r.seq < from_seq {
+                        continue;
+                    }
+                    if out_records.len() >= limit {
+                        break;
+                    }
+                    examined_any = true;
+                    if r.seq > max_examined {
+                        max_examined = r.seq;
+                    }
+                    out_records.push(r.clone());
+                }
+                RecordEntry::Gap(g) => {
+                    if g.last_missing < from_seq {
+                        continue;
+                    }
+                    if out_records.len() >= limit {
+                        break;
+                    }
+                    examined_any = true;
+                    out_gaps.push(g.clone());
+                    if g.last_missing > max_examined {
+                        max_examined = g.last_missing;
+                    }
+                }
+            }
+        }
+        LogPage {
+            records: out_records,
+            gaps: out_gaps,
+            position_after: if examined_any {
+                EventSeq::new(max_examined.0 + 1)
+            } else {
+                from_seq
+            },
+            exhausted: !examined_any,
+        }
+    }
+
+    fn entries_of(log: &InMemoryExecutionLog, s: &SessionId) -> Vec<RecordEntry> {
+        let records = log.records.lock().expect("records lock poisoned");
+        records
+            .get(s)
+            .map(|e| e.entries.clone())
+            .unwrap_or_default()
+    }
+
+    fn is_reach_ordered(log: &InMemoryExecutionLog, s: &SessionId) -> bool {
+        let records = log.records.lock().expect("records lock poisoned");
+        !records.get(s).expect("session present").reach_disordered
+    }
+
+    fn reaches(log: &InMemoryExecutionLog, s: &SessionId) -> Vec<u64> {
+        entries_of(log, s).iter().map(|e| e.reach().0).collect()
+    }
+
+    fn seeded(n: u64) -> (InMemoryExecutionLog, SessionId) {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2");
+        for i in 0..n {
+            log.append_raw(s.clone(), i, "ev").unwrap();
+        }
+        (log, s)
+    }
+
+    /// The overflow path's shape: `SegmentedExecutionLog::append` reserves the
+    /// seq with `allocate_seq_for_gap` and records a single-seq gap at it, so
+    /// the gap is written at the allocator and the next append continues after
+    /// it. Order preserved.
+    #[test]
+    fn the_overflow_gap_shape_preserves_the_reach_order() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-overflow");
+        for _ in 0..5 {
+            log.append_raw(s.clone(), 0, "ev").unwrap();
+        }
+        let reserved = log.allocate_seq_for_gap(&s).unwrap();
+        assert_eq!(reserved, EventSeq::new(5));
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                reserved,
+                reserved,
+                GapReason::AdapterBufferOverflow,
+                "overflow",
+            ),
+        )
+        .unwrap();
+        log.append_raw(s.clone(), 0, "ev").unwrap();
+        assert_eq!(reaches(&log, &s), vec![0, 1, 2, 3, 4, 5, 6]);
+        assert!(
+            is_reach_ordered(&log, &s),
+            "the production overflow path must keep the list seekable"
+        );
+    }
+
+    /// Strict replay is release-active validation, not an assert: the plan
+    /// builder requires each entry to start exactly where the previous one
+    /// ended (`replay.rs:251-260`) and each segment to continue the previous
+    /// one, so a replayed list is densely tiled and therefore ordered.
+    #[test]
+    fn a_strictly_replayed_run_preserves_the_reach_order() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-replay");
+        for seq in 0..8u64 {
+            let record = ExecutionRecord {
+                session_id: s.clone(),
+                seq: EventSeq::new(seq),
+                monotonic_ns: seq,
+                kind: ExecutionKind::Raw,
+                payload: ExecutionPayload::new(Vec::new(), "v2"),
+                invocation_id: None,
+                parent_invocation_id: None,
+                symbol_id: None,
+                captured_at_unix_ns: None,
+            };
+            log.replay_record(&record).unwrap();
+        }
+        assert_eq!(reaches(&log, &s), vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert!(is_reach_ordered(&log, &s));
+    }
+
+    /// THE REFUTATION, as a test. `record_gap` rejects a gap that starts
+    /// *beyond* the allocator, but nothing rejects one that ends *below* it, so
+    /// a `reach` (the gap's `last_missing`) smaller than the preceding records'
+    /// seqs lands at the end of the list and the order breaks. This is why
+    /// `read_from_seq` cannot seek unconditionally.
+    ///
+    /// The state is also self-contradictory evidence — the gap declares seqs
+    /// 3..=5 lost while records 3, 4 and 5 are present — and strict replay
+    /// rejects such a segment, so the log cannot be reopened afterwards. That
+    /// is a separate defect, reported, not fixed here.
+    #[test]
+    fn a_gap_below_the_allocator_breaks_the_reach_order() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-retroactive");
+        for _ in 0..10 {
+            log.append_raw(s.clone(), 0, "ev").unwrap();
+        }
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(3),
+                EventSeq::new(5),
+                GapReason::KernelRingOverflow,
+                "late",
+            ),
+        )
+        .expect("record_gap still accepts a gap below the allocator");
+
+        let reaches = reaches(&log, &s);
+        assert_eq!(
+            reaches,
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 5],
+            "the gap's reach (5) lands after higher seqs: the list is NOT ordered"
+        );
+        assert!(
+            !is_reach_ordered(&log, &s),
+            "the break must be recorded, or read_from_seq would seek an unsorted list"
+        );
+    }
+
+    /// The flag is sticky. A later, perfectly ordinary append cannot repair a
+    /// list that is already out of order, and a flag that could flip back would
+    /// be a flag a reader could be misled by.
+    #[test]
+    fn the_disorder_flag_does_not_clear_itself_on_a_later_append() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-sticky");
+        for _ in 0..10 {
+            log.append_raw(s.clone(), 0, "ev").unwrap();
+        }
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(3),
+                EventSeq::new(5),
+                GapReason::KernelRingOverflow,
+                "late",
+            ),
+        )
+        .unwrap();
+        log.append_raw(s.clone(), 0, "ev").unwrap();
+        assert_eq!(reaches(&log, &s).last(), Some(&10));
+        assert!(
+            !is_reach_ordered(&log, &s),
+            "appending cannot heal an append-only list that is already out of order"
+        );
+    }
+
+    /// The safety property: on an ORDERED list, seeking must return exactly what
+    /// the full walk returned, for every position and limit. Checked
+    /// differentially against `reference_page` rather than against a hand-written
+    /// expectation, so a wrong seek predicate cannot pass.
+    #[test]
+    fn seeking_matches_the_full_walk_on_an_ordered_list() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-equiv-ordered");
+        for _ in 0..6 {
+            log.append_raw(s.clone(), 0, "before").unwrap();
+        }
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(6),
+                EventSeq::new(9),
+                GapReason::AdapterBufferOverflow,
+                "gap",
+            ),
+        )
+        .unwrap();
+        for _ in 0..5 {
+            log.append_raw(s.clone(), 0, "after").unwrap();
+        }
+        assert!(is_reach_ordered(&log, &s));
+
+        let entries = entries_of(&log, &s);
+        let mut positions = 0..=entries.len() as u64 + 2;
+        let mut compared = 0usize;
+        for from in positions.by_ref() {
+            for limit in 0..=entries.len() + 2 {
+                let got = log.read_from_seq(&s, EventSeq::new(from), limit).unwrap();
+                let want = reference_page(&entries, EventSeq::new(from), limit);
+                assert_eq!(
+                    got, want,
+                    "seek diverged from the walk at from_seq={from} limit={limit}"
+                );
+                compared += 1;
+            }
+        }
+        assert!(compared > 100, "the comparison must actually cover a grid");
+    }
+
+    /// And the same property on a DISORDERED list, where the reader must fall
+    /// back to the walk. Without the fallback the seek would binary-search an
+    /// unsorted list, land inside the record run, and report the trailing gap
+    /// as if it reached `from_seq` — a page that never existed.
+    #[test]
+    fn a_disordered_list_answers_exactly_as_the_full_walk_does() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-equiv-disordered");
+        for _ in 0..10 {
+            log.append_raw(s.clone(), 0, "ev").unwrap();
+        }
+        log.record_gap(
+            s.clone(),
+            Gap::new(
+                EventSeq::new(3),
+                EventSeq::new(5),
+                GapReason::KernelRingOverflow,
+                "late",
+            ),
+        )
+        .unwrap();
+        assert!(!is_reach_ordered(&log, &s));
+
+        let entries = entries_of(&log, &s);
+        for from in 0..=12u64 {
+            for limit in 0..=12usize {
+                let got = log.read_from_seq(&s, EventSeq::new(from), limit).unwrap();
+                let want = reference_page(&entries, EventSeq::new(from), limit);
+                assert_eq!(
+                    got, want,
+                    "fallback diverged from the walk at from_seq={from} limit={limit}"
+                );
+            }
+        }
+
+        // The concrete leak an unconditional seek would produce: at
+        // from_seq=6 the gap's last_missing is 5, so it must not appear.
+        let page = log.read_from_seq(&s, EventSeq::new(6), 10).unwrap();
+        assert_eq!(page.records.len(), 4, "seqs 6..=9");
+        assert!(
+            page.gaps.is_empty(),
+            "a gap ending below from_seq leaked into the page: {:?}",
+            page.gaps
+        );
+    }
+
+    /// The minimal case that shows WHY the flag is load-bearing, found by
+    /// exhaustive search over the shapes the public API can produce (5 records,
+    /// then two retroactive gaps over 0..=2, so `reach` is
+    /// `[0,1,2,3,4,2,2]`).
+    ///
+    /// Seeking that list without the flag binary-searches an unsorted slice and
+    /// returns index 7 — the trailing gaps' `reach` of 2 is below `from_seq=4`,
+    /// so the search concludes the list ends before the record at seq 4 and
+    /// skips it. The page comes back EMPTY and `exhausted`, which tells a
+    /// reader the log is caught up when it is not: the record is lost, not
+    /// merely misreported. This is the whole reason `read_from_seq` consults
+    /// `reach_disordered` instead of seeking unconditionally.
+    #[test]
+    fn a_seek_would_lose_a_record_on_a_retroactively_gapped_list() {
+        let log = InMemoryExecutionLog::new();
+        let s = SessionId::new("c1-c2-lost-record");
+        for _ in 0..5 {
+            log.append_raw(s.clone(), 0, "ev").unwrap();
+        }
+        for _ in 0..2 {
+            log.record_gap(
+                s.clone(),
+                Gap::new(
+                    EventSeq::ZERO,
+                    EventSeq::new(2),
+                    GapReason::KernelRingOverflow,
+                    "late",
+                ),
+            )
+            .unwrap();
+        }
+        assert_eq!(reaches(&log, &s), vec![0, 1, 2, 3, 4, 2, 2]);
+        assert!(!is_reach_ordered(&log, &s));
+
+        let page = log.read_from_seq(&s, EventSeq::new(4), 1).unwrap();
+        assert_eq!(
+            page.records.iter().map(|r| r.seq.0).collect::<Vec<_>>(),
+            vec![4],
+            "the record at seq 4 must be delivered, not skipped"
+        );
+        assert!(!page.exhausted, "the log is not caught up at seq 4 of 5");
+        assert_eq!(page.position_after, EventSeq::new(5));
+    }
+
+    /// The grid the minimal case came from, kept small enough for the hot gate.
+    /// Any shape whose seek diverges from the full walk must fail here, so a
+    /// future change to the seek predicate or to the flag cannot silently pass.
+    #[test]
+    fn no_reachable_shape_diverges_from_the_full_walk() {
+        let mut shapes = 0usize;
+        for n_appends in [3u64, 5, 8, 13] {
+            for g1 in 0..=n_appends {
+                for g2 in [g1, n_appends, 0] {
+                    let log = InMemoryExecutionLog::new();
+                    let s = SessionId::new("c1-c2-grid");
+                    for _ in 0..n_appends {
+                        log.append_raw(s.clone(), 0, "ev").unwrap();
+                    }
+                    let mut ok = true;
+                    for g in [g1, g2] {
+                        let hi = (g + 2).min(n_appends);
+                        if log
+                            .record_gap(
+                                s.clone(),
+                                Gap::new(
+                                    EventSeq::new(g),
+                                    EventSeq::new(hi),
+                                    GapReason::KernelRingOverflow,
+                                    "grid",
+                                ),
+                            )
+                            .is_err()
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if !ok {
+                        continue;
+                    }
+                    shapes += 1;
+                    let entries = entries_of(&log, &s);
+                    for from in 0..=(n_appends + 4) {
+                        for limit in 0..=(n_appends as usize + 4) {
+                            let got = log.read_from_seq(&s, EventSeq::new(from), limit).unwrap();
+                            let want = reference_page(&entries, EventSeq::new(from), limit);
+                            assert_eq!(
+                                got, want,
+                                "diverged from the full walk at n={n_appends} \
+                                 gaps=({g1},{g2}) from={from} limit={limit}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            shapes > 20,
+            "the grid must actually cover shapes, got {shapes}"
+        );
+    }
+
+    /// A long run of appends, then a read at a deep position, must be answered
+    /// without walking the prefix. This is the cheap in-tree stand-in for C1:
+    /// it does not assert a duration, it asserts that a page from the tail is
+    /// exactly the tail. The duration claim is C1 itself, which lives in the
+    /// ignored scale target (see `chronos-sandbox/tests/`), because asserting a
+    /// wall clock in the hot gate would be a flaky gate rather than a contract.
+    #[test]
+    fn a_deep_position_answers_with_the_deep_window() {
+        let n = 200_000u64;
+        let (log, s) = seeded(n);
+        let page = log.read_from_seq(&s, EventSeq::new(n - 3), 100).unwrap();
+        let seqs: Vec<u64> = page.records.iter().map(|r| r.seq.0).collect();
+        assert_eq!(seqs, vec![n - 3, n - 2, n - 1]);
+        assert_eq!(page.position_after, EventSeq::new(n));
+        assert!(!page.exhausted);
     }
 }
