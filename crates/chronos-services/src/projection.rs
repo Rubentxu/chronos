@@ -656,4 +656,153 @@ mod tests {
         // is independent — which is the load-bearing dimension for the
         // UAT (timestamps can arrive out of order on real systems).
     }
+
+    // --- meta_is_full -------------------------------------------------------
+    //
+    // `require_full_history` above is covered for all three completeness
+    // states. `meta_is_full` — the variant the MCP gate actually calls, once
+    // per `execution_query` / `state_query` / `trace_slice` request — had no
+    // test at all, even though its body is character-for-character the same
+    // match. That is the more dangerous half of the duplication: the function
+    // on the request path was the one nobody exercised.
+    //
+    // The states below are built from real logs rather than hand-written
+    // `ProjectionMeta` values, including the truncated one: retention is
+    // reachable in a test through `advance_retained_from` plus
+    // `compact_retired`, so there was never a reason to fabricate the struct.
+
+    /// A log with no records: a real state with no history to be missing.
+    #[test]
+    fn meta_is_full_accepts_an_empty_projection() {
+        let dir = tempdir("gate-empty");
+        let session_id = SessionId::new("gate-empty-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
+        let result = build_engine(&log).expect("build_engine ok");
+
+        assert_eq!(result.meta.completeness, ProjectionCompleteness::Empty);
+        meta_is_full(&result.meta).expect("an empty session is a real answer");
+    }
+
+    #[test]
+    fn meta_is_full_accepts_a_full_projection() {
+        let dir = tempdir("gate-full");
+        let session_id = SessionId::new("gate-full-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
+        for seq in 0..5u64 {
+            append_event(&log, &session_id, seq);
+        }
+        log.flush().ok();
+        let result = build_engine(&log).expect("build_engine ok");
+
+        assert_eq!(result.meta.completeness, ProjectionCompleteness::Full);
+        meta_is_full(&result.meta).expect("a complete projection is acceptable");
+    }
+
+    /// The refusal that is the entire point of the gate: an engine built from
+    /// a log whose early segments were retired must not answer a query as if
+    /// that history had never existed.
+    #[test]
+    fn meta_is_full_refuses_a_truncated_projection_and_names_the_boundary() {
+        let dir = tempdir("gate-truncated");
+        let session_id = SessionId::new("gate-truncated-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, session_id.clone()).unwrap();
+        for seq in 0..5u64 {
+            append_event(&log, &session_id, seq);
+        }
+        log.flush().ok();
+        for seq in 5..10u64 {
+            append_event(&log, &session_id, seq);
+        }
+        log.flush().ok();
+        log.advance_retained_from(EventSeq::new(5))
+            .expect("advance retention past the first segment");
+        log.compact_retired().expect("compact retired segments");
+
+        let result = build_engine(&log).expect("build_engine ok");
+        assert!(matches!(
+            result.meta.completeness,
+            ProjectionCompleteness::Truncated { .. }
+        ));
+
+        match meta_is_full(&result.meta) {
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => {
+                assert_eq!(retained_from, 5);
+            }
+            Err(other) => panic!("expected a retention error, got {other:?}"),
+            Ok(()) => panic!("a truncated projection must not pass the gate"),
+        }
+    }
+
+    /// Anti-drift guard for the duplication.
+    ///
+    /// `meta_is_full` and `require_full_history` encode the same policy in two
+    /// separate `match` blocks. Editing one and not the other would let the MCP
+    /// gate accept what the service refuses, or the reverse, with no compiler
+    /// error and no test failure anywhere else. This walks all three states
+    /// and asserts the two functions never disagree — including the
+    /// `retained_from` they report when refusing.
+    ///
+    /// Mutating only one of the two `match` arms turns this red.
+    #[test]
+    fn meta_is_full_and_require_full_history_never_disagree() {
+        // Full
+        let dir = tempdir("agree-full");
+        let sid = SessionId::new("agree-full-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, sid.clone()).unwrap();
+        for seq in 0..5u64 {
+            append_event(&log, &sid, seq);
+        }
+        log.flush().ok();
+        let full = build_engine(&log).expect("build_engine ok");
+        let full_meta = full.meta.clone();
+        assert!(meta_is_full(&full_meta).is_ok());
+        assert!(require_full_history(full).is_ok());
+
+        // Empty
+        let dir = tempdir("agree-empty");
+        let sid = SessionId::new("agree-empty-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, sid.clone()).unwrap();
+        let empty = build_engine(&log).expect("build_engine ok");
+        let empty_meta = empty.meta.clone();
+        assert!(meta_is_full(&empty_meta).is_ok());
+        assert!(require_full_history(empty).is_ok());
+
+        // Truncated
+        let dir = tempdir("agree-truncated");
+        let sid = SessionId::new("agree-truncated-session");
+        let log = SessionExecutionLog::create_for_tests(&dir, sid.clone()).unwrap();
+        for seq in 0..5u64 {
+            append_event(&log, &sid, seq);
+        }
+        log.flush().ok();
+        for seq in 5..10u64 {
+            append_event(&log, &sid, seq);
+        }
+        log.flush().ok();
+        log.advance_retained_from(EventSeq::new(5))
+            .expect("advance retention past the first segment");
+        log.compact_retired().expect("compact retired segments");
+        let truncated = build_engine(&log).expect("build_engine ok");
+        let truncated_meta = truncated.meta.clone();
+
+        let gate = meta_is_full(&truncated_meta);
+        let service = require_full_history(truncated);
+        assert!(gate.is_err(), "the gate must refuse");
+        assert!(service.is_err(), "the service must refuse");
+
+        let gate_from = match gate {
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => retained_from,
+            other => panic!("expected a retention error, got {other:?}"),
+        };
+        let service_from = match service {
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => retained_from,
+            other => panic!("expected a retention error, got {other:?}"),
+        };
+        assert_eq!(
+            gate_from, service_from,
+            "both must report the same retention boundary; a divergence means \
+             a caller can be told the history is complete by one path and \
+             incomplete by the other"
+        );
+    }
 }

@@ -4770,6 +4770,94 @@ mod tests {
         assert_eq!(meta.completeness, projection::ProjectionCompleteness::Empty);
     }
 
+    /// The refusal that is the point of the gate, end to end.
+    ///
+    /// A projection built from a log whose early segments were retired must
+    /// not let a query through, because the engine would answer as if that
+    /// history had never existed. `chronos-services` covers the decision
+    /// itself — `meta_is_full` on all three completeness states, and the fact
+    /// that it never disagrees with `require_full_history` — and that coverage
+    /// builds a truncated projection from a real log through
+    /// `advance_retained_from` plus `compact_retired`.
+    ///
+    /// What is checked here is the wiring: that `gate_projection` really does
+    /// refuse rather than pass the meta through. The truncated meta is seeded
+    /// into the cache, which is the same shape a long-lived server holds after
+    /// retention advances, and it also exercises the cache-hit fast path.
+    #[tokio::test]
+    async fn gate_projection_refuses_a_truncated_projection() {
+        let sid = "rec-c1-7-gate-refuses-truncated";
+        let server = ChronosServer::new();
+
+        server.projection_meta.lock().await.insert(
+            sid.to_string(),
+            ProjectionMeta {
+                session_id: chronos_domain::SessionId::new(sid),
+                projected_from: chronos_domain::EventSeq::new(5),
+                projected_through: Some(chronos_domain::EventSeq::new(9)),
+                completeness: projection::ProjectionCompleteness::Truncated {
+                    retained_from: chronos_domain::EventSeq::new(5),
+                },
+                source: projection::ProjectionSource::ExecutionLog,
+            },
+        );
+
+        match server.gate_projection(sid).await {
+            Err(ServiceError::EvidenceUnavailableDueToRetention { retained_from }) => {
+                assert_eq!(
+                    retained_from, 5,
+                    "the error must name the boundary so the caller can say \
+                     which history is missing"
+                );
+            }
+            Err(other) => panic!("expected a retention error, got {other:?}"),
+            Ok(meta) => panic!(
+                "the gate passed a truncated projection through: {:?}",
+                meta.completeness
+            ),
+        }
+    }
+
+    /// Positive control for the refusal above: a session whose projection is
+    /// still complete must keep passing. Without this, the guard could be
+    /// satisfied by refusing everything.
+    #[tokio::test]
+    async fn gate_projection_still_passes_a_complete_projection() {
+        let sid = "rec-c1-7-gate-passes-full";
+        let server = ChronosServer::new();
+        let log_dir = std::env::temp_dir().join(format!(
+            "rec-c1-7-gate-passes-full-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        server
+            .execution_logs
+            .register(
+                chronos_services::session_log::SessionExecutionLog::create_for_tests(
+                    &log_dir,
+                    chronos_log::SessionId::new(sid),
+                )
+                .expect("test execution log"),
+            )
+            .expect("register the test log");
+        server.projection_meta.lock().await.insert(
+            sid.to_string(),
+            ProjectionMeta {
+                session_id: chronos_domain::SessionId::new(sid),
+                projected_from: chronos_domain::EventSeq::ZERO,
+                projected_through: Some(chronos_domain::EventSeq::new(4)),
+                completeness: projection::ProjectionCompleteness::Full,
+                source: projection::ProjectionSource::ExecutionLog,
+            },
+        );
+
+        let meta = server
+            .gate_projection(sid)
+            .await
+            .expect("a complete projection must pass the gate");
+        assert_eq!(meta.completeness, projection::ProjectionCompleteness::Full);
+    }
+
     /// A session with no log never gets a projection.
     ///
     /// The error is `ExecutionLogUnavailable`, not `SessionNotFound`, and that
