@@ -1,27 +1,27 @@
 name: Vault Drift Sweep
 
 on:
+  # No `paths:` filter, deliberately.
+  #
+  # CC#4 records a SHA-256 of *source* files into the archive manifests, so
+  # the commonest way to create drift is to edit one of those source files
+  # in a commit that does not touch the vault. A `paths:` filter listing
+  # only the vault artefacts and this script cannot see that commit, so the
+  # sweep never runs, never fails, and reports nothing while the manifests
+  # are stale. Measured: 49 distinct source files are hashed across the
+  # manifests and none of them was covered by the old filter. That is not a
+  # gate passing — it is a gate that is structurally unable to fire.
+  #
+  # Enumerating the hashed paths instead would only defer the bug: the next
+  # manifest entry would silently reintroduce the gap. The check costs ~21s
+  # (measured: check_vault_drift.sh 20.73s, validate_cycle_artifacts.py
+  # 0.08s), so it runs unconditionally. A commit that changes a hashed file
+  # must regenerate the manifests in the same commit; that is the canonical
+  # ritual in scripts/regen_manifest_index_shas.py, and this makes CI
+  # enforce it instead of leaving it to memory.
   push:
     branches: [main]
-    paths:
-      - '.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/terms/index.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/changes/**'
-      - '.sddk-knowledge/p-3416cfb8288f8964/changes/archive/**'
-      - 'cycle-artifacts/**'
-      - 'scripts/check_vault_drift.sh'
-      - '.github/workflows/vault-drift.yml'
   pull_request:
-    paths:
-      - '.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/cycles/index.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/terms/index.md'
-      - '.sddk-knowledge/p-3416cfb8288f8964/changes/**'
-      - '.sddk-knowledge/p-3416cfb8288f8964/changes/archive/**'
-      - 'cycle-artifacts/**'
-      - 'scripts/check_vault_drift.sh'
-      - '.github/workflows/vault-drift.yml'
 
 jobs:
   vault-drift:
