@@ -115,11 +115,20 @@ impl From<crate::virtualization::AggregateError> for ReadPathError {
     /// the MCP envelope the `Budget` arm builds keeps applying. A read stop
     /// has no anchor to offer — it did not choose to stop — so it becomes
     /// `Aggregate` with the underlying reason intact.
+    ///
+    /// A bucketing refusal is matched by name rather than swept into a
+    /// catch-all, for the same reason the other two are separated: it is a
+    /// caller-fixable configuration problem, and the message the caller has to
+    /// act on names `bucket_size_ns`. Collapsing it into the read arm would
+    /// report "the log could not be read" for a log that read perfectly.
     fn from(e: crate::virtualization::AggregateError) -> Self {
         match e {
             crate::virtualization::AggregateError::Budget(b) => ReadPathError::Budget(b),
             crate::virtualization::AggregateError::Read { source } => {
                 ReadPathError::Aggregate(source.to_string())
+            }
+            other @ crate::virtualization::AggregateError::TooManyBuckets { .. } => {
+                ReadPathError::Aggregate(other.to_string())
             }
         }
     }

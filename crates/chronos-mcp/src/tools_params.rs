@@ -388,9 +388,20 @@ pub fn default_limit() -> usize {
 
 /// Default time-bucket width for `execution_log_read` mode=summarize.
 ///
-/// 1 second, matching the `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD`
-/// default documented in ADR-0029 §2.3. It is a DEFAULT, not a claim:
-/// callers can widen it, and the response echoes the width actually used.
+/// One second. It is a DEFAULT, not a claim: callers may widen or narrow it,
+/// and the response echoes the width actually used.
+///
+/// **This comment used to justify that number by pointing at
+/// `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD`, an env var that does not exist.**
+/// `SCALE_BUDGETS` §9.1 verified no `env::var` in the repository reads that
+/// name. A default that cites a phantom knob is worse than a default with no
+/// story, because the next reader goes looking for the override and finds
+/// nothing — so the number now stands on its own.
+///
+/// Narrowing far enough is refused rather than served: buckets are counted
+/// relative to the session (D3), and a width that would need more than
+/// `chronos_services::virtualization::MAX_BUCKETS` of them comes back as an
+/// error naming this field, not as a multi-gigabyte allocation.
 pub fn default_bucket_size_ns() -> u64 {
     1_000_000_000
 }

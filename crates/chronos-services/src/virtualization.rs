@@ -89,12 +89,48 @@ pub enum AggregateError {
         #[source]
         source: ServiceError,
     },
+    /// The requested bucketing would need more buckets than this walk is
+    /// willing to hold. Nothing is returned, and nothing is truncated.
+    ///
+    /// This is the third stop, and it exists because D3 alone does not bound
+    /// memory. Relative bucketing makes the *origin* free, so the figure below
+    /// is the span of the session rather than its age — but a caller that asks
+    /// for a 1 ns bucket over a 10-second session is still asking for ten
+    /// million buckets, and `bucket_size_ns` is a client-supplied field.
+    /// Failing here with a nameable field beats a multi-gigabyte `Vec`.
+    #[error(
+        "summarize needs more buckets than it will hold: the session spans \
+         {span_ns} ns, which is {buckets_needed} buckets of {requested_bucket_size_ns} ns, \
+         over the cap of {max_buckets}. Widen `bucket_size_ns` (at least \
+         {suggested_bucket_size_ns} ns for this span)."
+    )]
+    TooManyBuckets {
+        /// Span between the first and last event observed, in nanoseconds.
+        span_ns: u64,
+        /// Buckets that width would need across that span.
+        buckets_needed: u64,
+        /// The width the caller asked for.
+        requested_bucket_size_ns: u64,
+        /// The declared cap, so the message names the limit it hit.
+        max_buckets: u64,
+        /// The narrowest width that would fit this span under the cap.
+        suggested_bucket_size_ns: u64,
+    },
 }
 
 /// Default threshold (events) below which raw page is returned.
 ///
-/// Per ADR-0029 §2.3. Operators may override via
-/// `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD` env var.
+/// Per ADR-0029 §2.3.
+///
+/// **There is no override, and this comment used to claim there was.** It
+/// said operators could widen it via `CHRONOS_EXEC_EXPLORER_VIRT_THRESHOLD`;
+/// `SCALE_BUDGETS` §9.1 verified that no `env::var` in the repository reads
+/// that name, and §9.2 that `should_summarize` has no production call site at
+/// all. So the honest description is a constant with neither an override nor a
+/// consumer — the constant is kept because it is a decision with a name, not
+/// because anything reads it. See `SCALE_BUDGETS` §9.2 for why the absence of
+/// the automatic switch is superseded by D1 (windowed reads) rather than
+/// pending.
 pub const DEFAULT_VIRTUALIZATION_THRESHOLD: u64 = 100_000;
 
 /// Decide whether to summarize a result set or return raw page.
@@ -127,14 +163,26 @@ impl EventSummary {
     /// `total_events = sum(bucket_counts)`, `bucket_count = non-empty buckets`.
     pub fn from_bucket_counts(bucket_counts: &[u64]) -> Self {
         let total: u64 = bucket_counts.iter().sum();
-        let bucket_count = bucket_counts.iter().filter(|&&c| c > 0).count() as u32;
+        let populated = bucket_counts.iter().filter(|&&c| c > 0).count();
+        Self::from_populated(populated, total)
+    }
+
+    /// Build a summary from a **sparse** bucket set, without ever holding a
+    /// dense `Vec` indexed by bucket number.
+    ///
+    /// This is the D3 shape (`SCALE_BUDGETS` §5): memory is O(populated
+    /// buckets), not O(bucket index). `from_bucket_counts` delegates here so
+    /// both paths compute the same three numbers by the same code — a summary
+    /// must not depend on which representation produced it.
+    pub fn from_populated(populated: usize, total_events: u64) -> Self {
+        let bucket_count = populated as u32;
         let mean_per_bucket = if bucket_count > 0 {
-            total / bucket_count as u64
+            total_events / bucket_count as u64
         } else {
             0
         };
         Self {
-            total_events: total,
+            total_events,
             bucket_count,
             mean_per_bucket,
         }
@@ -285,6 +333,21 @@ impl InvocationRollup {
 /// Default time-bucket size in nanoseconds (1 second).
 pub const DEFAULT_BUCKET_SIZE_NS: u64 = 1_000_000_000;
 
+/// Most buckets a single aggregation will hold (SCALE_BUDGETS §5 D3).
+///
+/// Declared, not derived from a measurement: this bounds a structure whose
+/// size is chosen by a **client-supplied** `bucket_size_ns`, so the number
+/// that matters is the one that refuses absurd requests, not the one that
+/// fits the biggest log anyone has run.
+///
+/// At the default 1 s width this admits a span of ~11,6 days, which covers
+/// any monotonic capture — production timestamps are time since boot, not
+/// epoch (`chronos_native::invocation_tracker` writes `mono_ns`), so a
+/// long-lived host sits far inside it. A caller asking for nanosecond buckets
+/// over a multi-second session is told to widen the field instead of being
+/// handed a `Vec` measured in gigabytes.
+pub const MAX_BUCKETS: u64 = 1_000_000;
+
 /// Summarize a session log into an `EventSummary` using real reads.
 ///
 /// Per ADR-0029 §3.2: iterates `events_log_read::read_page` until
@@ -320,15 +383,29 @@ pub fn summarize_log(
     use crate::events_log_read::{read_page, LogReadFilters};
     assert!(bucket_size_ns > 0, "bucket_size_ns must be > 0");
 
-    let mut bucket_counts: Vec<u64> = vec![];
+    // D3: buckets are counted **relative to the session**, not to the clock.
+    //
+    // The previous index was `ts / bucket_size_ns` on the raw timestamp, which
+    // made the allocation proportional to the *age* of the host rather than to
+    // the session: the vector was resized to `idx + 1`, so a summary of five
+    // events could ask for a multi-gigabyte allocation before reading a
+    // single record. Timestamps here are monotonic (time since boot), so that
+    // is a real cost on a long-lived machine and a trivially reachable one
+    // through a client-supplied `bucket_size_ns`.
+    //
+    // `BTreeMap` rather than a dense `Vec` for the same reason: the summary
+    // only ever reports three numbers, so materialising empty buckets between
+    // two populated ones buys nothing. Memory is O(populated buckets).
+    let mut counts: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
+    let mut origin: Option<u64> = None;
     let mut current_cursor = cursor.clone();
     let page_limit = 1024;
 
     loop {
         // NOT `while let Ok(page)`: a read failure mid-walk must not become a
         // complete-looking aggregate. The walk below may already have folded
-        // hundreds of pages into `bucket_counts` when the failing page arrives,
-        // and returning `Ok(partial)` would hand the agent a summary whose
+        // hundreds of pages into `counts` when the failing page arrives, and
+        // returning `Ok(partial)` would hand the agent a summary whose
         // `total_events` silently undercounts the log. The caller cannot tell
         // a truncated aggregate from a whole one, which is the same lie as an
         // exhausted log reported as "no evidence" (ADR-0004).
@@ -341,12 +418,23 @@ pub fn summarize_log(
         }
         for ev in &page.records {
             let ts = ev.timestamp_ns.get();
-            let bucket = ts / bucket_size_ns;
-            let idx = bucket as usize;
-            if idx >= bucket_counts.len() {
-                bucket_counts.resize(idx + 1, 0);
+            // `get_or_insert` on the first record seen anchors the session.
+            // `saturating_sub` keeps a backwards timestamp at bucket 0 rather
+            // than wrapping into a huge index, which is the failure this whole
+            // change exists to remove.
+            let base = *origin.get_or_insert(ts);
+            let idx = ts.saturating_sub(base) / bucket_size_ns;
+            if idx > MAX_BUCKETS {
+                let span_ns = ts.saturating_sub(base);
+                return Err(AggregateError::TooManyBuckets {
+                    span_ns,
+                    buckets_needed: idx + 1,
+                    requested_bucket_size_ns: bucket_size_ns,
+                    max_buckets: MAX_BUCKETS,
+                    suggested_bucket_size_ns: span_ns / MAX_BUCKETS + 1,
+                });
             }
-            bucket_counts[idx] += 1;
+            *counts.entry(idx).or_insert(0) += 1;
         }
         let next_cursor = page.next.clone();
         // The page boundary is where the D2 ceiling is enforced: one page is
@@ -359,7 +447,8 @@ pub fn summarize_log(
         current_cursor = next_cursor;
     }
 
-    Ok(EventSummary::from_bucket_counts(&bucket_counts))
+    let total_events: u64 = counts.values().sum();
+    Ok(EventSummary::from_populated(counts.len(), total_events))
 }
 
 /// Roll up events by **thread** (proxy for invocation grouping when
@@ -460,9 +549,21 @@ mod tests {
     /// on a record it cannot decode, so an opaque payload would make this
     /// fixture prove the wrong thing.
     fn push_event(log: &SessionExecutionLog, event_id: u64) {
+        push_event_at(log, event_id, event_id * 10);
+    }
+
+    /// Append one event at an explicit timestamp.
+    ///
+    /// D3 is about the *origin* of those timestamps, so the tests below need to
+    /// place a session anywhere on the clock — including far from zero, which
+    /// is the whole point — and the shared helper hard-codes `event_id * 10`.
+    /// Backwards timestamps are allowed on purpose: the read path must not
+    /// assume the clock went forwards, and a fixture that cannot express one
+    /// cannot prove what happens when it does not.
+    fn push_event_at(log: &SessionExecutionLog, event_id: u64, monotonic_ns: u64) {
         let event = TraceEvent::new(
             event_id,
-            MonotonicNs::from(event_id * 10),
+            MonotonicNs::from(monotonic_ns),
             1,
             EventType::FunctionEntry,
             SourceLocation::from_address(0),
@@ -472,7 +573,7 @@ mod tests {
         log.append(NewExecutionRecord {
             kind: ExecutionKind::Raw,
             session_id: session,
-            monotonic_ns: event_id * 10,
+            monotonic_ns,
             payload: ExecutionPayload::new(
                 serde_json::to_vec(&event).expect("encode"),
                 "trace_event",
@@ -902,6 +1003,173 @@ mod tests {
     #[test]
     fn default_bucket_size_is_one_second() {
         assert_eq!(DEFAULT_BUCKET_SIZE_NS, 1_000_000_000);
+    }
+
+    // ========================================================================
+    // D3 — bucketing is relative to the session, not to the host's clock
+    // (SCALE_BUDGETS §5, and the reason §9.4 says the 1M lane cannot catch it)
+    // ========================================================================
+
+    /// A session that starts far from zero summarizes to the **same numbers**
+    /// as one that starts at zero.
+    ///
+    /// This pins the half of D3 that is about the *answer*. The half about
+    /// memory cannot be observed through the summary at all — both indexings
+    /// report the same three numbers for evenly spaced events — so the cap test
+    /// below is what makes the difference visible. Keeping this one anyway
+    /// matters: it is the property a caller can actually notice, and a future
+    /// "optimisation" that made the origin matter again would pass a
+    /// memory-only guard.
+    #[test]
+    fn d3_the_summary_does_not_depend_on_where_the_session_starts_on_the_clock() {
+        /// Comfortably past any epoch-scale value, and past a year of uptime
+        /// in nanoseconds, so the absolute index this replaces would be large.
+        const FAR_ORIGIN: u64 = 1_700_000_000_000_000_000;
+        const BUCKET: u64 = 100;
+
+        let summarize_at = |origin: u64| {
+            let session = sid();
+            let tmp = std::env::temp_dir()
+                .join(format!("virt_d3_origin_{}", uuid::Uuid::new_v4().simple()));
+            let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+            for i in 0..3u64 {
+                push_event_at(&log, i + 1, origin + i * BUCKET);
+            }
+            let cursor = EventsCursorV1::start(session);
+            let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+            summarize_log(&log, &cursor, BUCKET, &mut budget).expect("summarize")
+        };
+
+        let near_zero = summarize_at(0);
+        let far = summarize_at(FAR_ORIGIN);
+
+        assert_eq!(near_zero, far, "the origin must not change the summary");
+        assert_eq!(far.total_events, 3);
+        assert_eq!(
+            far.bucket_count, 3,
+            "three events one bucket apart are three buckets, wherever they sit"
+        );
+        assert_eq!(far.mean_per_bucket, 1);
+    }
+
+    /// A bucketing the walk will not hold is refused, by name, with the field
+    /// the caller has to change.
+    ///
+    /// `bucket_size_ns` arrives from the client (`ExecutionLogReadParams`), and
+    /// the only validation on it was "not zero". Without the cap, a 1 ns bucket
+    /// over a few milliseconds asks for tens of millions of `u64` slots before
+    /// a single record is read.
+    ///
+    /// Non-vacuity: with the cap check removed this call returns `Ok` — the
+    /// absolute implementation allocated happily and answered — so the test
+    /// goes red on the `expect_err`, not on an out-of-memory kill.
+    #[test]
+    fn d3_a_bucketing_beyond_the_cap_is_refused_and_names_the_field() {
+        let session = sid();
+        let tmp =
+            std::env::temp_dir().join(format!("virt_d3_cap_{}", uuid::Uuid::new_v4().simple()));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        // 3 ms of session asked for at one nanosecond per bucket: 3 million
+        // buckets, over the cap of one million.
+        for i in 0..2u64 {
+            push_event_at(&log, i + 1, i * 3_000_000);
+        }
+        let cursor = EventsCursorV1::start(session);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+
+        let err = summarize_log(&log, &cursor, 1, &mut budget)
+            .expect_err("a bucketing over the cap must be refused, not allocated");
+
+        let AggregateError::TooManyBuckets {
+            span_ns,
+            buckets_needed,
+            requested_bucket_size_ns,
+            max_buckets,
+            suggested_bucket_size_ns,
+        } = err
+        else {
+            panic!("a bucketing refusal must be TooManyBuckets, got {err:?}");
+        };
+        assert_eq!(requested_bucket_size_ns, 1, "names the width asked for");
+        assert_eq!(max_buckets, MAX_BUCKETS, "names the cap it hit");
+        assert_eq!(span_ns, 3_000_000, "names the span it measured");
+        assert!(
+            buckets_needed > MAX_BUCKETS,
+            "the refusal must be over the cap, not near it: {buckets_needed}"
+        );
+        assert!(
+            suggested_bucket_size_ns > 1,
+            "the suggestion must differ from what was refused, or the caller \
+             has nothing to change: {suggested_bucket_size_ns}"
+        );
+
+        // The message is what a client actually receives, so it has to name
+        // the knob. A refusal that does not say what to change is a dead end.
+        let rendered = AggregateError::TooManyBuckets {
+            span_ns,
+            buckets_needed,
+            requested_bucket_size_ns,
+            max_buckets,
+            suggested_bucket_size_ns,
+        }
+        .to_string();
+        assert!(
+            rendered.contains("bucket_size_ns"),
+            "names the field: {rendered}"
+        );
+    }
+
+    /// The same bucketing, once the caller obeys the suggestion, answers.
+    ///
+    /// A guard that only proves the refusal would pass with a cap so low that
+    /// no request ever succeeded — the D2 ceiling lesson, applied to buckets.
+    #[test]
+    fn d3_the_suggested_width_is_actually_accepted() {
+        let session = sid();
+        let tmp =
+            std::env::temp_dir().join(format!("virt_d3_suggest_{}", uuid::Uuid::new_v4().simple()));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        for i in 0..2u64 {
+            push_event_at(&log, i + 1, i * 3_000_000);
+        }
+        let cursor = EventsCursorV1::start(session);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+
+        let suggested = 3_000_000u64 / MAX_BUCKETS + 1;
+        let summary = summarize_log(&log, &cursor, suggested, &mut budget)
+            .expect("the width the refusal suggested must be accepted");
+        assert_eq!(summary.total_events, 2, "and it must cover the whole log");
+    }
+
+    /// A timestamp that goes backwards lands in the first bucket, and is still
+    /// counted.
+    ///
+    /// Relative indexing introduces a subtraction that the absolute version
+    /// never performed, so this is the arithmetic the change adds. `wrapping`
+    /// or a raw `-` would turn a clock that jumped backwards into an index of
+    /// ~1,8 × 10¹⁹ and trip the cap with a message blaming the caller's
+    /// bucket width — a fault report pointing at the wrong thing.
+    ///
+    /// Non-vacuity: replacing `saturating_sub` with a plain subtraction panics
+    /// on overflow in debug builds, so this test is red without it.
+    #[test]
+    fn d3_a_backwards_timestamp_does_not_wrap_into_a_refusal() {
+        let session = sid();
+        let tmp =
+            std::env::temp_dir().join(format!("virt_d3_back_{}", uuid::Uuid::new_v4().simple()));
+        let log = SessionExecutionLog::create_for_tests(&tmp, session.clone()).expect("log");
+        push_event_at(&log, 1, 5_000_000_000);
+        push_event_at(&log, 2, 1_000_000_000); // the clock went backwards
+        push_event_at(&log, 3, 6_000_000_000);
+        let cursor = EventsCursorV1::start(session);
+        let mut budget = ReadBudget::start("summarize", &generous_limits(), 0);
+
+        let summary = summarize_log(&log, &cursor, 1_000_000_000, &mut budget)
+            .expect("a backwards timestamp is a fact about the log, not a refusal");
+        assert_eq!(
+            summary.total_events, 3,
+            "every event is still counted: {summary:?}"
+        );
     }
 
     #[test]
