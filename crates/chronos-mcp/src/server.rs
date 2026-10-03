@@ -838,16 +838,15 @@ impl ChronosServer {
         // Filter out internal/noisy events before indexing:
         // - EventType::Custom with EventData::Registers → ptrace register snapshots (infrastructure noise)
         // - EventType::Unknown → unclassified ptrace stops
-        // These are implementation details of the tracer, not meaningful for AI analysis.
+        // These are implementation details of the tracer, not meaningful for AI
+        // analysis. The rule itself lives in `chronos_services::projection`, which
+        // `build_engine` uses, so a server-built engine and a log-derived
+        // projection index the same events. This used to be a byte-identical copy
+        // of that predicate, which meant the two engines could silently diverge
+        // whenever the noise set grew on one side only.
         let events: Vec<TraceEvent> = events
             .into_iter()
-            .filter(|e| {
-                // Keep everything except raw register snapshots and unknowns
-                !matches!(
-                    (&e.event_type, &e.data),
-                    (EventType::Custom, EventData::Registers(_)) | (EventType::Unknown, _)
-                )
-            })
+            .filter(|e| !projection::is_noisy(e))
             .collect();
 
         let mut engines = self.engines.lock().await;
@@ -4856,6 +4855,76 @@ mod tests {
             .await
             .expect("a complete projection must pass the gate");
         assert_eq!(meta.completeness, projection::ProjectionCompleteness::Full);
+    }
+
+    /// The server-built engine must index exactly the events the projection
+    /// would keep.
+    ///
+    /// `build_and_store_engine` and `chronos_services::projection::build_engine`
+    /// are the two ways a `QueryEngine` comes into existence, and REC-C1.7 only
+    /// holds if they agree. They now share one definition of noise — the filter
+    /// here calls `projection::is_noisy` — but sharing the definition is only
+    /// worth anything if the *result* is checked, so this asserts the surviving
+    /// set directly against `is_noisy` rather than against a hardcoded count.
+    ///
+    /// Before the shared filter existed, the server kept a byte-identical copy
+    /// of the predicate with no test on this side at all. Re-inlining a
+    /// divergent copy here would leave the count wrong and turn this red.
+    #[tokio::test]
+    async fn build_and_store_engine_indexes_exactly_the_non_noisy_events() {
+        use chronos_domain::{EventData, EventType, SourceLocation};
+
+        let server = ChronosServer::new();
+        let sid = "noise-filter-parity";
+
+        // Two kinds of infrastructure noise the tracer emits: a raw register
+        // snapshot carried as a Custom event, and an unclassified ptrace stop.
+        let register_snapshot = TraceEvent::new(
+            90,
+            MonotonicNs::from(90),
+            1,
+            EventType::Custom,
+            SourceLocation::default(),
+            EventData::Registers(Default::default()),
+        );
+        let unknown_stop = TraceEvent::new(
+            91,
+            MonotonicNs::from(91),
+            1,
+            EventType::Unknown,
+            SourceLocation::default(),
+            EventData::Empty,
+        );
+
+        let mut events = vec![make_fn_event(0, 100, 1, "main"), register_snapshot];
+        events.push(make_fn_event(1, 101, 1, "work"));
+        events.push(unknown_stop);
+        events.push(make_fn_event(2, 102, 1, "tail"));
+
+        let expected: Vec<u64> = events
+            .iter()
+            .filter(|e| !projection::is_noisy(e))
+            .map(|e| e.event_id)
+            .collect();
+        assert_eq!(
+            expected,
+            vec![0, 1, 2],
+            "the fixture is wrong if the noise filter keeps something else"
+        );
+
+        server
+            .build_and_store_engine(sid, events, Language::Rust)
+            .await;
+
+        let engines = server.engines.lock().await;
+        let engine = engines.get(sid).expect("engine registered for the session");
+        let mut kept: Vec<u64> = engine.events().iter().map(|e| e.event_id).collect();
+        kept.sort_unstable();
+        assert_eq!(
+            kept, expected,
+            "the server-built engine must index exactly what the shared noise \
+             filter keeps, or it is a second authority next to the projection"
+        );
     }
 
     /// A session with no log never gets a projection.

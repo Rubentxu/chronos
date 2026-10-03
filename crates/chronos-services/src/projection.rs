@@ -196,22 +196,29 @@ pub fn build_engine(log: &SessionExecutionLog) -> Result<ProjectionResult, Servi
 /// might consult — e.g. a `find_variable_origin` that walks back to
 /// seq 0 would silently miss everything below `retained_from`. This
 /// gate is the single source of "no fake engine".
+///
+/// The policy itself lives in [`meta_is_full`]; this is the form that
+/// hands the engine back to the caller. The two used to carry identical
+/// `match` blocks, which made "single source" a claim the code did not
+/// keep: editing one arm would let the MCP gate accept what the service
+/// refuses, or the reverse, with no compiler error. One implementation,
+/// two entry points.
 pub fn require_full_history(result: ProjectionResult) -> Result<ProjectionResult, ServiceError> {
-    match result.meta.completeness {
-        ProjectionCompleteness::Full | ProjectionCompleteness::Empty => Ok(result),
-        ProjectionCompleteness::Truncated { retained_from } => {
-            Err(ServiceError::EvidenceUnavailableDueToRetention {
-                retained_from: retained_from.0,
-            })
-        }
-    }
+    meta_is_full(&result.meta)?;
+    Ok(result)
 }
 
-/// Meta-only variant of `require_full_history` for the canonical
-/// services: they already hold the `QueryEngine` separately in the
-/// engines map; the gate only needs to inspect the meta, so we
-/// avoid the round-trip through `ProjectionResult` (which would
-/// move the engine).
+/// Whether a projection may answer a query about the session's history.
+///
+/// `Full` and `Empty` pass: an empty log has no history to be missing, so
+/// refusing it would break every query against an idle session. `Truncated`
+/// fails, because the engine was built from the surviving tail only and
+/// would answer as if the retired records had never existed — the error
+/// names `retained_from` so the caller can say which history is missing.
+///
+/// Meta-only: the canonical services already hold the `QueryEngine`
+/// separately in the engines map, so the gate inspects the meta and skips
+/// the round-trip through `ProjectionResult` (which would move the engine).
 pub fn meta_is_full(meta: &ProjectionMeta) -> Result<(), ServiceError> {
     match meta.completeness {
         ProjectionCompleteness::Full | ProjectionCompleteness::Empty => Ok(()),
@@ -225,9 +232,17 @@ pub fn meta_is_full(meta: &ProjectionMeta) -> Result<(), ServiceError> {
 
 /// Whether `e` is infrastructure noise the engine must not index.
 ///
-/// Mirrors the filter in `server.rs::build_and_store_engine`. Moved
-/// here in C1.7.2 so the rule lives once.
-fn is_noisy(e: &TraceEvent) -> bool {
+/// The one definition of the rule, shared by `build_engine` here and by
+/// `ChronosServer::build_and_store_engine`, so the two engines index the
+/// same event set. That equality is not cosmetic: REC-C1.7 exists to keep a
+/// server-built engine and a log-derived projection from becoming two
+/// authorities, and a noise set that differed between the two would
+/// reintroduce exactly that divergence through the back door.
+///
+/// The server previously carried its own byte-identical copy of this
+/// predicate, kept separate only because this function was private. The
+/// comment above it claimed the rule lived here alone; it did not.
+pub fn is_noisy(e: &TraceEvent) -> bool {
     matches!(
         (&e.event_type, &e.data),
         (EventType::Custom, EventData::Registers(_)) | (EventType::Unknown, _)
@@ -733,16 +748,18 @@ mod tests {
         }
     }
 
-    /// Anti-drift guard for the duplication.
+    /// The two entry points into one policy.
     ///
-    /// `meta_is_full` and `require_full_history` encode the same policy in two
-    /// separate `match` blocks. Editing one and not the other would let the MCP
-    /// gate accept what the service refuses, or the reverse, with no compiler
-    /// error and no test failure anywhere else. This walks all three states
-    /// and asserts the two functions never disagree — including the
-    /// `retained_from` they report when refusing.
+    /// `require_full_history` and `meta_is_full` used to carry identical
+    /// `match` blocks. They no longer do: `require_full_history` delegates to
+    /// `meta_is_full`, so drift is impossible rather than merely detected.
     ///
-    /// Mutating only one of the two `match` arms turns this red.
+    /// This test stays anyway, because it pins what both entry points must do
+    /// for a caller to rely on: walk every completeness state, assert the two
+    /// agree on the verdict, and assert they report the *same*
+    /// `retained_from` when refusing. That last part is the one a careless
+    /// refactor would lose — a caller told the history is complete by one path
+    /// and incomplete by the other, with a different boundary each time.
     #[test]
     fn meta_is_full_and_require_full_history_never_disagree() {
         // Full
