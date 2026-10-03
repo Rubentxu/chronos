@@ -5713,6 +5713,235 @@ mod tests {
         }
     }
 
+    // ---- ADR-0004 at the wire boundary --------------------------------
+    //
+    // The tests above pin the gate's *decision*. The ones below pin what
+    // an agent actually reads: the `rmcp::ErrorData` message
+    // `gate_projection_for_wire` builds, and the meta it hands back.
+    //
+    // That layer needs its own pins because the retention guarantee
+    // reaches the caller through a single `format!("...: {}", e)`. The
+    // boundary is stated in the message only because that arm renders
+    // `ServiceError` with `Display`. Rewrite it as a constant, or as
+    // `{e:?}`, and the boundary stops being stated: the agent is told
+    // the query failed, is not told which history is missing, and every
+    // test in the block above still passes. A Silent Lie with nothing to
+    // catch it — which is the defect class, not a hypothetical.
+    //
+    // Deliberately NOT asserted: `ErrorData::code`. Both failure modes
+    // are mapped to `internal_error` today, and that classification is a
+    // wire-contract decision rather than a fact about retention, so
+    // these tests pin the *content* of the message and leave the code
+    // free to move under a decision taken on purpose.
+
+    /// The headline ADR-0004 guarantee: a refused gate tells the agent
+    /// *which* history is missing, not merely that it failed.
+    ///
+    /// The truncation is real, not seeded. Two flushed segments are
+    /// written and the first is retired through `advance_retained_from` +
+    /// `compact_retired`, so `projection::build_engine` derives
+    /// `Truncated { retained_from: 5 }` from the log's own watermark.
+    /// (`chronos-log`'s memory backend carries no retention watermark at
+    /// all, so the segmented adapter behind `create_for_tests` is the
+    /// only way to reach this state.) The boundary the wire must state is
+    /// therefore derived from durable evidence, not written into a test
+    /// fixture — a test that seeded `retained_from: 5` would pass just as
+    /// happily if the log itself disagreed.
+    ///
+    /// A truncated session still has a readable tail, so this is a
+    /// refusal about history, not an absence of data: the second segment
+    /// is what makes the distinction real.
+    #[tokio::test]
+    async fn wire_gate_names_the_retention_boundary_for_a_truncated_projection() {
+        let sid = "rec-c1-7-wire-gate-names-retention-boundary";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "{sid}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        let events: Vec<TraceEvent> = (1..=10u64).map(rec_c1_7_later_event).collect();
+        append_events_to_log(&log, &session_id, &events[..5]);
+        log.flush().expect("flush the first segment");
+        append_events_to_log(&log, &session_id, &events[5..]);
+        log.flush().expect("flush the second segment");
+
+        log.advance_retained_from(chronos_domain::EventSeq::new(5))
+            .expect("retire the first segment");
+        log.compact_retired().expect("reclaim the retired segment");
+
+        let err = server
+            .gate_projection_for_wire(sid)
+            .await
+            .expect_err("a truncated projection must not reach the agent as a query answer");
+
+        let message: &str = err.message.as_ref();
+        assert!(
+            message.contains("seq 5"),
+            "the wire must state the retention boundary so the agent can say which \
+             history is missing; got: {message}"
+        );
+        // "retention"/"retained", spelled out: a bare "reten" prefix would be
+        // satisfied by neither word and would quietly pass.
+        let lowered = message.to_lowercase();
+        assert!(
+            lowered.contains("retention") || lowered.contains("retained"),
+            "the wire must identify retention as the cause, not just that some gate \
+             failed; got: {message}"
+        );
+    }
+
+    /// A session the registry never heard of must be reported as such,
+    /// naming the session.
+    ///
+    /// The `expect_err` is half the guarantee. `Empty` is a *pass* at
+    /// this gate — an idle session is a real answer — so "this session
+    /// has no log" and "this session has no records" only stay
+    /// distinguishable while the former stays an error. The positive
+    /// control for that half is `wire_gate_accepts_an_empty_session`
+    /// below; a wire that returned an empty meta for a session with no
+    /// log at all would satisfy this test's message assertions and still
+    /// have invented data, which is why the two are written together.
+    #[tokio::test]
+    async fn wire_gate_names_the_session_when_no_log_is_registered() {
+        let server = ChronosServer::new();
+        let sid = "rec-c1-7-wire-gate-names-missing-log-session";
+
+        let err = server
+            .gate_projection_for_wire(sid)
+            .await
+            .expect_err("a session with no registered log must not be reported as an empty one");
+
+        let message: &str = err.message.as_ref();
+        assert!(
+            message.contains(sid),
+            "the wire must name the session it could not read; got: {message}"
+        );
+        assert!(
+            message.to_lowercase().contains("executionlog"),
+            "the wire must say the log is unavailable, rather than that the session \
+             is missing or empty; got: {message}"
+        );
+        // Not a retention story: a caller reading "retained" here would
+        // go looking for a boundary that does not exist. Spelled out for
+        // the same reason as the positive check above — a prefix that
+        // matches neither word would make this pass unconditionally.
+        let lowered = message.to_lowercase();
+        assert!(
+            !(lowered.contains("retention") || lowered.contains("retained")),
+            "a missing log must not read as a retention condition; got: {message}"
+        );
+    }
+
+    /// Positive control: a complete projection reaches the agent as
+    /// `Ok(meta)`, not as a message.
+    ///
+    /// Without this, every other pin in this group could be satisfied by
+    /// a `gate_projection_for_wire` that refuses unconditionally — the
+    /// guarantee would then be "the agent is always told something",
+    /// which is not what ADR-0004 asks for. The meta is built from a real
+    /// log with no retirement, so the ranges asserted here are the log's
+    /// own rather than a fixture's.
+    #[tokio::test]
+    async fn wire_gate_returns_the_meta_for_a_full_projection() {
+        let sid = "rec-c1-7-wire-gate-passes-full";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "{sid}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+
+        let events: Vec<TraceEvent> = (1..=3u64).map(rec_c1_7_later_event).collect();
+        append_events_to_log(&log, &session_id, &events);
+        log.flush().expect("flush the appended records");
+
+        let meta = server
+            .gate_projection_for_wire(sid)
+            .await
+            .expect("a complete projection must pass the gate to the caller");
+
+        assert_eq!(meta.completeness, projection::ProjectionCompleteness::Full);
+        assert_eq!(
+            meta.session_id.as_str(),
+            sid,
+            "the meta handed to the caller must be this session's"
+        );
+        assert_eq!(meta.projected_from, chronos_domain::EventSeq::ZERO);
+        assert_eq!(
+            meta.projected_through,
+            Some(chronos_domain::EventSeq::new(2)),
+            "`projected_through` is the last seq the projection read, so the \
+             agent can see how much history it is actually being answered about"
+        );
+    }
+
+    /// The second positive control, and the counterpart to
+    /// `wire_gate_names_the_session_when_no_log_is_registered`.
+    ///
+    /// An empty session is a real answer: it has no records, so it has no
+    /// history to be missing, and the gate returns its meta instead of
+    /// refusing. Refusing it would break every query against an idle
+    /// session. Accepting it is only safe because it is
+    /// distinguishable from "no log registered" — which is the pair of
+    /// tests that say so.
+    #[tokio::test]
+    async fn wire_gate_accepts_an_empty_session() {
+        let sid = "rec-c1-7-wire-gate-accepts-empty";
+        let server = ChronosServer::new();
+        let session_id = chronos_log::SessionId::new(sid);
+        let log_dir = std::env::temp_dir().join(format!(
+            "{sid}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = chronos_services::session_log::SessionExecutionLog::create_for_tests(
+            &log_dir,
+            session_id.clone(),
+        )
+        .expect("test execution log");
+        server
+            .execution_logs
+            .register(log.clone())
+            .expect("register the test log");
+        // No records appended: the log exists and holds nothing, which is
+        // the case a missing log must not be allowed to imitate.
+
+        let meta = server
+            .gate_projection_for_wire(sid)
+            .await
+            .expect("an empty session is a real answer, not a gate failure");
+
+        assert_eq!(meta.completeness, projection::ProjectionCompleteness::Empty);
+        assert_eq!(meta.session_id.as_str(), sid);
+        assert_eq!(
+            meta.projected_through, None,
+            "nothing was read, so no seq may be claimed as read through"
+        );
+        assert_eq!(meta.projected_from, chronos_domain::EventSeq::ZERO);
+    }
+
     /// Register a log holding `events`, and return the (log, SessionId) pair
     /// so a test can append more evidence afterwards the way a live probe
     /// keeps doing.
