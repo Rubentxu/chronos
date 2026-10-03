@@ -3635,12 +3635,47 @@ further would be a Silent Lie."
                 // Causality needs the engine half as well as the log half.
                 // Only this mode takes the engine lock: the other three are
                 // pure log reads and must not serialise behind it.
+                //
+                // REC-C1.7: gate before reading `engines`, exactly as
+                // `execution_query`, `state_query` and `trace_slice` do.
+                // This arm used to be the one reader of the map that did
+                // not, so it answered from whatever a live drain happened
+                // to leave behind — a drain that delivered a subset of the
+                // log produced an answer here that disagreed with the
+                // gated tools' for the same session in the same process.
+                // The gate rebuilds from the log, so after it the engine
+                // below is log-derived by construction rather than by
+                // assumption.
+                //
+                // `gate_projection` (not `gate_projection_for_wire`) so a
+                // failure stays on this tool's own error channel: every
+                // other failure below is an `isError` envelope, and a
+                // missing log is exactly what the tool description
+                // promises to report that way. The registry's own reason
+                // travels through unedited, so "no log here" is never
+                // dressed up as an empty session.
+                if let Err(e) = self.gate_projection(&params.session_id).await {
+                    return Ok(CallToolResult::error(text_content(format!("{e}"))));
+                }
+
                 // `QueryEngine` is not `Clone`, so the engine is borrowed
                 // under the guard rather than copied out of the map.
                 let engines = self.engines.lock().await;
-                let engine_loaded = engines.contains_key(&params.session_id);
+                // An engine that indexes no events cannot support a
+                // "hints are available" claim. `causality_index_is_configured`
+                // cannot be the test: `build_engine` always calls
+                // `with_causality`, so it is structurally true for every
+                // projection `IndexBuilder` produced, empty ones included,
+                // and `causality_status` would promote that to `Wired`.
+                // Gating makes "a readable log" imply "a projection
+                // exists", so the honest signal left for "are there hints
+                // to offer" is whether the projection holds evidence.
+                let engine = engines
+                    .get(&params.session_id)
+                    .filter(|e| e.event_count() > 0);
+                let engine_loaded = engine.is_some();
                 self.read_path
-                    .causality_status(&params.session_id, engines.get(&params.session_id))
+                    .causality_status(&params.session_id, engine)
                     .map(|status| {
                         serde_json::json!({
                             "mode": "causality",
@@ -5354,37 +5389,44 @@ mod tests {
         );
     }
 
-    /// The `engines` slot is contested: two writers, and the gated handlers
-    /// see whichever ran last.
+    /// The `Causality` arm of `execution_log_read` answers from the
+    /// log-derived projection, never from what a drain left behind.
     ///
+    /// This test used to be
+    /// `rec_c1_5_ensure_projection_replaces_the_maintained_engine_recorded_defect`
+    /// and it asserted the opposite. The `engines` slot had two writers:
     /// `build_and_store_engine` (`server.rs:835`) writes `engines` and
-    /// `session_languages` but never `projection_meta`, so the engine it
-    /// stores is invisible to the gate. `ensure_projection` (`server.rs:750`)
-    /// fast-paths on `projection_meta`, so on a miss it rebuilds from the log
-    /// and replaces the entry at `server.rs:776`.
+    /// `session_languages` but never `projection_meta`, so the engine a
+    /// drain leaves is invisible to the gate, while `ensure_projection`
+    /// (`server.rs:750`) rebuilds from the log and replaces it. A drain
+    /// that delivered two of the log's four events therefore left a
+    /// two-event engine in the map, and the `Causality` arm — then the
+    /// only reader of `engines` that did not gate first — answered from
+    /// those two while `execution_query` / `state_query` / `trace_slice`
+    /// gated and got all four. Two tools, two engines, one session, one
+    /// process, selected by which tool the agent happened to call. The old
+    /// doc comment said it outright: "RECORDED DEFECT, not a
+    /// specification", to be rewritten once the slot stopped being
+    /// contested. It now is.
     ///
-    /// The consequence is the one this test records: a drain that delivered a
-    /// subset of the log leaves the maintained engine holding fewer events
-    /// than the log contains, and the ungated `execution_log_read` /
-    /// `Causality` arm — the only reader of `engines` that does not gate
-    /// first (`server.rs:3640`) — answers from that subset, while
-    /// `execution_query` / `state_query` / `trace_slice` gate first
-    /// (`server.rs:1051`, `1103`, `3422`) and get the full log. Two different
-    /// engines for the same session in the same process, selected by which
-    /// tool the agent called.
+    /// The old test also never drove the wire. It asserted the map's
+    /// state transitions and stopped there, so nothing in it could tell an
+    /// agent that two tools disagreed. This one calls the tool.
     ///
-    /// **RECORDED DEFECT, not a specification.** The counts below are the
-    /// observed behaviour, asserted so the evidence survives. When the slot
-    /// stops being contested these assertions turn red and the test must be
-    /// rewritten; until then they are the measurement, and reporting the
-    /// numbers as a passing equivalence would be false.
+    /// Deliberately kept from the old version, because both remain true
+    /// and are load-bearing: `build_and_store_engine` must not publish
+    /// `projection_meta` (it is the live-capture path, and a
+    /// partial drain-sourced engine that could pass the gate would be a
+    /// worse lie than the one this milestone removed), and the
+    /// drain-sourced engine legitimately holds exactly the two events the
+    /// drain delivered.
     #[tokio::test]
-    async fn rec_c1_5_ensure_projection_replaces_the_maintained_engine_recorded_defect() {
-        let sid = "rec-c1-5-contested-slot";
+    async fn rec_c1_5_execution_log_read_causality_answers_from_the_log_derived_projection() {
+        let sid = "rec-c1-5-causality-gated";
         let server = ChronosServer::new();
         let session_id = chronos_log::SessionId::new(sid);
         let log_dir = std::env::temp_dir().join(format!(
-            "rec-c1-5-contested-slot-{}-{}",
+            "rec-c1-5-causality-gated-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4().simple()
         ));
@@ -5410,45 +5452,177 @@ mod tests {
 
         {
             let engines = server.engines.lock().await;
-            let maintained = engines.get(sid).expect("engine registered by the drain");
+            let drained = engines.get(sid).expect("engine registered by the drain");
             assert_eq!(
-                maintained.event_count(),
+                drained.event_count(),
                 2,
-                "the drain only ever saw two events, so the maintained engine \
-                 holds two"
+                "the drain only ever saw two events, so the drain-sourced engine \
+                 holds two — this is the engine the arm used to answer from"
             );
         }
         assert!(
             !server.projection_meta.lock().await.contains_key(sid),
-            "build_and_store_engine must not publish projection metadata, which is \
-             why its engine is invisible to the gate"
+            "build_and_store_engine must not publish projection metadata: it is the \
+             live-capture path, and a partial drain-sourced engine that could pass \
+             the gate would be a worse lie than the one being removed here"
         );
 
-        // A gated handler arrives. It gates first, misses, rebuilds from the
-        // log and replaces the entry.
-        let meta = server
-            .gate_projection(sid)
+        // What a gated tool would build, built independently here so the
+        // comparison below is against the log and not against the cache.
+        let independent = projection::build_engine(&log)
+            .expect("the log is readable, so an independent rebuild must succeed")
+            .engine;
+
+        // The agent calls the tool. It must gate, rebuild, and answer from
+        // the projection — not report the two events the drain left.
+        let result = server
+            .execution_log_read(Parameters(ExecutionLogReadParams {
+                session_id: sid.to_string(),
+                mode: ExecutionLogReadKind::Causality,
+                cursor: None,
+                bucket_size_ns: default_bucket_size_ns(),
+                limit: default_limit(),
+            }))
             .await
-            .expect("the log is readable, so the gate must pass");
+            .expect("a readable log must answer, not fail the tool call");
+
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "a session with a readable log must answer: {:?}",
+            result.content
+        );
+        let text = format!("{:?}", result.content);
+        assert!(
+            text.contains("engine_loaded"),
+            "causality mode must still report engine_loaded, got: {text}"
+        );
+        assert!(
+            text.contains("Wired"),
+            "answering from a populated log-derived projection means hints are \
+             genuinely available; reporting Unsupported here would mean the arm \
+             declined to use the projection the gate just built, got: {text}"
+        );
+
+        // The engine the tool answered from is the log-derived one. It is
+        // also, event for event, what `execution_query`, `state_query` and
+        // `trace_slice` see, because all four read this single map entry.
+        {
+            let engines = server.engines.lock().await;
+            let answered_from = engines
+                .get(sid)
+                .expect("the gate must leave an engine behind");
+            assert_eq!(
+                answered_from.event_count(),
+                4,
+                "the Causality arm must answer from a projection of the whole log, \
+                 not from the two events the drain delivered — this is the \
+                 REC-C1.5 divergence returning"
+            );
+            assert_eq!(
+                engine_ids(answered_from),
+                engine_ids(&independent),
+                "same ids, in the order the log defines"
+            );
+            assert_eq!(
+                answered_from.events(),
+                independent.events(),
+                "REC-C1.5: the engine the arm answered from must be the log's \
+                 projection, not a lookalike that happens to have the same count"
+            );
+        }
+
+        // Kept from the old version: the log is intact, so gating this
+        // session yields a Full projection and not the retention refusal.
+        // The arm now depends on the gate, so it inherits the refusal too,
+        // and this is the assertion that says the refusal did not fire here.
+        let meta = server
+            .projection_meta
+            .lock()
+            .await
+            .get(sid)
+            .cloned()
+            .expect("answering at all means the gate published projection metadata");
         assert_eq!(
             meta.completeness,
             projection::ProjectionCompleteness::Full,
             "the log is intact; this is not a retention case"
         );
+    }
+
+    /// A drain-sourced engine is not authority, and the tool says so.
+    ///
+    /// The other half of the gate change. A session can hold an engine that
+    /// no log backs: `build_and_store_engine` writes `engines` with no
+    /// `projection_meta` and no log behind it, which is the pure
+    /// live-capture shape. `ReadPathService::causality_status` needs a
+    /// readable log, so this shape has never produced a status — it failed
+    /// closed — and gating the arm does not change that, which is exactly
+    /// what is pinned here: the drain-sourced engine must never be reported
+    /// as if a log vouched for it.
+    ///
+    /// The fixture is the tempting one on purpose: a real, non-empty
+    /// engine sitting in the map. A test with no engine at all would pass
+    /// under any implementation, including a hypothetical rule that reports
+    /// `Unsupported` whenever the engine is missing.
+    #[tokio::test]
+    async fn execution_log_read_causality_fails_closed_when_only_a_drain_sourced_engine_exists() {
+        let server = ChronosServer::new();
+        let sid = "causality-drain-sourced-only";
+
+        // The live-capture shape: a drain delivered the fixture and left a
+        // real engine behind. No log was ever registered for this session.
+        let events = rec_c1_5_fixture();
+        server
+            .build_and_store_engine(sid, events, Language::Rust)
+            .await;
         {
             let engines = server.engines.lock().await;
-            let after_gate = engines
-                .get(sid)
-                .expect("the gate must leave an engine behind");
+            let drained = engines.get(sid).expect("the drain registered an engine");
             assert_eq!(
-                after_gate.event_count(),
+                drained.event_count(),
                 4,
-                "RECORDED DEFECT: the gate replaced the maintained engine with one \
-                 built from the log. The ungated Causality read at server.rs:3640 \
-                 now sees 4 events where, one tool call earlier, it saw 2 — \
-                 same session, same process."
+                "fixture sanity: four non-noisy events, so the engine a logless \
+                 session is holding is genuinely populated"
             );
         }
+
+        let result = server
+            .execution_log_read(Parameters(ExecutionLogReadParams {
+                session_id: sid.to_string(),
+                mode: ExecutionLogReadKind::Causality,
+                cursor: None,
+                bucket_size_ns: default_bucket_size_ns(),
+                limit: default_limit(),
+            }))
+            .await
+            .expect("this tool reports failures as an isError envelope, not a transport error");
+
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "with no registered log the engine in the map is not authority and must \
+             not be answered from: {:?}",
+            result.content
+        );
+        let text = format!("{:?}", result.content);
+        assert!(
+            !text.contains("engine_loaded"),
+            "an error envelope must not carry a causality status derived from an \
+             engine no log backs: {text}"
+        );
+        assert!(
+            !text.contains("Wired") && !text.contains("Unsupported"),
+            "no status may be reported at all for a session with no log: {text}"
+        );
+
+        // The gate refuses; it does not evict. `build_and_store_engine`'s
+        // output is the live capture path's own state, and a reader that
+        // cannot use it must not destroy it.
+        assert!(
+            server.engines.lock().await.contains_key(sid),
+            "the gate must leave the capture path's engine untouched"
+        );
     }
 
     /// A session with no log never gets a projection.
