@@ -19,7 +19,7 @@ chronos-js = { workspace = true }
 chronos-store = { workspace = true }
 chronos-ebpf = { workspace = true }
 chronos-browser = { workspace = true }
-chronos-services = { workspace = true, features = ["test-utils"] }
+chronos-services = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -31,6 +31,18 @@ rmcp = { version = "1.5", features = ["server", "macros", "schemars", "transport
 uuid = { workspace = true }
 thiserror = { workspace = true }
 nix = { workspace = true }
+
+# `test-utils` is opt-in so that `chronos-services::test_support` and
+# `SessionExecutionLog::create_for_tests` are NOT compiled into the
+# production binary. Declaring it here rather than in `[dependencies]` is
+# what makes that promise true: Cargo enables a dev-dependency feature
+# only for targets that actually need dev-dependencies, so unit tests
+# (`#[cfg(test)] mod tests` in `src/server.rs`) and integration tests
+# (`tests/bootstrap_readiness.rs`) get the fixture builders, while
+# `cargo build --bin chronos-mcp` does not compile the module at all.
+# See chronos-services/Cargo.toml `[features] test-utils`.
+[dev-dependencies]
+chronos-services = { workspace = true, features = ["test-utils"] }
 
 [[bin]]
 name = "chronos-mcp"

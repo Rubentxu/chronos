@@ -3,14 +3,23 @@
 //!
 //! **Production binaries MUST NOT depend on this module.** The
 //! module is gated behind `#[cfg(any(test, feature = "test-utils"))]`
-//! and the feature is opt-in (never enabled by the release profile).
+//! and the feature is opt-in. The gate alone does not enforce that:
+//! a consumer that lists `chronos-services` with
+//! `features = ["test-utils"]` under `[dependencies]` compiles this
+//! module into its shipped binary. `chronos-mcp` therefore takes the
+//! feature as a `[dev-dependencies]` edge, which Cargo enables only for
+//! test targets. Do not move it back to `[dependencies]` to make a
+//! helper reachable from non-test code — that is a production caller
+//! of a fixture builder, which is the thing this module exists to
+//! prevent.
 //!
 //! Why this exists: integration tests in downstream crates
-//! (`chronos-mcp/tests/*`, `chronos-sandbox/tests/*`) need to seed
-//! a fixture on disk before the server starts. They cannot call the
-//! composition root (that is what they are *testing*), so they need
-//! a helper that builds the capability bundle directly and wraps it
-//! in a `SessionExecutionLog`.
+//! (`chronos-mcp/tests/*`, and the `#[cfg(test)]` unit tests in
+//! `chronos-mcp/src/server.rs`) need to seed a fixture on disk before
+//! the server starts. They cannot call the composition root (that is
+//! what they are *testing*), so they need a helper that builds the
+//! capability bundle directly and wraps it in a
+//! `SessionExecutionLog`.
 //!
 //! R6 (no concrete adapter construction in production services)
 //! stays intact: every code path here lives behind `cfg(test)` or

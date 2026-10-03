@@ -224,8 +224,16 @@ impl SessionExecutionLog {
     ///
     /// R6 (no concrete adapter construction in production services)
     /// is upheld: this helper is gated to non-production builds.
-    /// Production binaries cannot call it because the symbol only
-    /// exists when `cfg(test)` or `feature = "test-utils"` is set.
+    ///
+    /// The gate alone does not keep it out of a production binary: any
+    /// crate that lists `chronos-services` with
+    /// `features = ["test-utils"]` under `[dependencies]` (rather than
+    /// `[dev-dependencies]`) compiles this symbol into its shipped
+    /// binary, because Cargo enables the feature for every target of
+    /// that build. What keeps it out is the *edge* being a dev-dependency
+    /// — `chronos-mcp` moved to `[dev-dependencies]` for exactly this
+    /// reason. Do not reintroduce the feature on a normal dependency edge
+    /// to make a helper reachable; put the consumer in the test graph.
     #[cfg(any(test, feature = "test-utils"))]
     #[doc(hidden)]
     pub fn create_for_tests(

@@ -685,8 +685,11 @@ impl ChronosServer {
     ///
     /// - `chronos-services`'s `test_support` module, gated on
     ///   `#[cfg(any(test, feature = "test-utils"))]` with the feature
-    ///   declared by the consumer crate, which is how
-    ///   `chronos-mcp/tests/*` and `chronos-sandbox/tests/*` reach it.
+    ///   taken as a `[dev-dependencies]` edge by the consumer crate,
+    ///   which is how the unit tests in this file and
+    ///   `chronos-mcp/tests/bootstrap_readiness.rs` reach it. It is a
+    ///   dev-dependency, not a normal one, so the production binary
+    ///   does not compile that module.
     /// - `chronos-store`'s `ce_test_hooks`, a `#[doc(hidden)] pub` surface
     ///   documented as a narrow, versioned test chokepoint.
     ///

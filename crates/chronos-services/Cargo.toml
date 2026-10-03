@@ -7,9 +7,15 @@ rust-version.workspace = true
 
 [features]
 # Exposes test-only constructors on `SessionExecutionLog` so that
-# integration tests in downstream crates (`chronos-mcp/tests/*`,
-# `chronos-sandbox/tests/*`) can build a fixture without going
-# through the composition root. NEVER enable in production.
+# downstream test targets (`chronos-mcp`'s `#[cfg(test)]` unit tests in
+# src/server.rs and its tests/bootstrap_readiness.rs integration test)
+# can build a fixture without going through the composition root.
+#
+# NEVER enable on a normal `[dependencies]` edge: Cargo enables the
+# feature for every target of that build, so a production binary would
+# compile `test_support` and `create_for_tests` into the shipped
+# artifact. Consumers that need it must declare it under
+# `[dev-dependencies]`, which Cargo enables only for test targets.
 test-utils = []
 
 [dependencies]
