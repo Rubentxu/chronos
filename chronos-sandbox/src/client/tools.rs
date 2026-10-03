@@ -2602,6 +2602,73 @@ impl McpTestClient {
         self.db_path.as_deref()
     }
 
+    /// Locate the `chronos` CLI, or say precisely what was looked for.
+    ///
+    /// The bare-name fallback below is deliberate — it is what makes the
+    /// binary findable on a developer machine that has it on `PATH` — but it
+    /// is also what produced a failure mode worth naming. `sandbox-smoke.yml`
+    /// built the library and `chronos-mcp` but never `--bin chronos`, so
+    /// resolution fell through to the name `"chronos"`, the spawn failed, and
+    /// the message was:
+    ///
+    /// ```text
+    /// failed to spawn chronos CLI at "chronos": No such file or directory (os error 2)
+    /// ```
+    ///
+    /// That reads as a missing system dependency. It is not: the binary was
+    /// simply never built. So when no candidate exists, this returns an error
+    /// that names the build step instead of deferring to the OS.
+    ///
+    /// The relative candidate is the one that actually works in CI: a test
+    /// binary lives at `target/debug/deps/<test>`, so the target directory is
+    /// two levels up and `target/debug/chronos` is exactly where
+    /// `cargo build --bin chronos` puts it.
+    fn resolve_chronos_cli() -> Result<std::path::PathBuf, McpSandboxError> {
+        if let Ok(explicit) = std::env::var("CHRONOS_CLI_PATH") {
+            let path = std::path::PathBuf::from(explicit);
+            if path.exists() {
+                return Ok(path);
+            }
+            return Err(McpSandboxError::RpcError(format!(
+                "CHRONOS_CLI_PATH points at {:?}, which does not exist",
+                path
+            )));
+        }
+
+        if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos") {
+            let path = std::path::PathBuf::from(cargo_bin);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+
+        // `current_exe()` returns an owned PathBuf, but the chain that walks
+        // up from it borrows, so the intermediate is bound by name to keep
+        // the result owned.
+        let relative = match std::env::current_exe() {
+            Ok(exe) => exe
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("chronos")),
+            Err(_) => None,
+        };
+        if let Some(ref path) = relative {
+            if path.exists() {
+                return Ok(path.clone());
+            }
+        }
+
+        Err(McpSandboxError::RpcError(format!(
+            "the `chronos` CLI was not found and cannot be spawned. It is a test \
+             dependency, not a system package: build it with \
+             `cargo build --bin chronos` (it lands next to the test binary, at \
+             {relative:?}), or point CHRONOS_CLI_PATH at it. Falling back to a \
+             bare `chronos` on PATH would report this as a missing system \
+             dependency, which is the wrong diagnosis.",
+            relative = relative.as_deref()
+        )))
+    }
+
     /// Spawn the MCP server with an explicit DB path.
     ///
     /// Sets `CHRONOS_DB_PATH` in the server environment so the server opens
@@ -2666,28 +2733,7 @@ impl McpTestClient {
     ) -> Result<ReplayReport, McpSandboxError> {
         // Find the chronos CLI binary. We look for the same patterns as
         // `McpTestClient::start` (CARGO_BIN_EXE_chronos, relative, PATH).
-        let cli_path = std::env::var("CHRONOS_CLI_PATH")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos") {
-                    let path = std::path::PathBuf::from(cargo_bin);
-                    if path.exists() {
-                        return path;
-                    }
-                }
-                if let Ok(exe) = std::env::current_exe() {
-                    let relative = exe
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.join("chronos"));
-                    if let Some(ref path) = relative {
-                        if path.exists() {
-                            return path.clone();
-                        }
-                    }
-                }
-                std::path::PathBuf::from("chronos")
-            });
+        let cli_path = Self::resolve_chronos_cli()?;
 
         // Build the subprocess: `chronos test replay <bundle_id> --db <db_path>`
         let output = tokio::process::Command::new(&cli_path)
@@ -2834,6 +2880,82 @@ fn walk_newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A missing `chronos` binary must be diagnosed as a build step, not
+    /// deferred to the OS.
+    ///
+    /// This exists because the alternative is a failure that lies about its own
+    /// cause. `sandbox-smoke.yml` built the library and `chronos-mcp` but not
+    /// `--bin chronos`, so resolution fell through to the bare name and the
+    /// spawn reported `No such file or directory (os error 2)` — which reads
+    /// as a missing system package, when the binary had simply never been
+    /// built. The test asserts the message names the build step.
+    #[test]
+    fn a_missing_chronos_cli_is_diagnosed_as_a_build_step() {
+        // `CHRONOS_CLI_PATH` is the only branch that can be driven
+        // deterministically: pointing it at a path that does not exist must
+        // say so, rather than silently falling through to the next candidate.
+        let missing = std::env::temp_dir().join("chronos-cli-does-not-exist-9d3f");
+        let previous = std::env::var("CHRONOS_CLI_PATH").ok();
+
+        // SAFETY: single-threaded within this test; the variable is restored
+        // before returning, and no other test reads it concurrently because the
+        // suite runs with `--test-threads=1` in CI.
+        unsafe { std::env::set_var("CHRONOS_CLI_PATH", &missing) };
+
+        let result = McpTestClient::resolve_chronos_cli();
+
+        match previous {
+            Some(v) => unsafe { std::env::set_var("CHRONOS_CLI_PATH", v) },
+            None => unsafe { std::env::remove_var("CHRONOS_CLI_PATH") },
+        }
+
+        let err = result.expect_err("a CHRONOS_CLI_PATH that does not exist must not resolve");
+        let text = err.to_string();
+        assert!(
+            text.contains("CHRONOS_CLI_PATH") && text.contains("does not exist"),
+            "the error must name the variable and the fact, got: {text}"
+        );
+    }
+
+    /// The fallback error — reached when no `CHRONOS_CLI_PATH` is set and no
+    /// candidate exists — must name the build step, because that is the action
+    /// that fixes it.
+    #[test]
+    fn the_unresolved_cli_error_names_how_to_build_it() {
+        // `CARGO_BIN_EXE_chronos` is unset outside a `cargo test` of the same
+        // package, and the relative candidate only exists once the binary is
+        // built, so this exercises the real CI failure path.
+        let previous = std::env::var("CHRONOS_CLI_PATH").ok();
+        unsafe { std::env::remove_var("CHRONOS_CLI_PATH") };
+
+        // Skip when the binary genuinely is built, so the test asserts the
+        // message rather than the environment.
+        let result = McpTestClient::resolve_chronos_cli();
+
+        if let Some(v) = previous {
+            unsafe { std::env::set_var("CHRONOS_CLI_PATH", v) };
+        }
+
+        if let Ok(path) = result {
+            // The CLI is present: that is the healthy state, and it is worth
+            // asserting explicitly because it is the state CI reaches after
+            // the workflow builds the binary.
+            assert!(
+                path.exists(),
+                "a resolved chronos CLI must exist on disk, got {path:?}"
+            );
+            return;
+        }
+
+        // The message is the point. It has to name the build command, so the
+        // reader is not left hunting for a missing system package.
+        let text = result.unwrap_err().to_string();
+        assert!(
+            text.contains("cargo build --bin chronos"),
+            "the error must name the build step that fixes it, got: {text}"
+        );
+    }
 
     /// Discriminante: an uncaptured write must decode, not error.
     ///
