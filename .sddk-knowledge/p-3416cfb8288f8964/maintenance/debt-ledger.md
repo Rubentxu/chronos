@@ -6,10 +6,10 @@ B5 (no waivers — pre-existing failures get debt entries).
 
 | ID | Source | Description | Repro |
 |---|---|---|---|
-| DEBT-C4-01 | vault drift CC#11 | `rec-c3.3-train-b` suspended cycle stuck in `apply_complete_pending_capture_session`, expected `CLOSED`. Suspended artifact dirs (`cycle-artifacts/_suspended-rec-c3.3-train-b/`) are untracked leftovers. | `bash scripts/check_vault_drift.sh` |
-| DEBT-C4-02 | vault drift CC#18 | Missing `verify-findings.json` for cycles rec-c3-hexagonal-closure, rec-c3.3-train-b, rec-c3.3.4-native, rec-c3.5-residual-inversion, rec-c4-solid-connascence | same |
-| DEBT-C4-03 | vault drift CC#22 | `rec-c3.3-train-b/release-receipt.md` missing Head SHA / Remote tag / tag_peel / Peel match fields | same |
-| DEBT-C4-04 | vault drift CC#56 | `chronos-sandbox/src/client/identity.rs:151-164` mutates process env (`std::env::set_var`/`remove_var` for `CHRONOS_MCP_EXPECTED_SHA`). Test-only helper; pre-exists on main. **Closed in G0.3** (commit pending): refactored to `verify_expected_sha_value(Option<&str>)` explicit parameter; tests call it directly. | same |
+| DEBT-C4-01 | vault drift CC#11 | `rec-c3.3-train-b` suspended cycle stuck in `apply_complete_pending_capture_session`, expected `CLOSED`. Suspended artifact dirs (`cycle-artifacts/_suspended-rec-c3.3-train-b/`) are untracked leftovers. | `bash scripts/check_vault_drift.sh` | **RETRACTED 2026-10-03 (R3.4): NOT real debt.** Verified, not assumed. The cycle is no longer stuck: `apply-checkpoint.json` for `rec-c3.3-train-b` reads `status: CLOSED`, which is the field CC#11 checks. A `cycle-artifacts/_suspended-rec-c3.3-train-b` directory still exists as filesystem residue, but it is not what the check reads, and `bash scripts/check_vault_drift.sh` reports CC#11 clean.
+| DEBT-C4-02 | vault drift CC#18 | Missing `verify-findings.json` for cycles rec-c3-hexagonal-closure, rec-c3.3-train-b, rec-c3.3.4-native, rec-c3.5-residual-inversion, rec-c4-solid-connascence | same | **RETRACTED 2026-10-03 (R3.4): NOT real debt.** Verified, not assumed. **All five cycles now HAVE `verify-findings.json`** — `rec-c3-hexagonal-closure`, `rec-c3.3-train-b`, `rec-c3.3.4-native`, `rec-c3.5-residual-inversion`, `rec-c4-solid-connascence`: every one resolves to `yes` on disk and every one is git-tracked. On top of that, CC#18 itself was amended by the R0 audit to skip non-`CLOSED` cycles, so it no longer reports these at all. The entry describes a state from before R0's filter and before the artifacts were synthesized.
+| DEBT-C4-03 | vault drift CC#22 | `rec-c3.3-train-b/release-receipt.md` missing Head SHA / Remote tag / tag_peel / Peel match fields | same | **RETRACTED 2026-10-03 (R3.4): NOT real debt.** Verified, not assumed. **All four fields are present** in `rec-c3.3-train-b/release-receipt.md`, and the peel genuinely matches: `Head SHA a1c628e6c5f31ba3d224d93461781ce828ba0b91`, `Remote tag rec-c3.3-train-b.0`, `Remote tag_peel a1c628e6c5f31ba3d224d93461781ce828ba0b91`, `Peel match true`, plus a `tag_peel_match: true` field. CC#22 is green.
+| DEBT-C4-04 | vault drift CC#56 | `chronos-sandbox/src/client/identity.rs:151-164` mutates process env (`std::env::set_var`/`remove_var` for `CHRONOS_MCP_EXPECTED_SHA`). Test-only helper; pre-exists on main. **Closed in G0.3** (commit pending): refactored to `verify_expected_sha_value(Option<&str>)` explicit parameter; tests call it directly. | same | **RETRACTED 2026-10-03 (R3.4): NOT real debt.** Verified, not assumed. **There is no environment mutation left to fix.** `grep -nE '^[^/]*std::env::(set_var|remove_var)\s*\(' chronos-sandbox/src/client/identity.rs` returns **nothing**: zero executable calls. What survives is one PROSE mention at `identity.rs:104` — a doc comment on `verify_expected_sha` that says the old test helper used `std::env::set_var` and that vault drift forbids it. That is the comment explaining WHY `verify_expected_sha` delegates to `verify_expected_sha_value(expected: Option<&str>)`, which IS the m9-73 fix, and CC#56's regex requires a `(` after the name so prose does not match. The debt is satisfied; what remains is the sentence that documents the satisfaction.
 | DEBT-G0.4-01 | C5.2 sandbox-client migration gap | Sandbox client `query_events` wrapper was reading `events` at inner JSON root, but server v2 publishes `events` nested in `result` envelope (refactor C5.2). **Closed in G0.4** (commit `b55efb8f`): wrapper now mirrors V2 envelope and reads `v2.result.events`. | n/a (closed) |
 | DEBT-G0.4-02 | G0.2 regression in `tests/observe_uprobe.rs` | 2 tests added in G0.2 assumed `Ok(response_with_error_body)` but `RpcClient::call_tool` (`rpc.rs:153-165`) converts both JSON-RPC error envelopes AND MCP `result.isError=true` to `Err(RpcError)`. **Closed in G0.4** (commit `b55efb8f`): tests now `match Err(McpSandboxError::RpcError)` and assert error TYPE plus discriminator fragments. | n/a (closed) |
 | DEBT-G0.5-01 | Legacy `offset_*` pagination tests | 3 tests in `chronos-sandbox/tests/query_filters.rs` (`test_query_events_offset_pagination`, `test_query_events_offset_beyond_total`, `test_query_events_limit_exact_pagination`) use `QueryFilter.offset > 0` which the wrapper at `tools.rs:670-674` explicitly rejects (pre-C5.2 pagination contract was replaced by opaque cursors in C5.2). **Ignored in G0.4** (commit `b55efb8f`, bodies preserved verbatim §0.4): `#[ignore = "G0.4: legacy pre-C5.2 offset pagination; migrate to cursor next_cursor (M1+)"]`. | `cargo test -p chronos-sandbox --test query_filters` (3 tests marked ignored) | **RETRACTED 2026-10-03 (R3.3): this debt was NOT real.** Its remediation was already in the tree and the entry was never updated. Verified, not assumed: (1) **The migration the entry asks for already landed**: commit `283a1445 `fix(cursor): migrate sandbox client from offset to cursor pagination (R0.2)`, and `test_query_events_limit_exact_pagination` carries its own note — "R0.2 (2026-09-22): migrated from `offset` to `next_cursor`. The observable property under test is preserved." (2) **They are NOT `#[ignore]`d**: `grep -c '#\[ignore' chronos-sandbox/tests/query_filters.rs` == 0. (3) **They PASS**: `cargo test -p chronos-sandbox --test query_filters` -> `9 passed; 0 failed; 0 ignored`, including `test_query_events_offset_pagination` and `test_query_events_offset_beyond_total ... ok`. (4) The entry also misplaces one of the three: `test_query_events_offset_beyond_total` lives in `query_edge_cases.rs:17`, not in `query_filters.rs`. So the two candidate follow-up cycles (`m1-offset-cursor-migration`, `m1-probe-inject-error-prefix`) are chasing work that is done.
@@ -21,6 +21,29 @@ B5 (no waivers — pre-existing failures get debt entries).
 These do not gate REC-C4 (verified pre-existing on main). DEBT-C4-04 closed
 in G0.3 (commit pending). DEBT-G0.4-01 + DEBT-G0.4-02 closed in G0.4
 (merged `b44504ed`). DEBT-G0.5-01 ignored in G0.4 (bodies preserved §0.4). **2026-10-03: ambas filas retracted — ver R3.3.**
+
+## Auditoria R3.4 (2026-10-04): la lista de deudas ABIERTAS estaba casi entera fantasma
+
+Se verificaron las siete filas abiertas antes de trabajar ninguna. **Seis no son deuda real:**
+sus criterios habian dejado de regir, que es la condicion que la regla pone para no contarlas.
+
+| ID | Por que no es deuda |
+|---|---|
+| `DEBT-C4-01` | el ciclo ya esta `CLOSED`; lo que queda es residuo de directorio, y CC#11 esta verde |
+| `DEBT-C4-02` | los 5 ciclos YA TIENEN `verify-findings.json`, y CC#18 lleva filtro de no-`CLOSED` desde R0 |
+| `DEBT-C4-03` | los 4 campos del `release-receipt.md` estan presentes y el peel coincide de verdad |
+| `DEBT-C4-04` | `identity.rs` tiene **cero** llamadas ejecutables a `set_var`; solo queda la frase del doc que explica el por que |
+| `DEBT-G0.5-01` | migrado por R0.2 (`283a1445`), 0 `#[ignore]`, 9/9 verdes |
+| `DEBT-M7-02-01` | nunca llego a la asercion: era un binario sin construir; 4/4 verdes y ya verdes en CI |
+
+**Queda de verdad, y no es accionable desde el codigo:** `DEBT-G0-04` (UAT privilegiado, env-locked,
+`not_run` por directiva) y `DEBT-VAULT-CC-PERMANENT` / `DEBT-VAULT-CC-REC-C3` (politica de
+ciclos suspendidos, que ya no producen drift porque los checks estan filtrados).
+
+**Por que esto importa mas que las seis filas.** Cada una era un ciclo completo de trabajo
+programado sobre un problema ya resuelto, y cuatro de ellas describian causas que nunca fueron
+las causas. La regla de no contar deuda cuyos criterios dejaron de regir no es burocracia: es lo
+que impide que el backlog se llene de trabajo fantasma que ademas PARECE urgente.
 DEBT-M7-02-01 + DEBT-G0-04 + DEBT-VAULT-CC-PERMANENT + DEBT-VAULT-CC-REC-C3
 stay `not_run` per directiva — visible in STATE, not deleted.
 
