@@ -161,7 +161,7 @@ evidence = [
   "chronos-sandbox/tests/rec_c1_8_uat_c1_03_forced_gap.rs",
   "crates/chronos-log/tests/rec_c1_8_uat_c1_05_four_dim.rs",
   "chronos-sandbox/tests/rec_c1_8_dual_truth_closeout.rs",
-  "crates/chronos-log/src/record.rs::ExecutionRecord::captured_at_unix_ns",
+  "crates/chronos-domain/src/evidence.rs::ExecutionRecord::captured_at_unix_ns",
   # REC-C1.9 evidence (2026-10-03; 245377c8, 42aba10b, b8ba75ae): the
   # ordering invariant that was false (merge sorted by event_id), the one
   # ungated reader of `engines`, and the drain/meta contamination that let
@@ -246,8 +246,8 @@ evidence = [
   # was PARTIAL (real loss, but no producer) and is now PROVEN, and the
   # missing REC-C1.05 ordering case is covered:
   "crates/chronos-services/src/events_log_read.rs::rec_c1_3_retention_gap_tests",
-  "crates/chronos-log/src/segmented.rs::advance_retained_from",
-  "crates/chronos-log/src/segmented.rs::compact_retired",
+  "crates/chronos-log/src/provider.rs::advance_retained_from",
+  "crates/chronos-log/src/provider.rs::compact_retired",
   "crates/chronos-services/src/error.rs::ServiceError::CursorStale",
   "crates/chronos-log/tests/rec_c1_8_uat_c1_05_four_dim.rs::three_time_dimensions_order_independently",
 ]
@@ -463,17 +463,17 @@ status = "verified"
 owner_gate = "REC-C5"
 evidence = [
   "docs/chronos-agentic-reconstruction/docs/specs/AGENT_API_V2.md (Current surface (REC-C6 ratification, 2026-09-21) — 12 canonical v2 tools + 29 not-yet-converged neighbours; future migration order documented per neighbour group)",
-  "crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES (41 entries; toolset_sync_check enforces parity)",
+  "crates/chronos-mcp/src/tools_params.rs::ALL_TOOL_NAMES (43 entries as of 2026-10-03; toolset_sync_check enforces parity against the live #[tool] set — the count was 41 when this entry was written and drifted upward as tools were added)",
   "crates/chronos-mcp/tests/alias_deletion.rs (regression test: DELETED_ALIASES.len() == 22)",
   "REC-C5 closeout (commit 350f91c6): 22 alias handlers deleted, ALL_TOOL_NAMES pruned 63 -> 41, wire shims removed from events_read/diff/output",
 ]
 uat = [
   "cargo test -p chronos-mcp --lib toolset_sync_check (2/2 PASS post-REC-C5; still 2/2 PASS post-REC-C6.3)",
   "cargo test -p chronos-mcp --test alias_deletion (2/2 PASS; DELETED_ALIASES.len() == 22)",
-  "grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l == 41 (live router)",
+  "grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l == 43 (live router; measured 2026-10-03, was 41)",
 ]
 notes = "REC-C5 closed the alias sunset (22 v1 aliases deleted, C5.3.2). REC-C6.3 ratified the post-REC-C5 surface: 12 v2 canonical + 29 not-yet-converged neighbours, with the future migration order for the 29 documented in AGENT_API_V2.md (probe_*, browser_probe_*, counterexample_*, sessions CRUD, mutation_lens / causal_slice / compare_sessions, misc). 'Small and composable' is satisfied at 12 v2 canonicals (the spec's 8-12 target)."
-verify = "cargo test -p chronos-mcp --lib toolset_sync_check && cargo test -p chronos-mcp --test alias_deletion && test $(grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l) -eq 41"
+verify = "cargo test -p chronos-mcp --lib toolset_sync_check && cargo test -p chronos-mcp --test alias_deletion && test $(grep -rE '^\\s*#\\[tool\\(' crates/chronos-mcp/src/ | wc -l) -eq 43"
 
 [[requirement]]
 id = "API-002"
@@ -483,7 +483,7 @@ owner_gate = "REC-C5"
 evidence = [
   "chronos-sandbox/src/client/tools.rs (68 pub async fn wrappers; REC-C5 closeout migrated the 22 deprecated wrappers to v2 dispatchers per commit 73431af2)",
   "REC-C6.7 wrapper audit 2026-09-21: 0 wrappers contain capture/query algorithms; the largest wrappers (session_start_spawn 25 lines, capabilities_target 19 lines, session_stop 18 lines) all contain DTO conversions + rmcp::ErrorData mapping, never capture logic. The wrapper file delegates all real work to chronos-mcp via call_tool.",
-  "crates/chronos-mcp/src/server.rs::ALL_TOOL_NAMES (41 entries; each tool's body delegates to chronos-services::observe / projection / events_log_read / diff / etc.)"
+  "crates/chronos-mcp/src/tools_params.rs::ALL_TOOL_NAMES (41 entries; each tool's body delegates to chronos-services::observe / projection / events_log_read / diff / etc.)"
 ]
 uat = [
   "cargo test -p chronos-sandbox --lib (68 wrapper tests, REC-C5 migrated)",
@@ -507,7 +507,7 @@ id = "M4A-001"
 title = "Go adaptive instrumentation: OTel discovery, OBI, Auto SDK and otelc"
 status = "planned"
 owner_gate = "M4-future"
-notes = "Substrate absence (2026-09-21 REC-C6.1 audit): no Go crate in workspace, no Go capture path, no Cargo.toml dep that pulls a Go-side adapter. REC-C7 promotes status from blocked to planned and reassigns owner_gate from REC-C6 to M4-future — there is no in-tree implementation to verify, no REC-C* gate can close this contract, and REC-C7 strict-no-gaps rejects blocked. Future M4 milestone cycle that introduces a Go crate (or Go build step) and lands the OTel/OBI/Auto SDK/otelc discovery flow against it will close this contract. See cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
+notes = "CORRECTION (2026-10-03, R3 audit): the previous reason was FALSE. It claimed 'no Go crate in workspace, no Go capture path'. Both are contradicted by the tree: `crates/chronos-go` is a workspace member (Cargo.toml:15 in members, Cargo.toml:44 as a dependency), 1804 LOC across adapter.rs/event_loop.rs/rpc.rs/subprocess.rs, and `subprocess.rs:17-23` genuinely spawns `dlv dap --listen=127.0.0.1:0` (Delve) and fails with GoError::DelveNotFound when it is absent. It is consumed by `crates/chronos-e2e/Cargo.toml:16` and `chronos-sandbox/Cargo.toml:22`, so it is not an orphan. The status stays `planned`, but for a different and now-accurate reason: the SUBJECT of this contract is absent, not the substrate. `grep -rniE 'otel|obi|auto.?sdk' crates/chronos-go/src/` returns 0, so OTel discovery, OBI, the Auto SDK and otelc are all unimplemented. This entry has 0 evidence, 0 uat and 0 verify — the only ledger entry with no executable verification — and the single Go capture test is #[ignore]d (tests/integration.rs:45, needs dlv). Closing it requires landing the OTel/OBI/Auto SDK/otelc discovery flow against the existing Go substrate, not creating a Go crate. Three Go ADRs are also in-tree and uncited here, an asymmetry against M4B-001 which lists its own: 0007-m4g1-otelc-spike.md (293L), 0011-m4g3-go-checkout-bug.md (298L), 0014-m4g2-instrumentation-spec.md (275L). Original audit reference retained: cycle-artifacts/p-3416cfb8288f8964/rec-c6-contracts-close/proposal.md C6.1."
 
 [[requirement]]
 id = "M4B-001"
@@ -572,7 +572,7 @@ evidence = [
   # M6.3: bidirectional correlation store
   "crates/chronos-domain/src/otlp/correlation.rs::CorrelationStore (270L, event_idx ↔ RecordedInvocation + reverse indices by invocation_id and trace_id)",
   # M6.5: redaction + cardinality (generic to avoid duplication with chronos-services::session_export)
-  "crates/chronos-domain/src/otlp/redaction.rs::redact_attributes (187L, generic over Vec<(String, String)>)",
+  "crates/chronos-domain/src/otlp/redaction.rs::redact_and_limit_attributes (187L, generic over Vec<(String, String)>)",
   # M6.6: UAT-M6-01/02 executors (lifted in R1 commit 945844a1 from spike to product)
   "crates/chronos-domain/src/otlp/cross_service.rs::run_uat_m6_01 (no cross-mix between two concurrent invocations with distinct traceparents)",
   "crates/chronos-domain/src/otlp/cross_service.rs::run_uat_m6_02 (monotonic-clock drift preserved + idempotent retry mints new UUID v4 but holds same trace_id)",
@@ -602,7 +602,7 @@ owner_gate = "M7"
 evidence = [
   # M7.1: differential equivalence + hierarchical hashes
   "crates/chronos-domain/src/otlp/equivalence.rs::EquivalenceSpec (199L; primary status + fallback primary-by-status + fingerprint fallback)",
-  "crates/chronos-domain/src/otlp/equivalence.rs::equivalence_hash + equivalence_hash_with_fallback (FNV-1a 64-bit; reused from chronos_domain::trace::event)",
+  "crates/chronos-domain/src/otlp/equivalence.rs::hash_event_canonical + equivalence_hash_with_fallback (FNV-1a 64-bit; reused from chronos_domain::trace::event)",
   # M7.2: invocation/context alignment
   "crates/chronos-domain/src/otlp/alignment.rs::align_sessions (474L; rejects ambiguous InvocationId per post-v0.8.0 reconciliation 2026-09-22; primary UUID v4 + fallback trace_id from W3C ExternalTraceContext)",
   # M7.3: behaviour fingerprint
@@ -649,7 +649,7 @@ evidence = [
   # M9.4: race classifier
   "crates/chronos-services/src/race_classifier.rs::RaceClassification enum (4 variants) + ClassificationReason enum (6 variants) + ClassificationExplanation struct + classify_pair pure function (418L; 8 unit tests)",
   # M9.5: perturbation + missing-evidence handling
-  "crates/chronos-services/src/concurrency_perturbation.rs::ConcurrencyPerturbationDetector",
+  "crates/chronos-services/src/concurrency_perturbation.rs::PerturbationOutcome",
   # Pre-existing CausalityIndex integration
   "crates/chronos-domain/src/index/causality.rs (216L; 5 unit tests pre-existed; reused by M9.2/M9.3 per ADR-0028 §5)",
   # R3.1: consumer wiring (commit bf9119e2)
@@ -680,13 +680,16 @@ evidence = [
   # M10.3: live streaming + causality promotion stub
   "crates/chronos-services/src/live_streaming.rs (410L, 15 unit tests; poll_batch_real returns Result<EventBatch, LiveStreamError> per post-v0.8.0 reconciliation 2026-09-22 — read-error no longer coerced to empty Ok)",
   # M10.4: virtualization EventSummary + InvocationRollup
-  "crates/chronos-services/src/execution_explorer.rs::InvocationRollup (382L, 21 unit tests; EventSummary aggregation; 8 REC regression tests)",
+  "crates/chronos-services/src/virtualization.rs::InvocationRollup (EventSummary aggregation; 8 REC regression tests; R2.3 added RollupGroupingKey so the value declares that it groups by thread_id, not invocation_id — see commit d04d0b9f)",
   "crates/chronos-services/src/execution_explorer.rs::process_returns_stub_payload_for_permitted_action (pinned stub contract per post-v0.8.0 reconciliation 2026-09-22)",
+  # M10.6: the production consumer that the notes below previously claimed did not exist
+  "crates/chronos-services/src/read_path.rs::ReadPathService (the real read authority: poll_batch/summarize/rollup/causality_status, wired into ChronosServer at server.rs:194,391,447; D2 resource ceiling enforced here per commit 92cb6cb2; mid-walk read failure propagates as AggregateError::Read instead of an Ok partial aggregate per commit c16f9913)",
+  "chronos-sandbox/tests/scale_execution_log_1m.rs (1M-event lane, re-enabled in R2.3 / commit c36a1d6f: summarize 11.6s with total_events 1000000)",
   # M10.5: deferred per env (UX execution explorer HTML/UI frontend, out of chronos-services Rust runtime scope per ADR-0029 §6)
 ]
 uat = [
   "UAT-M10-01 trace visualization with pagination/virtualization within memory budget (deferred to M10.5; UI/HTML layer required)",
   "UAT-M10-02 gap/redacted/incomplete/no-permissions shown comprehensibly, never as false-complete (chronos-services/src/execution_explorer stub payload prefix 'stub:' lets consumers detect contract fixture; live_streaming::poll_batch_real returns Err on read failure, never empty batch)",
 ]
-notes = "PARTIAL honest state (R1 reconciliation 2026-09-22): M10.2 + M10.3 + M10.4 + M10.6 product code exists in chronos-services/src/{execution_explorer, live_streaming}.rs. M10 chapter CLOSED per close report docs/milestones/M10-CLOSE.md (122L, 8 secciones) on tag m10-execution-explorer-stubs.0 peels dddc6d58. **Honest gap**: (a) M10.5 a11y + UAT-M10-01/02 deferred per env (UX execution explorer HTML/UI frontend required, out of Rust runtime scope); (b) real wiring follow-ups documented in close report — poll_batch SessionExecutionLog wiring, EventSummary aggregation via events_log_read::read_page, causality promotion Unsupported→Wired, sandbox 1M eventos integration. The execution_explorer module is wired in chronos-services lib but no real consumer wires poll_batch_real / EventSummary aggregation in production paths (only stub contract pinned per post-v0.8.0 reconciliation). To promote to 'verified': requires (a) M10.5 UX frontend lift, (b) real SessionExecutionLog wiring in poll_batch, (c) UAT-M10-01/02 integration tests with real paginated/virtualized trace fixtures."
-verify = "cargo test -p chronos-services --lib execution_explorer:: live_streaming:: && python3 scripts/check_architecture_contracts.py"
+notes = "PARTIAL honest state, RE-AUDITED 2026-10-03 (R3). The status does not change, but the reason did, and the previous reason was wrong in both directions. M10.2 + M10.3 + M10.4 + M10.6 product code exists in chronos-services/src/{execution_explorer, live_streaming, read_path}.rs. M10 chapter CLOSED per close report docs/milestones/M10-CLOSE.md (122L, 8 secciones) on tag m10-execution-explorer-stubs.0 peels dddc6d58. **Closed since the previous audit, contrary to what this entry said**: the notes previously listed three follow-ups as open and asserted 'no real consumer wires poll_batch_real / EventSummary aggregation in production paths (only stub contract pinned)'. All three are closed. (a) poll_batch IS wired to a real SessionExecutionLog: read_path.rs:525-533, with `fake` selected only when there is no registry and the sandbox has not disabled it. (b) EventSummary aggregation DOES go through events_log_read::read_page: virtualization.rs:296. (c) The 1M-event sandbox integration is not hypothetical: chronos-sandbox/tests/scale_execution_log_1m.rs seeds a million events and asserts total_events==1000000, and it EXECUTES (summarize 11.6s, rollup 11.6s, commit c36a1d6f; the lane had been #[ignore]d and broken by a JSON-envelope bug, which is why it appeared absent). **The real remaining gap is one item, not four**: M10.5 — the UX/HTML frontend, a11y, human validation, and rendering of uncertainty states (gap/redacted/incomplete/no-permissions). That gap is genuine and is exactly what ADR-0029 §6 deferred out of the Rust runtime scope. **To promote to 'verified'**: (a) land the M10.5 UX frontend as a consumer of the API, never as a second source of truth; (b) demonstrate explicit rendering of known/unknown/gap/redacted/unsupported/heuristic/complete; (c) pass UAT-M10-01/02 end-to-end with real paginated and virtualized trace fixtures. **Evidence pointer corrected**: the previous entry cited execution_explorer.rs::InvocationRollup, but that symbol lives in virtualization.rs — the file is 566L and holds 15 `#[test]`s, not the cited 21. **Verify corrected**: the previous command passed TWO positional filters to `cargo test`, which cargo rejects outright; it had never been executed."
+verify = "cargo test -p chronos-services --lib && python3 scripts/check_architecture_contracts.py"

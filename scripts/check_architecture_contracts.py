@@ -35,7 +35,11 @@ LEDGER = ROOT / "reconstruction-contracts.toml"
 # environment rather than repository record and is skipped too.
 EVIDENCE_PATH = re.compile(
     r"\b((?:crates|chronos-sandbox|docs|scripts|cycle-artifacts"
-    r"|\.sddk|\.sddk-knowledge)/[A-Za-z0-9_./-]+)"
+    r"|\.sddk|\.sddk-knowledge)/[A-Za-z0-9_./-]+"
+    # Optional `::Symbol`, INSIDE group 1 so the caller can see it. The
+    # leading class excludes a leading digit so `::1587` stays a line
+    # reference and is not mistaken for an identifier.
+    r"(?:::[A-Za-z_][A-Za-z0-9_]*)?)"
 )
 
 FORBIDDEN_DEPENDENCIES = {
@@ -128,12 +132,91 @@ def verify_evidence_paths(ledger: dict, errors: list[str]) -> None:
                     path = ref.group(1).rstrip(".,;:")
                     # `path.rs::Symbol` and `path.rs:1587` both name the file.
                     base = path.split(":")[0]
-                    if (ROOT / base).exists():
+                    if not (ROOT / base).exists():
+                        error(
+                            f"{req_id}: {field} cites a path that does not resolve: {path}",
+                            errors,
+                        )
                         continue
-                    error(
-                        f"{req_id}: {field} cites a path that does not resolve: {path}",
-                        errors,
-                    )
+                    # The file existing is necessary, not sufficient. A pointer
+                    # of the form `path.rs::Symbol` also asserts WHERE the
+                    # symbol lives, and that is the half that rots: UI-001
+                    # carried `execution_explorer.rs::InvocationRollup` for
+                    # years' worth of reviews while the symbol sat in
+                    # `virtualization.rs`, and the file check passed it every
+                    # time. A record that cannot name the code it cites is not
+                    # reproducible from the record, which is the same standard
+                    # that retracts M4B-001 for a dead path.
+                    symbol = path.split("::", 1)[1] if "::" in path else None
+                    if symbol and not symbol_resolves(ROOT / base, symbol):
+                        error(
+                            f"{req_id}: {field} cites {symbol!r} in {base}, "
+                            f"but that symbol is not defined there",
+                            errors,
+                        )
+
+
+# Words that appear after `path.rs::` in prose rather than naming a symbol.
+# `lib.rs::pub fn foo` and `mod.rs::tests` are ways of writing about a file,
+# not pointers at a definition, and treating them as symbols would train
+# reviewers to ignore this check — a guard that cries wolf is worse than none.
+NON_SYMBOL_TOKENS = frozenset(
+    {
+        "pub", "fn", "struct", "enum", "trait", "impl", "mod", "use", "let",
+        "const", "static", "type", "test", "tests", "self", "crate", "super",
+        "pub(crate)", "pub(super)", "async", "unsafe", "extern", "where",
+    }
+)
+
+
+def symbol_resolves(source: Path, symbol: str) -> bool:
+    """Whether `symbol` is DEFINED in `source`, not merely mentioned.
+
+    A bare substring search would accept `InvocationRollup` because the file
+    mentions it in a `use` or a doc comment, which is exactly the failure this
+    check exists to catch. So the match must be a definition: `struct`,
+    `enum`, `trait`, `type`, `const`, `static`, `fn`, `impl` or a `mod`, in
+    front of the name, anchored at the start of a line.
+
+    `Type::method` and `Type::CONST` resolve against the **type**, because that
+    is the part that must live in the named file; the method is a member of it
+    and a file that defines the type is the right place to look.
+
+    Non-Rust files have no symbols to resolve, and prose tokens have no symbol
+    to find; both return True so the check stays silent instead of wrong.
+    """
+    if source.suffix != ".rs":
+        return True
+
+    # Only the first component identifies where the definition lives.
+    head = symbol.split("::", 1)[0].strip()
+    if not head or head in NON_SYMBOL_TOKENS:
+        return True
+
+    try:
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # Unreadable is not "symbol missing": the path check already passed
+        # and failing here would blame the record for an environment problem.
+        return True
+
+    pattern = re.compile(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?"
+        r"(?:default\s+)?(?:const\s+|async\s+|unsafe\s+|extern\s+\"[^\"]*\"\s+)*"
+        r"(?:struct|enum|trait|type|union|const|static|fn|mod)\s+"
+        + re.escape(head)
+        + r"\b",
+        re.MULTILINE,
+    )
+    if pattern.search(text):
+        return True
+    # `impl Foo` and `impl Trait for Foo` define `Foo` too, and a test module
+    # frequently names the symbol only through its impl block.
+    impl_pattern = re.compile(
+        r"^\s*impl(?:\s*<[^>]*>)?\s+(?:[\w:<>, ]+\s+for\s+)?" + re.escape(head) + r"\b",
+        re.MULTILINE,
+    )
+    return bool(impl_pattern.search(text))
 
 
 def cargo_dependency_edges() -> set[tuple[str, str]]:
