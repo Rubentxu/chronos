@@ -97,9 +97,9 @@ Three commits:
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-72-read-path-table-error-classification/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (store table_error) | `crates/chronos-store/src/table_error.rs` | `e0ce9280d864cb660020d0fa5ad9ed7adb465ffefd50319965142076be5f1d0a` |
 | source (store lib) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
-| source (store cas) | `crates/chronos-store/src/cas.rs` | `09690b516e54890e79d716845c52bad14b9f50e35d8e792e442285da84ae4f6f` |
-| source (store storage) | `crates/chronos-store/src/storage.rs` | `7971d253211974da6e3f8c268b3c399684493550569f31d50888a26a66673427` |
-| docs (agents manual) | `AGENTS.md` | `d5ee6ae71e190781561555c984fb8d279a738f4c85e88ff75c61348e65dfa5a2` |
+| source (store cas) | `crates/chronos-store/src/cas.rs` | `5c1ec311955d91239e8f8d23f777a0b810a398b81ed2e5fa93afcfffd0563517` |
+| source (store storage) | `crates/chronos-store/src/storage.rs` | `37ba2942fa13902fe690f15b9c14f144b2d02243e2b3d78979c4161228bc7954` |
+| docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/apply-checkpoint.json` | `0475383cd18fbccf83e647f29bf17ddfaeefab66300c489c96147a761f8daa28` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-report.md` | `e2f4694b3b6105b75b1d72b1af71db43e12cf8ab4ba1349b41f889319eec637b` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-72-read-path-table-error-classification/verify-findings.json` | `4258d8ec331d27a0a2b062910908e2c0fe9e186d9019ea9b8dddea00c4fd226d` |

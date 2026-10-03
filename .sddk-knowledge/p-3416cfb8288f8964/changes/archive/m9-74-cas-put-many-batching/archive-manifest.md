@@ -115,12 +115,12 @@ Three commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-74-cas-put-many-batching/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (content store) | `crates/chronos-store/src/cas.rs` | `09690b516e54890e79d716845c52bad14b9f50e35d8e792e442285da84ae4f6f` |
-| source (session storage) | `crates/chronos-store/src/storage.rs` | `7971d253211974da6e3f8c268b3c399684493550569f31d50888a26a66673427` |
+| source (content store) | `crates/chronos-store/src/cas.rs` | `5c1ec311955d91239e8f8d23f777a0b810a398b81ed2e5fa93afcfffd0563517` |
+| source (session storage) | `crates/chronos-store/src/storage.rs` | `37ba2942fa13902fe690f15b9c14f144b2d02243e2b3d78979c4161228bc7954` |
 | source (store crate root) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
 | test support (sync barrier counter) | `crates/chronos-store/src/test_support.rs` | `60f6d32eddead5721c5e6ebb6037f54f945562f88cc4c6c0038869d0a5b42680` |
-| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `4415eee37a1f5a925a1e48802dd3bc655d162d678a2929db2f3fd64a05f29c2a` |
-| docs (agents manual) | `AGENTS.md` | `d5ee6ae71e190781561555c984fb8d279a738f4c85e88ff75c61348e65dfa5a2` |
+| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `93b9bd19c97988cad8d28439835c3452389c51f727781c8817801c3e73f16398` |
+| docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `2e2037009420c18c53cbcd718d6dd66941b394edb661e6ac5fa0d05257fbdcbf` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-findings.json` | `ab23e7466a09bb1a876496e94bb09200d16da722bbc21caeec9914ce9551b3b5` |

@@ -91,12 +91,12 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `21b42eccb1550c9ce6c750a55ddc80d20729ea2ba0ccc9c75a76738efbb3e644` |
-| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `1040f4ae8cea744fe273518b60af586b553d117f0c7b23d24eef24e73d8d3959` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `0bc4f39207f66020dd46aae2b5bb9fc4c59d6765b2f22179f1dcecdcfe313c76` |
+| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `e67e3fbcfee7a96628e0b80e09cf5b8c2cdafe9313ba447600240a2260927978` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
-| test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `e47fbc3890e4ca8cc2361669c295b3018eff15802a8bd4df56f2e882923ca98d` |
-| docs (agents manual) | `AGENTS.md` | `d5ee6ae71e190781561555c984fb8d279a738f4c85e88ff75c61348e65dfa5a2` |
+| test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `624587627dd845906f2b8557729d640f161154e5448885d9cf4aa33c3b5d2648` |
+| docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
 | vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `13350229f5ab3dc456f928b96e39999550eda60533167164894a14af886075d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
