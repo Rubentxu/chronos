@@ -119,7 +119,7 @@ Three commits:
 | source (session storage) | `crates/chronos-store/src/storage.rs` | `37ba2942fa13902fe690f15b9c14f144b2d02243e2b3d78979c4161228bc7954` |
 | source (store crate root) | `crates/chronos-store/src/lib.rs` | `63e440bb325b553a22bd34e56c695458d0133f56d4152392031d72c3f8a7710e` |
 | test support (sync barrier counter) | `crates/chronos-store/src/test_support.rs` | `60f6d32eddead5721c5e6ebb6037f54f945562f88cc4c6c0038869d0a5b42680` |
-| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `c111c1e192cc62a342901b238f4e5490e51db4329851b6fbf05e1104dad5fee6` |
+| source (mcp server, tool wire shapes) | `crates/chronos-mcp/src/server.rs` | `eb1ce9528863d723ab9ae50bad386c9461fbae09ba3ed4fe4f0022db1b777d66` |
 | docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/apply-checkpoint.json` | `dab499eb017af26c3bf2a2a696d7c2b3dfdb47502f58429e00ace325181610d9` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-74-cas-put-many-batching/verify-report.md` | `2e2037009420c18c53cbcd718d6dd66941b394edb661e6ac5fa0d05257fbdcbf` |
