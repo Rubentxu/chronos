@@ -26,9 +26,11 @@ STATUS               : REC-C1.5 and REC-C1.6 CLOSED on main (tags
                        wall-clock shape of UAT-REC-C1-01/03/05). TRUTH-001
                        stays verified; UAT-REC-C1-01 (10k durable records,
                        two consumers, producer advance, A resumes), UAT-REC-C1-03
-                       (negative `complete` for clean session; positive
-                       forced-gap blocked on a documented `chronos_log::segmented`
-                       bookkeeping bug — FIND-C1.8-01, deferred to m1-*),
+                       (negative `complete` for clean session, and the positive
+                       forced-gap arm — which was blocked on a documented
+                       `chronos_log::segmented` bookkeeping bug, FIND-C1.8-01,
+                       deferred to m1-*, and is GREEN again since that finding
+                       closed: 2 passed, 0 failed, 0 ignored),
                        and UAT-REC-C1-05 (four-dim independence with the new
                        `captured_at_unix_ns` dimension) all green on the wire.
                        REC-C1 ACCEPTANCE: CLOSED.
@@ -76,8 +78,11 @@ DONE
             10k + producer advance; UAT-REC-C1-03 negative `complete` arm
             on the wire; UAT-REC-C1-05 four-dim independence with the new
             `captured_at_unix_ns` dimension on ExecutionRecord. FIND-C1.8-01
-            surfaces a real `chronos_log::segmented` segment-header bookkeeping
-            bug as a deferred m1-* follow-up — out of scope for REC-C1)
+            surfaced a real `chronos_log::segmented` segment-header bookkeeping
+            bug; it was deferred to a m1-* follow-up and has since been closed
+            — the segment header now carries a single `entry_count` unit
+            shared by writer, header writer/reader and replay validator, so the
+            positive forced-gap arm runs un-ignored and green)
   SANDBOX-S0.1a / S0.1a+ (runner, host+bwrap, tri-state caps, no fallback)
   SANDBOX-S0.1b / S0.1b+ (podman rootless, local pinned image, --pull=never,
                           staged inputs/outputs, verified cleanup, N1-N6)
