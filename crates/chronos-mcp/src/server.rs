@@ -766,10 +766,29 @@ impl ChronosServer {
         let engine = result.engine;
         let meta = result.meta;
 
-        // Insert atomically. Both maps are tokio mutexes; holding both
-        // locks together is safe because no other code path reads one
-        // without the other (gate + service both look up projection_meta
-        // first, then engines).
+        // Insert atomically. Both maps are tokio mutexes, and both are taken
+        // here in the same order every time, so this cannot deadlock against
+        // itself.
+        //
+        // What this does NOT establish is that the two maps are always read
+        // together. They are not. Only four MCP handlers consult
+        // `projection_meta` before touching `engines`: `execution_query`,
+        // `state_query`, `trace_slice`, and the Causality arm of
+        // `execution_log_read`. Roughly thirty other handlers, and every
+        // `chronos-services` reader that takes an engines map
+        // (SessionsService, QueryService, AnalysisService, the debug and
+        // export paths), read `engines` without ever consulting the meta.
+        // Verify the current count with
+        // `grep -n "gate_projection" crates/chronos-mcp/src/server.rs`
+        // rather than trusting a number frozen into a comment.
+        //
+        // An earlier version of this comment claimed the opposite — "no other
+        // code path reads one without the other (gate + service both look up
+        // projection_meta first, then engines)" — and that was false, so it
+        // was removed rather than softened. Recording the asymmetry here is
+        // the point: an uncertified engine is reachable, and `save_session`
+        // in particular persists one into durable storage without gating it.
+        // Tracked as open debt under REC-C1.9, not fixed.
         let mut engines = self.engines.lock().await;
         let mut metas = self.projection_meta.lock().await;
         // Double-check after acquiring the locks: another caller may have
