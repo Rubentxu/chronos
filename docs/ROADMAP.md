@@ -2,6 +2,125 @@
 
 **Estado:** propuesta de ejecución y criterios de aceptación, no certificación de código ni declaración de preparación para producción. **Fuente de estado vivo:** [STATE.md](roadmap/STATE.md). **Política de calidad:** [CERTIFICATION.md](roadmap/CERTIFICATION.md). **Casos UAT:** [UAT_CATALOG.md](roadmap/UAT_CATALOG.md). **Diario:** [JOURNAL.md](roadmap/JOURNAL.md).
 
+---
+
+# ⭐ Post-v0.1.4 convergence — roadmap de producto vigente
+
+> **Esta sección manda sobre las anteriores para trabajo nuevo.** Added 2026-10-03.
+>
+> Los capítulos H1/M4–M11 que siguen más abajo son **marco histórico y normativo**: sus
+> criterios de aceptación y sus ADR siguen vigentes, pero **su secuencia ya no describe el
+> estado real**. Buena parte de H1/M4/M6–M11 está implementada o cerrada documentalmente, y
+> el plan que sigue salta precisamente sobre lo ya cerrado. Nada de lo histórico se reescribe:
+> se conserva como registro de lo que se decidió y por qué.
+
+## Por qué existe esta sección
+
+El 2026-10-03, `main` tenía **dos gates rojos a la vez**, y eso invalidaba cualquier
+certificación posterior: no se puede certificar producto sobre una base que no compila en su
+combinación completa de features. Peor: el gate local declaraba `SUCCESS` sobre código que la
+CI remota rechazaba. Un gate que certifica en verde lo que otro gate rojo va a rechazar no es
+un gate, es una mentira con instrumentation.
+
+Estos dos fallos eran de naturaleza distinta y ambos eran reales:
+
+- **Feature-matrix truth** (`REC-C0.2`): `chronos-native` declara la feature `perf_counters`
+  (no default) y sus diez referencias apuntaban un nivel demasiado arriba, así que esa
+  feature **nunca había compilado**. Seis gates consecutivos pasaron en verde sin detectarlo,
+  porque `cargo check --workspace` solo compila la combinación habitual.
+- **Toolchain parity**: `rust-toolchain.toml` fija el canal `stable`, que flota, y los 7
+  workflows usan `dtolnay/rust-toolchain@stable`. La CI compilaba con 1.99.0 mientras el host
+  de desarrollo iba en 1.98.1, donde el lint `clippy::double_must_use` **no existe**. El
+  workspace entero pasaba fmt, clippy y all-features en verde mientras la CI lo rechazaba.
+
+Ambos comparten la misma forma: **el gate certificaba algo que nadie había ejecutado.** Por
+eso el plan empieza por restaurar una base en la que "verde" signifique algo, y sólo después
+amplía superficie.
+
+## Los doce hitos
+
+| Orden | Hito | Objetivo | Salida verificable |
+|---|---|---|---|
+| **R0** | Restore trusted `main` | Que "verde" vuelva a significar algo | 5/5 gates en el mismo SHA |
+| **R1** | Evidence truth closure | Cerrar la dual truth | `rebuild(log) == maintained_projection(log)` probado |
+| **R2** | Scalable Execution Explorer | Resolver M10 a escala | 1M eventos dentro de budget |
+| **R3** | Contract reconciliation | Que el ledger describa el código | 25 requisitos honestos |
+| **R4** | ChronosServer decomposition | H1.4-B real | MCP como thin adapter |
+| **R5** | Runtime/capability certification | Tests dependientes de entorno honestos | matrices CERT-2/3 |
+| **R6** | Adaptive instrumentation | Cerrar M4 de verdad | Go/Rust productizados |
+| **R7** | M6 productionization | OTLP real en producto | distributed execution real |
+| **R8** | M7 productionization | Differential execution real | compare sobre sesiones reales |
+| **R9** | Agent API product hardening | API pequeña y estable | v2/v3 certificada |
+| **R10** | Explorer/UI | UI evidence-first | UI-001 verified |
+| **R11** | Release/OPS | Producto distribuible | CERT-4 por perfil |
+
+Cada hito termina en **evidencia ejecutable** y actualiza STATE.md + JOURNAL.md. Un hito sin
+evidencia ejecutable no está hecho, por mucho que el documento diga lo contrario.
+
+## R0 — Recuperar una baseline realmente fiable
+
+**Cerrado 2026-10-03.** Los dos fallos de partida, resueltos con causa raíz y con su guard:
+
+- **R0.1 Formatting** — `cargo fmt --all -- --check` verde, con el diff revisado para que
+  rustfmt no escondiera cambios semánticos. Commit `fd717e5f`.
+- **R0.2 Feature-matrix truth** — corregidas las diez referencias `super::perf` → `crate::perf`
+  en `chronos-native`, y añadido el stage `feature-matrix-truth` al gate local con copia
+  literal del comando de `architecture-contracts.yml:34`. Commit `5654b9dd`.
+- **R0.3 Toolchain parity + same-SHA certification** — reproducido el fallo de CI en local
+  instalando la toolchain exacta de la CI en vez de descubrirlo push a push; corregido el
+  único error; añadido el stage `ci-toolchain-parity`. Commit `66c9b702`.
+
+Los tres cambios incluyen su guard, porque un fix sin guard es un fix que vuelve. El patrón
+es el mismo en los dos casos: el gate local tenía una política escrita —"si la CI remota corre
+algo, este gate lo corre"— que el gate incumplía.
+
+## R1 — Cerrar la autoridad de evidencia
+
+Gobernado por [ADR-0002](chronos-agentic-reconstruction/docs/adr/0002-execution-log-source-of-truth.md),
+[ADR-0003](chronos-agentic-reconstruction/docs/adr/0003-projections-not-primary-storage.md) y
+[ADR-0004](chronos-agentic-reconstruction/docs/adr/0004-no-silent-lies.md).
+
+El ExecutionLog es la autoridad; las proyecciones son cachés reconstruibles. Nunca dos
+verdades.
+
+- **R1.1** Reconciliar REC-C1.1–C1.4 contra el código y ejecutar las UAT REC-C1-01..05.
+- **R1.2** Probar `rebuild(log) == maintained_projection(log)`.
+- **R1.3** Cerrar las puertas de proyección: FULL y EMPTY → consulta permitida; TRUNCATED →
+  error de retención explícito; missing → unavailable explícito. Nunca `[]` ni éxito vacío.
+
+**R1.2 es la parte que no estaba probada, y el motivo es estructural, no accidental.**
+`build_and_store_engine` escribe `engines` pero nunca `projection_meta`, así que
+`ensure_projection` no encuentra cache y **reconstruye desde el log, sobrescribiendo el motor
+mantenido**. Peor: el único sitio que lee `engines` sin pasar por la puerta es el modo
+`Causality` de `execution_log_read`, que **no** hace gate. Resultado: el hueco `engines[sid]`
+está disputado y **gana la última tool que se invoque**. Dos tools distintas pueden observar
+motores distintos para la misma sesión en el mismo proceso. Eso es exactamente la dual truth
+que REC-C1 debía cerrar, y estaba abierta por un camino que nadie había mirado.
+
+## R2..R11
+
+Ver el detalle de cada hito en el cuerpo de trabajo. La secuencia se reduce a decisiones
+operativas: R0 base fiable → R1 verdad cerrada → R2 escala → R3 ledger honesto → R4
+descomposición → R5 capacidades → R6 M4 → R7 M6 → R8 M7 → R9 API → R10 UI → R11 release.
+
+R6, R7 y R8 **no** son proyectos gigantes: cada uno es una colección de vertical slices
+cerrables, con una UAT real de principio a fin antes de añadir la segunda variante.
+
+## Reglas de ejecución
+
+1. Criterio de aceptación **antes** del cambio; tests focales durante el desarrollo; la
+   batería integral al integrar, no en cada commit local.
+2. Un recuento de cierres documentales **no** equivale a criterios de aceptación verificados.
+   Un tag, un hito cerrado o un test unitario verde no verifican un requisito.
+3. No se declara un estado superior por haber superado el inferior: implementado ≠ verificado
+   localmente ≠ integrado ≠ certificado.
+4. Un gate que exige tests o evidencia tiene que pasar de verdad. No se modifica ni se esquiva
+   un gate para obtener un PASS.
+5. Un recuento es un hecho de su medición. Si un cambio altera los recuentos, se anotan los
+   nuevos y **no se reescriben los antiguos**.
+
+---
+
 ## 0. Autoridad, alcance y línea base
 
 1. Este documento es el **único roadmap operativo** para el trabajo nuevo. Los roadmaps de REC-C0..REC-C7 y los backlogs de reconstrucción se conservan en [docs/historico/](historico/README.md) como **historia**, no como órdenes actuales. Los ADR aceptados, especificaciones, contratos de evidencia y criterios de aceptación históricos siguen siendo restricciones normativas hasta su supersesión explícita.
