@@ -31,6 +31,17 @@ jobs:
       # guaranteed to match the revision under test. Build it explicitly.
       - name: Build MCP server binary (test dependency)
         run: cargo build --bin chronos-mcp
+      # Same class of gap, second instance. `counterexample_tools` (ce12),
+      # `execution_log_read_e2e` and `store_open_failure` all spawn the `chronos`
+      # CLI, which lives in crates/chronos-cli (`[[bin]] name = "chronos"`) and
+      # is therefore also not built by `-p chronos-sandbox`. In ci.yml the
+      # `cargo build --workspace` step provides it; this workflow had no
+      # equivalent, so ce12 failed here with
+      #   failed to spawn chronos CLI at "chronos": No such file or directory
+      # A gate that runs a test whose fixture it never built is not exercising
+      # what it claims to. Build it explicitly, same as the server above.
+      - name: Build chronos CLI binary (test dependency)
+        run: cargo build --bin chronos
       - name: Clippy
         run: cargo clippy -p chronos-sandbox -- -D warnings
       - name: Smoke tests
