@@ -2623,9 +2623,48 @@ impl McpTestClient {
     /// binary lives at `target/debug/deps/<test>`, so the target directory is
     /// two levels up and `target/debug/chronos` is exactly where
     /// `cargo build --bin chronos` puts it.
-    fn resolve_chronos_cli() -> Result<std::path::PathBuf, McpSandboxError> {
-        if let Ok(explicit) = std::env::var("CHRONOS_CLI_PATH") {
-            let path = std::path::PathBuf::from(explicit);
+    fn resolve_chronos_cli() -> Result<PathBuf, McpSandboxError> {
+        // The environment is read exactly once, here, and handed to the pure
+        // resolver below. Tests inject their own candidates instead of
+        // mutating the process-global environment, which vault drift CC#56
+        // forbids (m9-73 closed the previous instance of that failure mode).
+        let explicit = std::env::var("CHRONOS_CLI_PATH").ok();
+        let cargo_bin = std::env::var("CARGO_BIN_EXE_chronos").ok();
+
+        // `current_exe()` returns an owned PathBuf, but the chain that walks
+        // up from it borrows, so the intermediate is bound by name to keep
+        // the result owned.
+        let relative = std::env::current_exe().ok().and_then(|exe| {
+            exe.parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("chronos"))
+        });
+
+        Self::resolve_chronos_cli_from(
+            explicit.as_deref(),
+            cargo_bin.as_deref(),
+            relative.as_deref(),
+        )
+    }
+
+    /// The resolution decision itself, with every candidate injected.
+    ///
+    /// All of the behaviour described on [`Self::resolve_chronos_cli`] lives
+    /// here; that function only supplies the three candidates from the
+    /// environment. Keeping the decision pure is what makes it testable: the
+    /// message that names `cargo build --bin chronos` is the deliverable of
+    /// this resolution, and it can only be asserted if the "nothing resolves"
+    /// state is reachable without editing the environment of the test binary.
+    ///
+    /// Prefer this form in tests and any non-operator code path. It does NOT
+    /// touch `std::env`, so it has no process-global side effects.
+    fn resolve_chronos_cli_from(
+        explicit: Option<&str>,
+        cargo_bin: Option<&str>,
+        relative: Option<&Path>,
+    ) -> Result<PathBuf, McpSandboxError> {
+        if let Some(explicit) = explicit {
+            let path = PathBuf::from(explicit);
             if path.exists() {
                 return Ok(path);
             }
@@ -2635,26 +2674,16 @@ impl McpTestClient {
             )));
         }
 
-        if let Ok(cargo_bin) = std::env::var("CARGO_BIN_EXE_chronos") {
-            let path = std::path::PathBuf::from(cargo_bin);
+        if let Some(cargo_bin) = cargo_bin {
+            let path = PathBuf::from(cargo_bin);
             if path.exists() {
                 return Ok(path);
             }
         }
 
-        // `current_exe()` returns an owned PathBuf, but the chain that walks
-        // up from it borrows, so the intermediate is bound by name to keep
-        // the result owned.
-        let relative = match std::env::current_exe() {
-            Ok(exe) => exe
-                .parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("chronos")),
-            Err(_) => None,
-        };
-        if let Some(ref path) = relative {
+        if let Some(path) = relative {
             if path.exists() {
-                return Ok(path.clone());
+                return Ok(path.to_path_buf());
             }
         }
 
@@ -2665,7 +2694,7 @@ impl McpTestClient {
              {relative:?}), or point CHRONOS_CLI_PATH at it. Falling back to a \
              bare `chronos` on PATH would report this as a missing system \
              dependency, which is the wrong diagnosis.",
-            relative = relative.as_deref()
+            relative = relative
         )))
     }
 
@@ -2881,6 +2910,22 @@ fn walk_newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
 mod tests {
     use super::*;
 
+    /// A path that certainly exists, so the healthy resolution branches can be
+    /// pinned without creating or removing anything. The test binary itself is
+    /// the cheapest such path.
+    fn existing_path() -> PathBuf {
+        std::env::current_exe().expect("current_exe is available inside a test binary")
+    }
+
+    /// A path that certainly does not exist, used to drive the "explicit
+    /// candidate is wrong" branch. The precondition is asserted at every use
+    /// so the test can never silently degrade into exercising the healthy path.
+    fn missing_path() -> PathBuf {
+        let path = Path::new("target").join("chronos-cli-does-not-exist-9d3f");
+        assert!(!path.exists(), "the probe path must not exist");
+        path.to_path_buf()
+    }
+
     /// A missing `chronos` binary must be diagnosed as a build step, not
     /// deferred to the OS.
     ///
@@ -2890,27 +2935,18 @@ mod tests {
     /// spawn reported `No such file or directory (os error 2)` — which reads
     /// as a missing system package, when the binary had simply never been
     /// built. The test asserts the message names the build step.
+    ///
+    /// The candidate is injected rather than written to the environment:
+    /// mutating `CHRONOS_CLI_PATH` process-globally is what vault drift CC#56
+    /// forbids, and it is how the previous version of this test leaked a
+    /// shared store into sibling tests (m9-73).
     #[test]
     fn a_missing_chronos_cli_is_diagnosed_as_a_build_step() {
-        // `CHRONOS_CLI_PATH` is the only branch that can be driven
-        // deterministically: pointing it at a path that does not exist must
-        // say so, rather than silently falling through to the next candidate.
-        let missing = std::env::temp_dir().join("chronos-cli-does-not-exist-9d3f");
-        let previous = std::env::var("CHRONOS_CLI_PATH").ok();
+        let missing = missing_path();
 
-        // SAFETY: single-threaded within this test; the variable is restored
-        // before returning, and no other test reads it concurrently because the
-        // suite runs with `--test-threads=1` in CI.
-        unsafe { std::env::set_var("CHRONOS_CLI_PATH", &missing) };
-
-        let result = McpTestClient::resolve_chronos_cli();
-
-        match previous {
-            Some(v) => unsafe { std::env::set_var("CHRONOS_CLI_PATH", v) },
-            None => unsafe { std::env::remove_var("CHRONOS_CLI_PATH") },
-        }
-
-        let err = result.expect_err("a CHRONOS_CLI_PATH that does not exist must not resolve");
+        let err =
+            McpTestClient::resolve_chronos_cli_from(Some(&missing.to_string_lossy()), None, None)
+                .expect_err("a CHRONOS_CLI_PATH that does not exist must not resolve");
         let text = err.to_string();
         assert!(
             text.contains("CHRONOS_CLI_PATH") && text.contains("does not exist"),
@@ -2918,43 +2954,79 @@ mod tests {
         );
     }
 
-    /// The fallback error — reached when no `CHRONOS_CLI_PATH` is set and no
-    /// candidate exists — must name the build step, because that is the action
-    /// that fixes it.
+    /// The fallback error — reached when no candidate resolves — must name the
+    /// build step, because that is the action that fixes it.
+    ///
+    /// The previous version of this test read the real environment and then
+    /// returned early without asserting anything whenever the CLI *was*
+    /// resolvable. CI builds the binary, so CI never asserted the message at
+    /// all: the guard was weakest exactly where it mattered. With all three
+    /// candidates injected as `None` the unresolved state is reached
+    /// unconditionally, in every environment.
     #[test]
     fn the_unresolved_cli_error_names_how_to_build_it() {
-        // `CARGO_BIN_EXE_chronos` is unset outside a `cargo test` of the same
-        // package, and the relative candidate only exists once the binary is
-        // built, so this exercises the real CI failure path.
-        let previous = std::env::var("CHRONOS_CLI_PATH").ok();
-        unsafe { std::env::remove_var("CHRONOS_CLI_PATH") };
-
-        // Skip when the binary genuinely is built, so the test asserts the
-        // message rather than the environment.
-        let result = McpTestClient::resolve_chronos_cli();
-
-        if let Some(v) = previous {
-            unsafe { std::env::set_var("CHRONOS_CLI_PATH", v) };
-        }
-
-        if let Ok(path) = result {
-            // The CLI is present: that is the healthy state, and it is worth
-            // asserting explicitly because it is the state CI reaches after
-            // the workflow builds the binary.
-            assert!(
-                path.exists(),
-                "a resolved chronos CLI must exist on disk, got {path:?}"
-            );
-            return;
-        }
-
-        // The message is the point. It has to name the build command, so the
-        // reader is not left hunting for a missing system package.
-        let text = result.unwrap_err().to_string();
+        let err = McpTestClient::resolve_chronos_cli_from(None, None, None)
+            .expect_err("no candidate at all must not resolve");
+        let text = err.to_string();
         assert!(
             text.contains("cargo build --bin chronos"),
             "the error must name the build step that fixes it, got: {text}"
         );
+        assert!(
+            text.contains("CHRONOS_CLI_PATH"),
+            "the error must also name the override that skips the build, got: {text}"
+        );
+    }
+
+    /// Branch pin: an explicit candidate that exists wins outright, and no
+    /// later candidate is consulted.
+    #[test]
+    fn an_existing_explicit_candidate_resolves_to_itself() {
+        let existing = existing_path();
+        let explicit = existing.to_string_lossy().to_string();
+        // A second existing candidate is supplied so this test also proves the
+        // explicit candidate takes precedence rather than merely resolving.
+        let decoy = existing_path();
+
+        let resolved = McpTestClient::resolve_chronos_cli_from(
+            Some(&explicit),
+            Some(&decoy.to_string_lossy()),
+            Some(&decoy),
+        )
+        .expect("an explicit candidate that exists must resolve");
+
+        assert_eq!(
+            resolved, existing,
+            "the explicit candidate must win over every later one"
+        );
+    }
+
+    /// Branch pin: `CARGO_BIN_EXE_chronos` is consulted when there is no
+    /// explicit candidate, which is the path a `cargo test` of the same
+    /// package takes.
+    #[test]
+    fn an_existing_cargo_bin_candidate_resolves_when_no_explicit_one_is_given() {
+        let existing = existing_path();
+        let cargo_bin = existing.to_string_lossy().to_string();
+
+        let resolved = McpTestClient::resolve_chronos_cli_from(None, Some(&cargo_bin), None)
+            .expect("a CARGO_BIN_EXE_chronos candidate that exists must resolve");
+
+        assert_eq!(resolved, existing);
+    }
+
+    /// Branch pin: the relative candidate is the one that actually works in
+    /// CI, because a test binary lives two levels below the target directory.
+    /// It is only consulted once the two env candidates have been ruled out.
+    #[test]
+    fn an_existing_relative_candidate_resolves_when_no_env_candidate_is_given() {
+        let existing = existing_path();
+        let relative = existing.as_path();
+
+        let resolved = McpTestClient::resolve_chronos_cli_from(None, None, Some(relative))
+            .expect("a relative candidate that exists must resolve");
+
+        assert_eq!(resolved, existing);
     }
 
     /// Discriminante: an uncaptured write must decode, not error.
