@@ -117,15 +117,37 @@ async fn uat_rec_c1_01_two_consumers_real_wire() {
     let session_id = started.session_id.clone();
 
     // ---- Phase 1: independent cursors, two consumers. ----
-    // Consumer A pages with limit=50. Consumer B starts with limit=200.
+    // Consumer A pages with limit=1. Consumer B starts with limit=200.
     // They never share cursors.
-    let (a_first, a_cursor, a_incomplete) = read_page(&mut client, &session_id, None, 50).await;
+    //
+    // The limit of 1 for A is load-bearing, not incidental. `events_read`
+    // emits `next_cursor` only while evidence may still exist at or after
+    // the page — `let next_cursor = if more { Some(page.next.encode()) }
+    // else { None }` in `events_read.rs` — so a page that exhausts the
+    // session returns no cursor. A limit of 50 made this test's premise
+    // ("a second page exists") depend on how many events `test_busyloop`
+    // happened to produce on that run. Under tarpaulin instrumentation the
+    // yield drops below 50, the first page covers everything, no cursor
+    // comes back, and passing that `None` back into `read_page` silently
+    // restarts from seq#0: the "second page" is the first page again and
+    // the ordering assertion below fails on a product behaving correctly.
+    // That is the failure CI reported on a docs-only commit.
+    //
+    // With limit=1 the continuation holds for any fixture yielding more than
+    // one event, and a fixture that yields exactly one is reported as a
+    // broken premise rather than silently re-read.
+    let (a_first, a_cursor, a_incomplete) = read_page(&mut client, &session_id, None, 1).await;
     assert!(
-        a_first.len() <= 50,
+        a_first.len() <= 1,
         "page must respect limit; got {} ids",
         a_first.len()
     );
     assert!(!a_incomplete, "first page must report complete=true");
+    let a_cursor = a_cursor.expect(
+        "consumer A must receive a cursor: the fixture must yield more than one \
+         event, otherwise there is no second page and this test's premise does \
+         not hold. Fail loudly instead of restarting from seq#0.",
+    );
 
     let (b_first, b_cursor, b_incomplete) = read_page(&mut client, &session_id, None, 200).await;
     assert!(
@@ -138,9 +160,9 @@ async fn uat_rec_c1_01_two_consumers_real_wire() {
     // Advance A using its cursor. B's cursor remains unaffected
     // because each consumer holds its own.
     let (a_second, a_cursor2, _a_incomplete2) =
-        read_page(&mut client, &session_id, a_cursor.as_deref(), 50).await;
+        read_page(&mut client, &session_id, Some(a_cursor.as_str()), 1).await;
     assert!(
-        a_second.len() <= 50,
+        a_second.len() <= 1,
         "second page must respect limit; got {} ids",
         a_second.len()
     );
@@ -151,7 +173,12 @@ async fn uat_rec_c1_01_two_consumers_real_wire() {
         );
     }
 
-    // B's cursor is still valid for its own pagination path.
+    // B's cursor is still valid for its own pagination path. B's first page
+    // may have exhausted the session, in which case there is no cursor and
+    // this second read restarts from seq#0 — legitimate here, because nothing
+    // is asserted about B's second page. The asymmetry with A is deliberate:
+    // A asserts an ordering property that needs a real continuation, B does
+    // not.
     let (_b_second, _b_cursor2, _b_incomplete2) =
         read_page(&mut client, &session_id, b_cursor.as_deref(), 200).await;
 
