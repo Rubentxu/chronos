@@ -26,9 +26,7 @@ mod imp {
     use crate::native_adapter::NativeAdapter;
     use crate::ptrace_tracer::{PtraceConfig, PtraceEvent, PtraceTracer};
     use crate::symbol_resolver::SymbolResolver;
-    use chronos_domain::{
-        CaptureConfig, Language, MonotonicNs, SymbolId, TraceEvent,
-    };
+    use chronos_domain::{CaptureConfig, Language, MonotonicNs, SymbolId, TraceEvent};
     use nix::sys::ptrace;
     use nix::unistd::Pid;
     use std::collections::HashMap;

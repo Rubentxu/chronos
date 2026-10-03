@@ -26,11 +26,11 @@ use crate::ptrace_tracer::PtraceTracer;
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
+#[cfg(target_os = "linux")]
+use chronos_domain::MonotonicNs;
 use chronos_domain::{
     CaptureConfig, CaptureSession, Language, ProbeBackend, TraceError, TraceEvent,
 };
-#[cfg(target_os = "linux")]
-use chronos_domain::MonotonicNs;
 use chronos_log::{ExecutionPayload, NewExecutionRecord, SegmentedConfig, SegmentedExecutionLog};
 use std::path::Path;
 #[cfg(target_os = "linux")]

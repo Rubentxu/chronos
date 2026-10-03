@@ -505,5 +505,4 @@ mod tests {
             matches!(result.unwrap_err(), EvalError::InvalidNumber(ref s) if s.contains("parenthesis"))
         );
     }
-
 }
