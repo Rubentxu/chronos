@@ -42,7 +42,7 @@
 //!
 //!     cargo test -p chronos-sandbox --test scale_read_from_seq_c1 -- --ignored --nocapture
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chronos_domain::ports::execution_log_factory::ExecutionLogFactory;
@@ -80,9 +80,9 @@ fn temp_root() -> PathBuf {
 /// TAIL. Both positions, because C1 says "para ninguna posición de `C`", and
 /// because a full-Vec clone is position-independent for the wrong reason: it
 /// walks the whole session either way.
-fn measure(n: u64, root: &PathBuf) -> (u128, u128) {
+fn measure(n: u64, root: &Path) -> (u128, u128) {
     let session = chronos_log::SessionId::new(format!("c1-{n}"));
-    let dir = root.join(&session.as_str().to_string());
+    let dir = root.join(session.as_str());
     let factory = SegmentedExecutionLogFactory::new();
     let bundle = factory
         .create(dir, session.clone())
