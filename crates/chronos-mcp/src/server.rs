@@ -3159,7 +3159,6 @@ further would be a Silent Lie."
         params: Parameters<BrowserProbeDrainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if let Some(err) = self.toolset_guard("browser_probe_drain") {
-        let _ = self.toolset_guard("probe_inject");
             return Ok(err);
         }
         let params = params.0;
