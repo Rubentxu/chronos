@@ -92,6 +92,24 @@ fuente de la que se deriva el estado de cola. Characterizarla exige decidir si e
 puede derivarse de los metadatos del manifiesto sin cargar los registros — y esa es la pregunta
 correcta, no "ponerlo lazy".
 
+**CORRECCION DE ESA PREGUNTA, misma sesion (2026-10-04).** La pregunta anterior era la equivocada,
+y el codigo lo desmenti en cinco lineas. `ReplayPlan` (`replay.rs:126-136`) lleva un campo
+`entries: Vec<SegmentEntry>` con **todos** los registros decodificados, no solo su rango. Ese vector
+sirve para dos cosas que no son la misma: validar la contiguedad y alimentar despues
+`apply_replay_plan` (`replay.rs:322-336`), que los reinserta uno a uno en el backend. **Durante la
+aplicacion coexisten el plan entero y el backend recien llenado**, luego el pico de arranque es la
+sesion resident **mas** su copia — dos veces, no una. Eso explica por que ~1M de registros ocupan
+~344 MB y no ~172 MB.
+
+**La pregunta util, entonces, no es si el `tail_state` puede derivarse del manifiesto.** Ese dato ya
+esta disponible en el propio plan (`replay.rs:135`, `reconstructed_tail`) y el manifiesto ya lo
+persiste (`segmented.rs:526-527`); ademas `open()` solo lo usa para **verificar un sello**
+(`segmented.rs:513-523`), y ninguna de esas tres cosas justifica retener los registros. **La pregunta
+util es si la validacion puede dejar de retener entradas**: validar por rangos y aplicar con un cursor
+o por tandas, de modo que el plan no tenga que vivir entero en memoria. Es un cambio local a
+`replay.rs`, con su propia no-vacuidad que comprobar (contiguedad, huecos, solapes y el
+`PayloadRangeMismatch` del control de gap retroactivo) — y es un bloque con valor propio.
+
 **Por que la deuda sigue abierta siendo que el read path esta bien.** El coste de arranque escala
 con el tamano de la sesion y ningun contrato lo acota: abrir un servidor contra un log grande
 consume su memoria antes de que nadie pregunte nada, y un operador que dimensiona una caja
