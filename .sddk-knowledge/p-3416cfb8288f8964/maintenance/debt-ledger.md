@@ -415,3 +415,46 @@ para siempre no puede ser invisible en release.
 cuando el bucle de `wait_event` tenga un limite y un error observable en vez de un
 `waitpid` infinito. Revisar si los caminos 1 y 2 se pueden confirmar con una sesion viva y log vacio
 reproducible.
+
+---
+
+## R6.4 - el lado de test deja de mentir; el lado de producto sigue abierto
+
+**Lo cerrado en R6.4 (mitigacion, no causa).** `uat_c2_01` ya no decide su veredicto con el literal
+que el producto fabrica. Ahora corre `control_capture_sees_an_event()`: una segunda captura
+independiente, misma fixture, mismo host, sesion propia y deadline corto de 30 s, que responde a la
+unica pregunta relevante, *puede este host observar una captura ahora mismo*. La excusa solo se gana
+si el control **tambien** vio nada. Si el control ve un evento, el host es capaz, el log vacio es un
+fallo de producto y el test entra en panic nombrando `server.rs:2794` como origen del literal.
+
+El diagnostico `cih_g_uat_c2_01_diagnostic_first_event_timing` deja de adjudicar: medir es su trabajo,
+y un test que entra en panic sobre la respuesta que existe para recolectar destruye la senal. Su
+llamada a `verdict_is_unobservable` se **elimina** en lugar de adaptarse, porque del cable no sale
+ningun veredicto honesto.
+
+De paso se eliminaron dos guards que no podian fallar. El assert `elapsed <
+UAT_C2_01_FIRST_EVENT_DEADLINE` del diagnostico era cierto por construccion (el poll vuelve en cuanto ve
+un registro; si vence el deadline devuelve `count == 0`, que es la rama anterior). Se sustituyo por un
+presupuesto de latencia de 60 s, que es lo que la medicion mide y si tiene dientes. Los guards de
+exhaustividad se renombraron a `unobservable_verdict_requires_a_control_that_also_saw_nothing` y se
+verifico su no-vacuidad por mutacion: cambiando el helper a la semantica vieja, los dos pasan a
+FAILED con `verdict_is_unobservable(false, true, false) must be true`.
+
+**El verificador independiente que dio FAIL a v0.2.0.** Fue lo que hizo que esto se detectara. Su
+verificacion dio 7 hallazgos, y el que abrio el resto fue que `probe_start` devuelve una sesion
+`running` que en 300 s no captura nada, y el test lo reporta `ok`. Lo reprodujo con
+`first_event_after_ms=300047, count=0`, mientras su propio diagnostico hermano veia un evento a los
+47 ms en el mismo host. Ademas confirmo que el `status` es un literal, que el check de vivacidad del
+test es circular, y que en CI el test tardo 338 s frente a 15,6 s de sus hermanos, que es la firma de
+agotar el deadline.
+
+**El hallazgo 5 del verificador, tambien abierto.** El `pipelinek` 12/12 es **solo TIER 1**: su
+propio log dice `TIER 2 NO EJECUTADO: CHRONOS_FULL_GATE != 1` y que la matriz de integracion (que es
+la que posee `rec_c2_2_uat_c2`) esta omitida por diseno y no es un PASS de integracion. El "12/12" que
+se cerro antes sobrevaloraba el gate.
+
+**Lo que sigue abierto, sin cambios.** La causa de producto: por que `probe_start` devuelve a veces una
+sesion viva sin captura. R6.4 no la arregla, solo hace que el gate deje de ocultarla. Siguen
+pendientes (a) exponer la vivacidad real del worker en `probe_drain`, y (b) acotar el bucle de
+`wait_event` para que un tracee detenido no se aparque en un `waitpid` infinito, con el error de
+resume en `warn!` y no en `debug!`.
