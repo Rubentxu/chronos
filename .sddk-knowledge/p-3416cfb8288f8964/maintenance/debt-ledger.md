@@ -263,3 +263,155 @@ diagnostico completo para que quien lo retome sepa exactamente que mirar.
 **Fecha / condicion de cierre:** cerrar cuando el fixture deje de depender del ritmo de syscalls del
 runner, o cuando exista un modo determinista de producir los registros nuevos. Revisar si en tres
 runs seguidos sobre el mismo codigo aparece mas de un fallo.
+
+---
+
+## R6.3 — la hipotesis del fixture queda refutada por medicion
+
+**La premisa de esta entrada era la vida util del fixture, y es falsa.** Se comprobo, no se supuso.
+
+Para poder desacoplar la vida del fixture del deadline de observacion, `test_busyloop` recibio su
+duracion por `argv[1]` (con el default 3 intacto) y el cliente sandbox recibio una forma de
+enviarla. Con eso se pudo correr el mismo test con vidas de fixture de 25, 50, 100, 200, 220, 240,
+260, 280, 300, 301, 302, 303, 304 y 305 segundos, manteniendo la ventana de observacion en 20 s:
+
+| vida del fixture | resultado | primer evento |
+|---|---|---|
+| 25, 50, 100, 200 | pasan | 14-28 ms |
+| 220 | **falla** | — (`count=0`) |
+| 240, 260, 280, 300 | pasan | 18-413 ms |
+| 301, 302, 303, 304 | pasan | 14-56 ms |
+| 305 | pasa (2 veces) | 16-17 ms |
+| 305 | **falla (4 veces)** | — (`count=0`) |
+
+No hay umbral monótono: 220 falla y 240 pasa. Y 305 fallo cuatro veces y paso dos, en la misma
+maquina y con el mismo binario. **La duracion del fixture no es el disparador**, y el cambio se
+revierte en lugar de publicarse: no arregla nada y solo ensancha la ventana en la que un hijo
+filtrado quema CPU.
+
+**Lo que se escribio despues, y resulto ser un error propio.** Se afirmo que `uat_c2_01` abandona
+sus sesiones al hacer skip y que esa fuga era auto-amplificante y explicaba la carga. No se
+sostiene. Se forzo la ruta de skip de forma determinista (condicionando el predicado, con la
+sesion real y valida) y se midieron procesos `test_busyloop` vivos despues de la corrida:
+
+| rama de skip | huerfanos |
+|---|---|
+| con `stop_all` | 0 |
+| con el `client.shutdown()` de antes (defecto presente) | 0 |
+
+El defecto presente no produce huerfano alguno: la medicion no distingue los dos casos. El motivo
+es el fixture: vive 3 s y el skip ocurre a los 300 s, asi que cuando se abandona la sesion el hijo
+ya termino por su cuenta. No hay nada que filtrar.
+
+Los huerfanos de 305 s que se "encontraron" con `ps` (PID 3380252, 413 s de vida, 27% de CPU) eran
+de `test_busyloop 305`: una duracion que la propia R6.3 introdujo para el experimento. El efecto
+auto-amplificante se ve, pero lo produce el cambio que se iba a probar, no el codigo de origen. Por
+eso se revierte: no solo no arregla nada, ademas fabrica el problema que despues se diagnosticaba
+como preexistente.
+
+Queda `stop_all(client, sessions)` como mejora de higiene, y solo como eso: abandonar una sesion
+con un proceso todavia trazado es incorrecto aunque hoy no se note, y tomar el cliente por valor
+hace que el teardown no pueda olvidarse. No se presenta como reparacion de nada.
+
+**La fuga de las rutas de `panic!` si es real y si esta medida.** Al forzar un error de RPC el test
+cayo por `panic!` en lugar de por skip, y quedaron **2 procesos `test_busyloop` vivos** despues de
+la corrida: ahi el hijo si estaba en pie cuando el test termino. Corregirlo exige que `Drop` pueda
+hacer `await` sobre `probe_stop`, que no puede, asi que requiere reestructurar el test o un guard
+de propiedad de sesion. No se mezcla en este commit.
+
+**Corroboracion independiente de que el veredicto es no determinista, sin tocar el fixture:**
+`Coverage` fue **rojo** en `f8fe1416` y **verde** en `7babbde3`, que difieren solo en un commit de
+documentacion. Mismo codigo de producto, mismo runner, veredicto distinto. Ademas el job `Test` de
+`7babbde3` quedo verde con `uat_c2_01` tardando ~315 s: es decir, **agotando los 300 s y saliendo
+por SKIP**, no verificando el contrato. Un verde por esta via no es un verde.
+
+**Lo que queda abierto, y es lo que de verdad importa.** Cuando falla, `probe_start` devuelve una
+sesion `running` que en 300 s no captura **ni un evento**: `total_buffered: 0`, `completeness` de
+seq 0 a 0. El skip lo etiqueta *"environment verdict, not a contract verdict"*, y ese juicio no
+esta ganado: el test sabe distinguir "el host va lento" de "el producto no capturo nada", pero no
+ha establecido cual de los dos esta mirando. Queda como pregunta de producto:
+**¿por que `probe_start` devuelve a veces una sesion viva que no captura?**
+
+No se ha podido reproducir el fallo de forma deliberada: con 32 spinners y un huerfano vivo de
+164 s, el test paso en 14 ms. Y no hay muestreo del estado de traza del hijo *durante* un fallo,
+porque no se ha logrado uno. Que un huerfano aparezca en estado `R` no prueba que el attach
+fallara: cuando su tracer muere, el hijo deja de estar trazado y sigue corriendo. Esa inferencia
+se hizo y se retiro.
+
+**Fecha / condicion de cierre:** esta entrada ya no se cierra por "que el fixture no dependa del
+ritmo de syscalls", porque el fixture no es la causa. Se cierra cuando se responda por que
+`probe_start` devuelve a veces una sesion viva sin captura, o cuando esa ruta pase a fallar en
+lugar de a hacer skip.
+
+---
+
+## DEBT-PROBE-LIVENESS-01 — `probe_drain` reporta `running` como literal fijo, y un worker de captura muerto es indistinguible de uno sano
+
+**Estado:** `OPEN` · **Abierta en:** R6.3 (2026-10-04) · **Owner:** agente principal · **Origen:** investigacion
+encargada mientras se diagnosticaba `DEBT-CI-TIMING-01` · **Severidad:** alta, es la causa probablemente
+de raiz del intermittencia de `uat_c2_01`.
+
+**Lo que se ve desde fuera.** `probe_start` devuelve un session id, `probe_drain` responde
+`"status": "running"` y un `hint` que dice *"Probe is still running"*, y el `ExecutionLog` no recibe
+**ni un registro** durante 300 s. Con cero registros, `completeness` sale
+`{from_seq: 0, to_seq_exclusive: 0, status: "complete", scope: "examined_range"}` y el cursor no se
+mueve. Nadie, desde la API, puede distinguir ese estado de uno sano.
+
+**El `status` no es un estado: es un literal.** En `crates/chronos-mcp/src/server.rs:2794` el
+`"running"` se escribe como constante, sin consultar al worker. El `AtomicBool` `running` que si
+existe en el backend del probe no lo lee nadie fuera de `start_probe` y `stop_probe`. Consecuencia
+directa: **la comprobacion de vivacidad del propio test es circular** —
+`rec_c2_2_uat_c2.rs:219` lee ese mismo literal para decidir si la sesion esta viva, asi que
+`verdict_is_unobservable(session_live, ...)` recibe un `true` que el servidor garantiza. Por eso su
+skip califica de *"environment verdict"* algo que no ha midido.
+
+**El estado vacio es ambiguo, no distinguible.** En `canonical_drain.rs:288-296` el par
+`from_seq`/`to_seq_exclusive` es "lo examined", y la rama `Complete` se elige **tambien con cero
+registros examinados** (`:269-271` fija `exhausted` y `:282` deja el cursor igual). El resultado es
+byte a byte identico para los cuatro casos que importan: *el productor nunca arranco*, *murio*,
+*se aparco* y *de verdad aun no hay actividad*. `scope` es un `&'static str` constante
+(`events_log_read.rs:109-118`) y no aporta informacion de vivacidad.
+
+**Caminos verificados en codigo que producen una sesion viva y vacia:**
+
+1. **El tracee queda detenido y el bucle se aparca en un `waitpid` sin limite.**
+   `ptrace_tracer.rs:482` hace `waitpid(-1, __WALL)` bloqueante y, con `follow_children: true`
+   (`probe_backend.rs:509`), es el **unico** camino de despertar: la rama de sondeo de
+   `ptrace_tracer.rs:498-544` es inalcanzable. Si el resume de `probe_backend.rs:985-992` falla, el
+   error se emite solo con `debug!` (`:991`, apagado en release) y el bucle vuelve a `wait_event` sin
+   volver nunca. Sesion `running`, hilo vivo, log congelado. **Es el unico camino encontrado que da
+   exactamente 1 evento (el primer `SyscallEnter` post-exec) y despues silencio permanente**, que es
+   la firma observada en el run `37186894696`.
+2. **El hilo muere y la sesion sigue diciendo `running`.** Si `launch()` falla,
+   `probe_backend.rs:807-810` hace `tracing::error!` + `return`, y —a diferencia del camino de
+   attach (`probe_backend.rs:1038`)— **no limpia `running`**. Igual con `Ok(None)`/`Err` de
+   `wait_event` (`:903-912`): se mata el tracee, el hilo termina con un `info!` y el registro de
+   sesion no se actualiza nunca. `ptrace_tracer.rs:694-697` devuelve `Ok(None)` para wait status sin
+   manejar.
+3. **Apendices rechazados no dejan rastro.** `probe_backend.rs:956-968` y `:964`: un fallo de
+   `accept_and_publish` no consume seq, no registra hueco y solo es un `warn!`. `probe_drain` no lo
+   ve. Es candidato a contribuyente, pero no explica 300 s de silencio.
+4. **Division de identidad del log — descartada.** `probe.rs:266` registra el mismo handle que
+   escribe el productor; `probe.rs:676` lee ese clon.
+
+**Lo que NO se ha verificado, y no sepresenta como establecida:** que `PTRACE_SYSCALL`
+(`ptrace_tracer.rs:722`) falle efectivamente bajo carga, ni que el punto de rotura sea el SIGTRAP
+del exec. No se ha seguido el comportamiento del kernel de syscalls/ptrace. La subinvestigacion no
+verifico comportamiento de kernel, solo rutas de codigo.
+
+**Por que es deuda y no una molestia.** Sin vivacidad observable, *ningun* consumidor de la API
+puede decir si una captura funciono. `uat_c2_01` no puede distinguir "el host va lento" de "el
+producto no capturo nada" porque el unico dato que podria hacerlo es constante. Eso convierte su
+skip en un **verde que no verifica nada**, que es peor que un rojo: un rojo al menos obliga a mirar.
+
+**La reparacion que toca (no se aplica aqui).** Un handshake acotado y observable en `start_probe`, o
+un hecho de vivacidad del worker expuesto a `probe_drain`, de modo que el caller pueda distinguir
+productor-muerto de log-aun-vacio. Mientras `status` sea un literal, cualquier consumidor —test
+incluido— seguira decidiendo con un dato que el servidor fabricate. Y en `probe_backend.rs:991` el
+`debug!` de un fallo de resume deberia ser al menos un `warn!`: un fallo que deja el bucle aparcado
+para siempre no puede ser invisible en release.
+
+**Fecha / condicion de cierre:** cerrar cuando `probe_drain` exponga la vivacidad real del worker, o
+cuando el bucle de `wait_event` tenga un limite y un error observable en vez de un
+`waitpid` infinito. Revisar si los caminos 1 y 2 se pueden confirmar con una sesion viva y log vacio
+reproducible.
