@@ -52,3 +52,31 @@ Candidate follow-up cycles:
 - ~~`m1-offset-cursor-migration`~~ **NO HACER FALTA — retracted 2026-10-03 (R3.3)**: DEBT-G0.5-01 ya estaba migrado por R0.2 (`283a1445`) y sus 3 tests corren en verde. (texto original: close DEBT-G0.5-01 (3 ignored `offset_*` tests).
 - ~~`m1-probe-inject-error-prefix`~~ **NO HACER FALTA — retracted 2026-10-03 (R3.3)**: DEBT-M7-02-01 no tenía la causa que declaraba; los 4 tests pasan con el binario construido y ya pasaban en CI. (texto original: close DEBT-M7-02-01 (4 probe_inject tests with stale prefix).
 - `m1-uat-g0-04-privileged`: close DEBT-G0-04 (requires privileged environment).
+
+## DEBT-SCALE-MEM-01 (2026-10-04): el coste en memoria del read path no esta caracterizado
+
+**Esta si es deuda real, y es la unica que R3.1 anade.** Se registra con la misma disciplina que
+las de arriba: porque sus criterios **siguen vigentes**, verificados hoy y no supuestos.
+
+| ID | Source | Description | Repro |
+|---|---|---|---|
+| DEBT-SCALE-MEM-01 | R3.1, al resolver `SCALE_BUDGETS` §10 punto 5 | El camino de lectura **carga la sesion en memoria**: **948.596 KB** de RSS para responder **un** agregado sobre 1M eventos, contra 442.704 KB del harness que la sembro. El tiempo es lineal (C3, §7.3); **la memoria no esta caracterizada en absoluto** — no hay ningun contrato que la acote, ni en `SCALE_BUDGETS` §7 ni en el codigo. Lo que se sabe es la magnitud y nada mas. | `TMPDIR=/var/home/rubentxu/chronos-scratch cargo test -p chronos-sandbox --test scale_execution_log_1m -- --ignored --nocapture --exact the_read_path_not_the_seeder_owns_the_million_event_footprint` |
+
+**Por que no se arregla aqui y por que no se inventa un presupuesto.** `SCALE_BUDGETS` §0 prohibe
+fijar una cifra que nadie pueda re-medir, y 949 MB es exactamente eso: una medicion con la huella
+de este host pegada, no un limite del producto. Convertirla en threshold seria el mismo error que
+esta pagina documenta en §7, donde una asercion puesta para que pase es un gate que no puede
+fallar por la razon correcta. Lo que falta es la **caracterizacion** — si la memoria escala con N
+o con el numero de cubos, si hay un techo natural, y cual es — y esa es la pregunta de un ciclo
+propio.
+
+**Lo que si se entrega en R3.1**, para que el ciclo que la retome no empiece de cero: el accessor
+`McpProcess::pid` / `McpTestClient::server_pid` (la medicion por proceso era **inexpresable**
+antes), el helper `process_rss_kb` en el lane, y el guard que fija la **atribucion** (el servidor
+es el mayor, con suelo 1,5x) para que un cambio futuro en la forma del read path tenga que pasar
+por ahi.
+
+**Ademas, y esto es lo que mas importa: las cuatro filas de la tabla de `SCALE_BUDGETS` §9.5
+describen el RIG, no el producto.** El sandbox liquida al servidor con `kill -9` externo, asi que
+el nieto nunca entra en la contabilidad de `/usr/bin/time -v`. Cualquier dimensionado hecho con
+esas cifras estaba sobrestimando o subestimando sin saber cual.

@@ -844,7 +844,17 @@ verde a 1M**; las de `poll` sí se describen como correctas.
 > epoch.
 
 
-### 9.5 Discrepancia entre las dos grabaciones de 1M — abierta, no resuelta
+### 9.5 Discrepancia entre las dos grabaciones de 1M — CERRADA por atribución (2026-10-04)
+
+> **Aviso que reemplaza la lectura de esta tabla, sin borrarla.** Las cuatro filas de abajo se
+> produjeron con `/usr/bin/time -v`, que reporta el **mayor proceso individual** del arbol. El
+> sandbox liquida al servidor con un `kill -9` externo, asi que el nieto nunca entra en la
+> contabilidad del arbol: **las cuatro cifras son del harness de pruebas, no del producto.** La
+> fila que falta es la del servidor, y se midio el 2026-10-04: **948.596 KB** para el mismo
+> agregado de 1M, contra **442.704 KB** del harness en la misma corrida — el servidor es 2,14x mas
+> grande, no mas pequeno. Ver §10 punto 5 y el lane `the_read_path_not_the_seeder_owns_the_
+> million_event_footprint`. Para dimensionar en produccion, la fila relevante es esa, no las de
+> aqui.
 
 | Fuente | Fecha | Host | `summarize` a 1M | RSS |
 |---|---|---|---|---|
@@ -965,6 +975,51 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
    entre elles es probablemente de ruta (proceso que siembra + servidor + cliente en un caso,
    solo lectura en otro), no de código. **No se elige ganador aqui**; lo que se anota es que la
    cifra mas baja pertenece a la medicion que pasa por el camino corregido.
+
+   > **CERRADO por atribución (2026-10-04) — la suposicion de "probablemente de ruta" era
+   > FALSA en la direccion que importa, y medirla costo un seed de 171 s.**
+   >
+   > El punto decia que las cuatro cifras no se elegian porque la diferencia era "probablemente de
+   > ruta, no de codigo". Esa suposicion era **comprobable**: las cuatro se produjeron envolviendo
+   > el `cargo test` entero en `/usr/bin/time -v`, que reporta el **mayor proceso individual** del
+   > arbol. El arbol tiene dos miembros con trabajos opuestos: el harness, que retiene un millon de
+   > `TraceEvent` en memoria mientras siembra, y el servidor, que los relee. La lectura natural es
+   > que domina el sembrador y que la cifra describia sobre todo el rig de pruebas.
+   >
+   > **Medido, es al reves: el servidor es 2,14x mas grande.** `the_read_path_not_the_seeder_owns_
+   > the_million_event_footprint` mide los dos procesos en la **misma corrida, el mismo instante y
+   > las mismas unidades**, leyendo `/proc/<pid>/statm` de cada uno:
+   >
+   > | Proceso | RSS |
+   > |---|---|
+   > | **Servidor (lee)** | **948.596 KB** |
+   > | Harness (siembra) | 442.704 KB |
+   >
+   > Ratio **2,14x**, y **replicado**: una primera corrida dio 949.204 KB contra 442.724 KB
+   > (**2,14x** tambien), con sembrados de 171,5 s y 239,4 s. Dos corredores con semillas de coste
+   > muy distinto dando el mismo ratio es lo que distingue una propiedad del codigo de una cifra de
+   > este host — que es justo lo que §0 exige antes de poder afirmar algo.
+   > El 949 MB **coincide exactamente** con el "~949 MB en el proceso servidor" que la cuarta
+   > grabacion de §9.5 ya mencionaba de pasada sin saber que significaba. Lo que hacia falta no
+   > era repetir la medicion, era **atribuirla**.
+   >
+   > **Y esto explica tambien la cifra que §9.4 no tenia donde poner.** La cuarta grabacion
+   > cita un pico de ~949 MB en el servidor mientras la cifra de arbol para ese mismo lane es
+   > 602.208 KB. Ambas son coherentes con `time -v` **solo si el servidor no entra en la
+   > contabilidad del arbol**: el cliente del sandbox lo liquida con un `kill -9` externo
+   > (`client/process.rs`, `force_kill`), de modo que el nieto nunca es `wait4`-eado por cargo y
+   > su tamano residente no entra en el maximo reportado. **La cifra de 602 KB es la del harness**,
+   > y el servidor fue invisible en las cuatro mediciones de arbol de la tabla.
+   >
+   > **Lo que esto deja abierto, y es deuda real, no este punto.** El camino de lectura carga la
+   > sesion en memoria: 949 MB para responder un agregado sobre 1M eventos. La agregacion es
+   > lineal en tiempo (C3, §7.3) pero **nadie ha caracterizado su coste en memoria**, y §0 no
+   > admite fijar una cifra que nadie pueda re-medir, asi que aqui se registra la magnitud y la
+   > pregunta, no un presupuesto. Anotado en el ledger; **no se abre frente en este bloque**.
+   >
+   > **Consecuencia para quien lea la tabla de §9.5:** sus cuatro filas describen el **rig**, no
+   > el producto. La fila del servidor es la que importa para dimensionar, y hasta ahora no
+   > figuraba como fila.
 6. ~~**C3** para los agregados.~~ **CERRADO (2026-10-03).** El punto era condicional —
    "si se decide que los agregados son parte de la superficie certificable" — y la
    decision que lo hace exigible ya esta tomada: `summarize` y `rollup` son dos de los
@@ -1005,11 +1060,55 @@ Dos cosas dice esto y una no:
   Un gap *retroactivo* (empieza antes del allocator pero termina antes del ultimo registro) si es
   legitimo y no debe rechazarse: es justo el caso que `reach_disordered` maneja. Confundir las
   dos cosas dejaria el flag permanentemente activo y C1 volveria a fallar.
+
+  > **CORREGIDO (2026-10-04) — de los tres estados posibles, solo queda el tercero, que es
+  > benigno. Y la prescripcion de este parrafo es lo mas peligroso que hay aqui dentro.**
+  >
+  > **1. El defecto ya no existe.** Lo arreglo `72d85ab9` (`fix(chronos-log): un gap que solape
+  > evidencia escrita se rechaza al escribir`), 2026-10-03 17:15, ancestro de HEAD. El guard vive
+  > en `chronos-log/src/memory.rs:583-597` y pregunta a las **entradas reales** de la sesion, no al
+  > allocator. El tramo segmentado lo hereda sin duplicarlo: `record_gap_inner`
+  > (`segmented.rs:891-895`) valida en el backend **antes** de empujar al buffer, asi que un gap
+  > rechazado no llega al disco.
+  >
+  > **2. La suite que lo cubre esta en `crates/chronos-log/tests/gap_overlap_fails_closed.rs`,
+  > 7/7 verde**, e incluye `assert_overlap_refused`, que exige que el fallo sea *el* rechazo de
+  > solape y no cualquier otro guard. Sin ella un test pasaria porque otro motivo disparo, que es
+  > la forma habitual de un guard que no guarda.
+  >
+  > **3. El parrafo anterior recomienda algo que ya se probo y se REFUTO.** Dice que el gap
+  > retroactivo "si es legitimo y no debe rechazarse". No lo es:
+  > `control_a_retroactive_gap_is_also_unreopenable_so_it_is_not_a_legitimate_category`
+  > (`gap_overlap_fails_closed.rs:317-348`) construye exactamente esa forma —10 registros `0..=9` y
+  > un gap tardio `3..=5`— y comprueba que `build_replay_plan` la rechaza con
+  > `PayloadRangeMismatch`. El razonamiento del parrafo era que el retroactivo "es justo el caso que
+  > `reach_disordered` maneja", pero `reach_disordered` describe una **lista desordenada**, no una
+  > categoria de hueco: un gap que revisita un rango ocupado deja un segmento que no embala, con o
+  > sin el flag. Por eso el fix rechaza tambien "por debajo del allocator" (`memory.rs:575-582`) y
+  > por eso el estado ya no es construible por la API publica.
+  >
+  > **Consecuencia practica:** quien retome este documento tiene aqui una **prescripcion que
+  > reintroduce el bug**, no una tarea. Implementarla tal cual —permitir el retroactivo por ser "el
+  > caso legitimo"— devuelve al producto un log que se puede escribir y luego no se puede abrir.
+  > Es la octava alerta de este tipo cerrada en esta sesion, y la primera cuyas consecuencias
+  > serian un fallo de integridad de datos.
 - `should_summarize` **no tiene ningun campo `oversized`** y ningun call site de produccion. Se
   verifica que `EventBatch` tiene exactamente dos campos (`next_cursor`, `events`); el unico
   `oversized` del workspace es un comentario de test no relacionado. El discriminante `mode` si
   esta cableado y las cuatro vistas tienen implementacion real: lo que falta es la *decision
   automatica* de conmutar por tamano.
+
+  > **SUPERADO (2026-10-04) — no es pendiente, y la ausencia es la decision, no un olvido.**
+  > Verificado hoy: el grep de call sites fuera de `virtualization.rs` devuelve **una sola** linea
+  > y es un comentario (`read_path.rs:260`, *"owns the `should_summarize` threshold decision"*).
+  > No hay ninguna llamada ejecutable. La falta del switch automatico por tamano ya estaba
+  > resuelta como decision en §9.2, y el codigo lo dice junto al numero:
+  > `DEFAULT_VIRTUALIZATION_THRESHOLD` (`virtualization.rs:139-143`) declara que se conserva
+  > *"because it is a decision with a name, not because anything reads it"*. D1 decide lectura por
+  > ventana, no conmutacion por politica de tamano, de modo que un automatismo que llamara a
+  > `should_summarize` reintroduiria la politica que D1 sustituyo. Los cuatro tests de
+  > `should_summarize` (`virtualization.rs:646-669`) fijan su semantica; lo que no hay —y no debe
+  > haber— es un llamador.
 - `M10-SCOPING.md:3` sigue afirmando que no se ha ejecutado ningun sub-cycle de M10. Era exacto
   cuando se escribio (2026-09-22) y hoy es **obsoleto por fecha**, no falso en su momento.
 
