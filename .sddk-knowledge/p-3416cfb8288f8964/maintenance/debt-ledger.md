@@ -347,9 +347,10 @@ lugar de a hacer skip.
 
 ## DEBT-PROBE-LIVENESS-01 — `probe_drain` reporta `running` como literal fijo, y un worker de captura muerto es indistinguible de uno sano
 
-**Estado:** `OPEN` · **Abierta en:** R6.3 (2026-10-04) · **Owner:** agente principal · **Origen:** investigacion
-encargada mientras se diagnosticaba `DEBT-CI-TIMING-01` · **Severidad:** alta, es la causa probablemente
-de raiz del intermittencia de `uat_c2_01`.
+**Estado:** mitad test **CERRADA** en R6.4 · mitad producto **CERRADA** en R6.6 (2026-10-04) con la
+limitacion del final de esta entrada · **Abierta en:** R6.3 (2026-10-04) · **Owner:** agente principal ·
+**Origen:** investigacion encargada mientras se diagnosticaba `DEBT-CI-TIMING-01` · **Severidad original:**
+alta, era la causa probablemente de raiz del intermittencia de `uat_c2_01`.
 
 **Lo que se ve desde fuera.** `probe_start` devuelve un session id, `probe_drain` responde
 `"status": "running"` y un `hint` que dice *"Probe is still running"*, y el `ExecutionLog` no recibe
@@ -415,6 +416,56 @@ para siempre no puede ser invisible en release.
 cuando el bucle de `wait_event` tenga un limite y un error observable en vez de un
 `waitpid` infinito. Revisar si los caminos 1 y 2 se pueden confirmar con una sesion viva y log vacio
 reproducible.
+
+---
+
+## R6.6 - `DEBT-PROBE-LIVENESS-01` cerrada en su mitad de producto
+
+**Commit:** `0fb807e9` · **Que cambia:** el campo `status` de `probe_drain` pasa de un literal fijo a
+la vivacidad real de la sesion, con siete estados (`capturing`, `starting`, `not_started`,
+`tracee_gone`, `worker_finished`, `worker_stopped`, `worker_failed`). El `hint` deja de ser constante y
+sigue al estado. `is_healthy()` solo es cierto para `capturing`, el unico valor que significa "esta
+captura funciona". Cambio de contrato publico: el `BREAKING CHANGE` va en el mensaje del commit.
+
+**La regla que evita arreglar el defecto repitiendolo.** La respuesta tiene que descansar en un hecho
+que el producto no redacta. Para un backend de captura la unica fuente de ese tipo es si el proceso
+traceado sigue existiendo, consultado al kernel con `kill(pid, 0)`. El `AtomicBool running` que ya
+existia en `probe_backend.rs` **no** se lee, y no por descuido: es un control ("debo seguir iterando"),
+no una observacion. Consultarlo seria volver a Reprobar el examen con la libreta del alumno, que es
+literalmente lo que hacia el `"running"` fijo.
+
+Precedencia, escrita en el enum del puerto y repetida en el codigo que la cumple:
+
+1. Tracee confirmado muerto -> `tracee_gone`, gane lo que gane el estado del worker, incluido "el worker
+   esta dentro del bucle". Esta es la regla que hace que la sesion de la clase R6.5 deje de reportarse
+   sana con el log congelado.
+2. En otro caso decide el estado del worker, y `capturing` solo es alcanzable desde un tracee
+   confirmado vivo, nunca desde "desconocido".
+
+**No-vacuidad probada por mutacion y reproducida de forma independiente.** La primera mutacion que se
+intento fue un no-op: reordenar dos brazos de `match` disjuntos no cambia nada y la suite seguia verde.
+Eso no era un guard vacuo, era una mutacion mal hecha. La mutacion que si muerde es hacer que el
+estado del worker gane sobre el tracee (`(InLoop, _) => Capturing` antes que `(_, Gone)`), y ahi la
+suite cae: 3 FAILED, entre ellos
+`liveness_does_not_report_capturing_when_the_tracee_has_exited` con
+`left: Capturing / right: TraceeGone`.
+
+El guard usa un proceso de verdad, no un mock: `fork()` + `_exit(0)` + `waitpid`, de modo que el pid esta
+realmente reaped y `kill(pid, 0)` da `ESRCH` de verdad. Y tiene un caso sano hermano con el pid propio
+para que no se pueda satisfacer contestando siempre `tracee_gone`.
+
+**Verificado:** check --workspace --all-targets 0, fmt 0, clippy `-D warnings` 0, `probe_ports` 13/13,
+`chronos-native --lib` 120/120, `chronos-services --lib` 609/609, `chronos-mcp --lib` 115/115,
+`probe_lifecycle_edge_cases` 7/7 en 123.59s con binario recien compilado.
+
+**Limitacion que queda, dicha y no escondida.** Un worker aparcado en `waitpid` con un tracee **vivo**
+sigue reportando `capturing`, porque el tracee existe de verdad y esa es la respuesta honesta a la
+pregunta que se hace. Esa clase de wedge la detecta el **acotado del bucle de `wait_event`**, que es la
+via alternativa que la condicion de cierre tambien aceptaba y que aqui NO se ha tocado: cambiar
+`wait_event` a un `waitpid` acotado altera la semantica de temporizacion y es una decision aparte, con
+su propio coste de CPU. La ventana de zombie tambien se documenta en el codigo: un tracee matado y aun
+no reaped sigue respondiendo a `kill(pid, 0)`, asi que un drain justo despues de un stop puede
+reportar `worker_stopped` y solo despasar a `tracee_gone`. Sin probar.
 
 ---
 
@@ -546,7 +597,7 @@ un ciclo, asi que un ciclo B-direct nuevo llevo la misma evidencia).
 |---|---|---|
 | `DEBT-CI-TIMING-01` | cerrada por refutacion | La hipotesis no se sostiene; el cambio se revirtio |
 | `DEBT-PROBE-LIVENESS-01` (mitad test) | **cerrada** en R6.4 | El test decide con captura de control, no leyendo un literal |
-| `DEBT-PROBE-LIVENESS-01` (mitad producto) | **ABIERTA** | `probe_drain` sigue devolviendo `"status": "running"` como literal fijo en `server.rs:2794` |
+| `DEBT-PROBE-LIVENESS-01` (mitad producto) | **ABIERTA al cerrar, CERRADA despues en R6.6** | Al cerrar `v0.9.0` `probe_drain` seguia devolviendo `"status": "running"` como literal fijo; R6.6 (`0fb807e9`) lo sustituyo por la vivacidad real |
 | `DEBT-UAT-TEARDOWN-01` | **ABIERTA** | Nueva, registrada arriba |
 | Robo de tracee entre hilos tracer | **cerrada** en R6.5 | Causa de producto encontrada y corregida con `__WNOTHREAD` |
 
