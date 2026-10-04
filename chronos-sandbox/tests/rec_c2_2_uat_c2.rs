@@ -209,13 +209,20 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         // violated, and the old code panicked as if it did.
         //
         // Decide observability by MEASURING this host, not by reading a field
-        // the server fills in unconditionally. R6.4: the old decision read
-        // `probe_drain`'s `status`, which is a hardcoded `"running"` literal
-        // (`crates/chronos-mcp/src/server.rs:2794`) emitted on every `Ok`. It
-        // was therefore always true, the excuse was always available, and a
-        // green run of this test could mean "the product captured nothing for
-        // 300 seconds" (DEBT-PROBE-LIVENESS-01). The independent verifier
+        // the server fills in. R6.4: the old decision read `probe_drain`'s
+        // `status`, which was a hardcoded `"running"` literal emitted on every
+        // `Ok`. It was therefore always true, the excuse was always available,
+        // and a green run of this test could mean "the product captured nothing
+        // for 300 seconds" (DEBT-PROBE-LIVENESS-01). The independent verifier
         // reproduced exactly that and still got `ok`.
+        //
+        // R6.6 replaced that literal with the session's real liveness, so the
+        // field is no longer a lie. The control capture still does the deciding,
+        // and the reason is structural rather than historical: this test
+        // adjudicates its own verdict, so the evidence has to be owned by the
+        // test. A product-reported liveness, however honest, is still the
+        // product describing itself — and a gate that accepts the subject's
+        // account of the subject is the exact shape this test exists to reject.
         //
         // So measure instead: run a second, independent capture against the
         // same fixture on the same host. If the control sees an event, this
@@ -280,9 +287,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
              The host is therefore able to observe a capture, so this empty log is a \
              product failure, not a slow machine: `probe_start` returned a session that \
              reported itself running and captured nothing. The old code excused this as \
-             an environment verdict using `probe_drain`'s `status` field, which is a \
-             hardcoded literal (crates/chronos-mcp/src/server.rs:2794) and therefore \
-             always said 'running'. That is DEBT-PROBE-LIVENESS-01. wire={:?}",
+             an environment verdict using `probe_drain`'s `status` field, which was a \
+             hardcoded literal and therefore always said 'running' \
+             (DEBT-PROBE-LIVENESS-01, server side since fixed in R6.6). wire={:?}",
             UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
             first_event_after_ms.as_millis(),
             control_after.as_millis(),
@@ -654,11 +661,16 @@ async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
 ///     that branch owns the verdict and must not also claim it here.
 ///
 /// R6.4 replaced the old first argument. It used to be `session_live`, read
-/// from `probe_drain`'s `status` field — which is a hardcoded literal at
-/// `crates/chronos-mcp/src/server.rs:2794`, not a worker state. The server
-/// returns it on every `Ok`, so it was constant-true and the test decided its
-/// own verdict from a value the product fabricated. That is DEBT-PROBE-LIVENESS-01,
-/// and it is why a green run of this test proved nothing.
+/// from `probe_drain`'s `status` field — at the time a hardcoded literal
+/// emitted on every `Ok`, not a worker state, so it was constant-true and the
+/// test decided its own verdict from a value the product fabricated. That was
+/// DEBT-PROBE-LIVENESS-01, and it is why a green run of this test proved
+/// nothing.
+///
+/// R6.6 fixed the server side of that debt: `status` is now the session's real
+/// liveness. The argument is still not read here, and the reason is not that
+/// the field lies any more. This test adjudicates its own verdict, so its
+/// evidence must belong to the test rather than to the subject being judged.
 fn verdict_is_unobservable(
     control_saw_event: bool,
     pipeline_silent: bool,
@@ -828,11 +840,12 @@ async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
         // its own independent control capture.
         //
         // It used to call `verdict_is_unobservable` here, passing `session_live`
-        // read from `probe_drain`'s `status` — the hardcoded literal at
-        // `crates/chronos-mcp/src/server.rs:2794`. That is why the diagnostic
-        // "passed" on hosts where nothing was captured, and why the excuse was
-        // always available. The call is gone rather than adapted: there is no
-        // honest verdict to compute from the wire alone.
+        // read from `probe_drain`'s `status`, then a hardcoded literal. That is
+        // why the diagnostic "passed" on hosts where nothing was captured, and
+        // why the excuse was always available. The call is gone rather than
+        // adapted: there is no honest verdict to compute from the wire alone.
+        // R6.6 made the wire honest and that did not change this, because the
+        // objection was never only that the field lied.
         let wire = client
             .probe_drain_wire(&session, None)
             .await
