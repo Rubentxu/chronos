@@ -98,7 +98,7 @@ Two commits:
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `a6c5834a633f1fcc25a5ccaec26fb7ae0e9cb529e6ac3a0058f977e42c52a12e` |
 | docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | script (cc smoke test) | `scripts/smoke_test_ccs.sh` | `86def49d7e23b4e521687ddcb53a384aac18ec3f91f0e2845396f90d7ac3e7d3` |
-| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `13350229f5ab3dc456f928b96e39999550eda60533167164894a14af886075d3` |
+| vault maintenance (drift sweep) | `.sddk-knowledge/p-3416cfb8288f8964/maintenance/vault-drift-sweep.md` | `823feee1bb9d83dc29a0f4a9c3f789cd156fbda7b801e0fe7d920abd6089af4d` |
 | apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/apply-checkpoint.json` | `35408c5d6ab2a0a9250228401b91f4f0b484cd7874ccb3f8b538bac2b5587931` |
 | verify-report | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-report.md` | `2bf8eaaf02d38409f4a7259e506c7e3d421f67fcc3383f82e5f85a9113009f5f` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/m9-73-sandbox-client-store-isolation/verify-findings.json` | `2bd75fa34fbd5eada906ea91c664d7b8719ad3fa9de2d973fadfc4609c7e4c9b` |

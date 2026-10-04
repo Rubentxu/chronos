@@ -3005,3 +3005,78 @@ in `identity.rs`. Verification: `cargo test -p chronos-sandbox --lib` →
 chronos-sandbox --all-targets -- -D warnings` → 0 warnings; inline re-run of
 the CC#56 scanner over `chronos-sandbox/` → 0 drift lines remaining. Closes
 DEBT-C4-04 from `maintenance/debt-ledger.md`.
+
+---
+
+### 57. A cycle directory the other CCs skip because it is untracked is itself drift (DEBT-GATE-UNTRACKED-01, 2026-10-04)
+
+```python
+import os, subprocess
+
+# CC#11, CC#22 and CC#39 deliberately filter out cycle directories that
+# `git ls-files` reports as untracked. The filter is right: an orphaned
+# working-tree directory is residue, not a cycle, and auditing it would
+# produce false drift forever.
+#
+# The filter has a cost that nobody wrote down. A cycle you have just
+# created and not yet committed is ALSO untracked, so while it is in that
+# state every check that would have inspected it is silently not
+# inspecting it — and `check_vault_drift.sh` still prints PASS. The local
+# green then covers a strictly smaller set of files than the CI green
+# will, and nothing says so.
+#
+# That is not hypothetical. It happened while closing release-v0-9-0:
+# the local sweep was PASS on an uncommitted `release-v0-9-0/`
+# directory, and the first CI run on the commit that added it came back
+# red with CC#11 and CC#22, because only then did those CCs see
+# `archived_at` and the four canonical release-receipt fields.
+#
+# So: an untracked directory that carries real cycle artifacts is drift.
+# Not because the artifacts are wrong, but because the suite is about to
+# report a clean result that it did not actually earn. Commit the cycle,
+# or delete the directory if it was never a cycle.
+#
+# A directory without an apply-checkpoint.json is not flagged: that is
+# the genuine residue case the original filter was written for.
+
+ROOT = 'cycle-artifacts/p-3416cfb8288f8964'
+
+try:
+    folders = sorted(os.listdir(ROOT))
+except FileNotFoundError:
+    print("DRIFT: cycle-artifacts root is missing; the vault has no cycle artifacts to check")
+    folders = []
+
+for folder in folders:
+    directory = os.path.join(ROOT, folder)
+    if not os.path.isdir(directory):
+        continue
+    # A checkpoint is what makes a directory a cycle rather than scratch.
+    if not os.path.exists(os.path.join(directory, 'apply-checkpoint.json')):
+        continue
+    try:
+        tracked = subprocess.run(
+            ['git', 'ls-files', directory + '/'],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        print(f"DRIFT: {folder}: could not determine whether it is tracked; treating it as unverified")
+        continue
+    if not tracked:
+        print(
+            f"DRIFT: {folder}: has cycle artifacts but nothing is tracked by git, so CC#11, "
+            f"CC#22 and CC#39 are not checking it. This run is PASS over a smaller file set "
+            f"than CI will see. Commit the cycle (or remove the directory if it is scratch)."
+        )
+```
+
+**Why this one is not a tautology.** The tempting version of this check is
+"does the sweep pass?", which is circular: it would report the very result
+it is supposed to qualify. This one asks a different question — is there
+work that the suite is not looking at — so it can go red on a tree whose
+cycle artifacts are individually perfect. A green sweep with a
+not-yet-committed cycle is exactly the case that must not be reported as
+green, and it is the case this catches.
+
+**History:** DEBT-GATE-UNTRACKED-01 in `maintenance/debt-ledger.md`, found
+and recorded 2026-10-04 while closing `release-v0-9-0`.

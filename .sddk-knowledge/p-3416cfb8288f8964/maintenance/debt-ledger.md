@@ -615,7 +615,8 @@ que uno que lo muestra. El ciclo no se movio con el, y la evaluacion de verdad
 
 ## DEBT-GATE-UNTRACKED-01 (2026-10-04) - un verde local sobre un arbol sin commitear no dice nada
 
-**Estado:** `OPEN` · **Severidad:** media, porque produce falso verde de forma sistematica.
+**Estado:** `CERRADA` en R6.7 (2026-10-04) con `CC#57` · **Severidad original:** media, porque producia
+falso verde de forma sistematica.
 
 `CC#11` y `CC#22` de `vault-drift-sweep.md` filtran los directorios de ciclo **sin trackear** con
 `git ls-files`, y `CC#39` cuenta solo filas con artefactos trackeados. Consecuencia: los artefactos
@@ -631,3 +632,24 @@ local no equivale al verde remoto mientras haya directorios de ciclo sin commite
 **Condicion de cierre:** o los CC locales se ejecutan contra un indice que incluya lo no trackeado,
 o el gate de pre-push advierte explicitamente cuando hay directorios de ciclo sin trackear, o
 `validate_cycle_artifacts.py` deja de aceptar el caso "todavia no commiteado" como limpio.
+
+### Cerrada en R6.7 con CC#57
+
+Anadir `CC#57` a `vault-drift-sweep.md`. No quita el filtro por `git ls-files` de `CC#11`/`CC#22`/
+`CC#39` (ese filtro tiene razon: un directorio huerfano del working tree es residuo, no un ciclo), sino
+que hace **visible el salto**: un directorio de ciclo con `apply-checkpoint.json` y nada trackeado por
+git se reporta como DRIFT, porque el suite esta a punto de decir PASS sobre un conjunto de ficheros mas
+pequeno que el que vera la CI.
+
+La version tentadora de este check es "el sweep pasa?", que es circular: informaria del mismo resultado
+que debe calificar. Este pregunta otra cosa, si hay trabajo que el suite no esta mirando, asi que puede
+ponerse rojo sobre un arbol cuyos artefactos son individualmente perfectos.
+
+**No-vacuidad medida, no supuesta.** Con todo trackeado: `PASS (49 python CCs, 7 bash CCs)`. Al crear
+un ciclo WIP sin commitear con un `apply-checkpoint.json`: `DRIFT: CC#57 reported 1 drift lines`. Y lo
+relevante de esa misma corrida: `CC#8`, `CC#13` y `CC#15` tambien se pusieron rojas, pero **`CC#11`,
+`CC#22` y `CC#39` no** — las tres que filtran por `git ls-files`, que es justo el hueco. Al borrar el
+directorio, PASS otra vez.
+
+Un directorio sin `apply-checkpoint.json` no se marca: ese es el caso de residuo genuino para el que el
+filtro original existia.
