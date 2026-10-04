@@ -221,6 +221,45 @@ se deja para quien lo retome con el contexto delante.
 es no determinista. Si vuelve a pasar, la evidencia queda en los dos runs; si vuelve a fallar, esta
 entrada pasa de flake a defecto reproducible y hay que tratarlo como tal.
 
+**Diagnostico de raiz, medido leyendo el fixture (no deducido).** La cadena es esta:
+
+1. `start_probe_with_ring` lanza el fixture `test_busyloop` y duerme 2 s. El fixture **corre ~3 s
+   y luego muere** (`rec_c2_2_uat_c2.rs:35-42`).
+2. El primer `probe_drain` con `limit: 1` devuelve el primer evento (en CI, a los 4 ms).
+3. `wait_for_log_advance` hace polling **cada 100 ms** con `limit: 1000` y compara el
+   `evidence_cursor` con el del primer drain. Devuelve `Some` en cuanto el cursor **cambia**, y
+   `None` al agotar el deadline.
+4. El cursor solo cambia si el `ExecutionLog` ha producido **algun** registro nuevo. Un solo evento
+   nuevo basta, porque `limit: 1000` devuelve hasta el ultimo examinado.
+
+O sea que el test exige que **el busyloop siga vivo durante la ventana de espera**. En CI fallo
+porque, con la maquina compartida, el arranque mas el primer drain mas el parseo se comieron la
+ventana de 3 s y el fixture ya no generaba nada. Los 300 s de espera no pueden arreglar un fixture
+que ha terminado: el polling no crea evidencia, solo la observa.
+
+**Y hay un antecedente en el propio fichero que desaconseja subir el deadline.** El bloque de
+comentario de `uat_c2_01_probe_drain_is_not_an_authority` registra **cuatro** intentos anteriores de
+ampliar el plazo, todos con la misma firma: el primer evento llega *exactamente* en el deadline
+(R8 10s -> 10041ms, R8.1 30s -> 30006ms, R9.11 60s -> 60003ms, R9.12 300s -> 300028ms con
+`total_buffered=0`). El propio autor concluyo que *"the wait is not latency"* y que *"el test mide
+una propiedad que este entorno no puede observar"*, y por eso el test ya se salta bajo tarpaulin.
+**El patron "subrir el numero" esta agotado y hay cuatro casos que lo demuestran**, asi que un
+quinto intento del mismo tipo no es una solucion sino una repeticion.
+
+**La reparacion que si toca** es de fixture, no de plazo: que el proceso que alimenta el log este
+vivo y generando por demanda mientras el polling corre. Las dos vias que se ven son (a) relanzar el
+busyloop —o un segundo proceso generador— desde dentro de `wait_for_log_advance` cuando el cursor
+no avanza, de modo que la senal la produce el test y no la suerte; o (b) separar la propiedad que se
+quiere medir —*el drain no crea evidencia: el cursor solo avanza si el log crecio*— del ruido
+temporal, comprobandola con un log que crece de forma controlada. La (a) es la menor y conserva el
+test tal cual; la (b) es la mas limpia y toca mas superficie.
+
+**Por que no se ejecuta aqui.** Es un cambio de fixture en un test de captura uprobe, en plena
+preparacion de un release, y su verificacion depende de un runner saturado que es justo la condicion
+en la que se manifesta el defecto. Hacerlo sin ese entorno seria cambiar un test sin poder observar
+el fallo ni la correccion, que es como se llega a un test que pasa por casualidad. Se deja con el
+diagnostico completo para que quien lo retome sepa exactamente que mirar.
+
 **Fecha / condicion de cierre:** cerrar cuando el fixture deje de depender del ritmo de syscalls del
 runner, o cuando exista un modo determinista de producir los registros nuevos. Revisar si en tres
 runs seguidos sobre el mismo codigo aparece mas de un fallo.
