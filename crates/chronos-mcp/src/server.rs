@@ -530,6 +530,25 @@ impl ChronosServer {
     /// toolset should *declare* (current) or *enforce* is recorded in
     /// `docs/roadmap/STATE.md` and is not decided here: it changes what
     /// clients may call, which is a contract and permissions question.
+    ///
+    /// **CORRECTION (R4.3, 2026-10-04): the premise that justified "declare"
+    /// was FALSE, and the decision is not blocked by the framework at all.**
+    /// This doc used to justify not enforcing on the grounds that "rmcp does
+    /// not expose a hook into `tools/list`". Verified against rmcp 1.5.0,
+    /// that is wrong: `#[tool_handler]` generates each of `call_tool`,
+    /// `list_tools`, `get_tool` and `get_info` only when the impl block does
+    /// not already have it — `rmcp-macros-1.5.0/src/tool_handler.rs:44,64,81,91`
+    /// all guard with `if !has_method("...", &item_impl)`. A hand-written
+    /// `list_tools` or `call_tool` in this very impl block is therefore
+    /// **kept**, and filtering by toolset is a handful of lines.
+    ///
+    /// So there is no framework obstacle. What remains is exactly what was
+    /// always the real question — whether narrowing a profile should also stop
+    /// clients calling what is outside it — and that is a permissions decision
+    /// for the operator, not a technical limit. Note the asymmetry it would
+    /// remove: 5 handlers already call `toolset_guard`, so today the toolset
+    /// is *half* enforced, which is the one shape that is neither a
+    /// declaration nor a restriction.
     pub fn is_tool_listed(&self, tool_name: &str) -> bool {
         let listed = match self.active_toolset.as_str() {
             "auto" => true,
