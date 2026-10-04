@@ -418,6 +418,64 @@ reproducible.
 
 ---
 
+## R6.5 - causa raiz encontrada: dos hilos tracer se robaban el tracee del otro
+
+**Estado:** la causa de producto esta **encontrada y corregida**; la honestidad de la API sigue abierta.
+
+**Como se cerro la busqueda.** R6.4 dejo de disimular el fallo, y la CI lo mostro al instante sobre
+`684b3d16`: `uat_c2_01` con `first_event_after_ms=300034`, `count=0`, `total_buffered: 0`,
+`completeness {from_seq 0, to_seq_exclusive 0}`, mientras su captura de control, en el mismo host,
+mismo fixture y mismo binario, veia un evento a los **5 ms**. El host era capaz. Esa sesion estaba
+muda. Es la segunda reproduccion independiente de la misma firma (la primera, la del verificador).
+
+**La causa raiz.** `PtraceTracer::wait_event` hacia `waitpid(-1, __WALL)`, que reap el estado de
+cualquier hijo **del proceso**, no del hilo que llama. Este servidor lanza un hilo tracer por sesion
+de captura, y las sesiones concurrentes son una **funcionalidad del producto**:
+`chronos-sandbox/tests/multi_session.rs` arranca dos probes y ejercita operaciones entre sesiones.
+Dos hilos tracer del mismo proceso compiten por los mismos hijos; el `waitpid` que despierte primero
+se consume el estado, y el perdedor no vuelve a observar a su tracee. Su sesion sigue viva, se
+declara `running` y su ExecutionLog queda vacio para siempre.
+
+Eso explica de una sola vez las tres cosas que el sintoma hacia inexplicables: la sensibilidad a la
+carga (mas planificacion, mas carreras), la firma de 1 registro frente a 0 segun quien gane el
+drain, y que el hermano diagnostico vea un evento a los 47 ms mientras la sesion del test no ve nada.
+
+**La premisa que era falsa.** El comentario de `crates/chronos-native/src/test_support.rs` justificaba
+`waitpid(-1)` diciendo que en produccion `ChronosServer` lleva una sola `active_session`, luego
+"exactamente un tracer sigue exactamente un arbol de procesos". Eso no se sostiene: las sesiones
+concurrentes son una funcionalidad probada del producto. El fichero describe una restriccion real de
+los tests que corren en paralelo dentro de un binario de test, y su justificacion de produccion era
+erronea. Esa confusion es probablemente lo que mantuvo el defecto vivo tanto tiempo: el archivo que
+documentaba el peligro se contradecía con su propia premisa.
+
+**El arreglo.** `__WNOTHREAD` junto a `__WALL` en el `waitpid` del tracer: un hilo solo reap los
+hijos que el mismo empezo, que es la respuesta del kernel y la que usan strace y gdb. Cada hilo de
+captura hace su propio fork con `TRACEME`, asi que cada tracee suyo es hijo suyo y no se pierde nada;
+`__WALL` se conserva porque es lo que entrega las paradas por syscall y las de clon/fork. Ademas el
+fallo de resume en `probe_backend.rs` pasa de `debug!` a `warn!`: un resume fallido deja el tracee
+detenido y el bucle aparcado en un `waitpid` bloqueante que nadie despierta, y un defecto que wedgea
+una captura en silencio no debe compilarse fuera de release.
+
+**Verificado.** `chronos-native --lib` 114/114. `multi_session` 7/7 (140,77 s) y el test de probes
+concurrentes aislado 18,61 s: son exactamente las rutas de sesion concurrente que el cambio tocaba.
+`program_scenarios` 11/11 (207,18 s), que es la ruta de clon/`follow_children`.
+`m1_04_live_probe_execution_log` 2/2. `rec_c2_2_uat_c2` 6/6 en 76,32 s, con paso real y no un skip.
+
+**El limite de esa verificacion, dicho sin adornos.** Se puede probar que la carrera es real, que su
+premisa de justificacion era falsa y que el flag no rompe ninguna ruta cubierta. **No** se ha podido
+reproducir la carrera bajo demanda, porque depende del planificador, asi que no hay un antes/despues
+medido sobre ella. Que la carrera ocurra en la practica esta respaldado por dos reproducciones
+independientes con la misma firma, no por una demostracion controlada. La CI de `684b3d16` es el
+arbitro final de si el arreglo la cierra.
+
+**Lo que sigue abierto.** El `status` de `probe_drain` sigue siendo el literal `"running"` de
+`server.rs:2794`. R6.5 elimina una causa de sesion muda, pero si otra apareciera, la API seguiria
+sin poder distinguirla de una sesion sana, y el gate tendria que volver a recurrir a una captura de
+control para enterarse. Exponer la vivacidad real del worker sigue siendo el cierre de
+`DEBT-PROBE-LIVENESS-01`.
+
+---
+
 ## R6.4 - el lado de test deja de mentir; el lado de producto sigue abierto
 
 **Lo cerrado en R6.4 (mitigacion, no causa).** `uat_c2_01` ya no decide su veredicto con el literal
