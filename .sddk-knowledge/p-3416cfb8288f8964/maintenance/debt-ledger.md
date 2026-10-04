@@ -516,3 +516,67 @@ sesion viva sin captura. R6.4 no la arregla, solo hace que el gate deje de ocult
 pendientes (a) exponer la vivacidad real del worker en `probe_drain`, y (b) acotar el bucle de
 `wait_event` para que un tracee detenido no se aparque en un `waitpid` infinito, con el error de
 resume en `warn!` y no en `debug!`.
+
+---
+
+## DEBT-UAT-TEARDOWN-01 (2026-10-04) - las rutas de `panic!` de `uat_c2_01` no limpian la sesion
+
+**Estado:** `OPEN` · **Abierta en:** R6.5 (2026-10-04) · **Owner:** agente principal · **Severidad:** baja.
+
+Las tres rutas de `panic!` de `chronos-sandbox/tests/rec_c2_2_uat_c2.rs` abandonan la sesion de
+captura sin detenerla. La causa es que `Drop` no puede hacer `await`, asi que `probe_stop` no llega
+a ejecutarse cuando el test aborta. Hoy solo se nota porque el proceso de test muere y el kernel
+recoge los hijos, pero deja el fixture sin cerrar y gasta el `timeout` del runner en el camino de
+error, que es justo el camino donde mas caro sale.
+
+**Condicion de cierre:** reestructurar el test para que el teardown se haga `await` en todas las
+salidas, o mover el `panic!` a un helper que llame a `probe_stop` antes de propagar.
+
+---
+
+## Cierre de la release v0.9.0 (2026-10-04): donde queda cada deuda
+
+`v0.9.0` publicado como tag anotado en `aac0965909935cfa0294fd3fcf389ea33a371f6a`. Ciclo
+`release-v0-9-0` CLOSED. Dos ciclos previos cerrados como mal creados, no como terminados:
+`release-v0-2-0` (A-full por error) y `release-v020` (nacido ligado a `feat/release-v020` con el
+trabajo ya en `main`; la ruta local de release exige tronco y SDDK no puede re-apuntar la rama de
+un ciclo, asi que un ciclo B-direct nuevo llevo la misma evidencia).
+
+| Deuda | Estado al cerrar la release | Nota |
+|---|---|---|
+| `DEBT-CI-TIMING-01` | cerrada por refutacion | La hipotesis no se sostiene; el cambio se revirtio |
+| `DEBT-PROBE-LIVENESS-01` (mitad test) | **cerrada** en R6.4 | El test decide con captura de control, no leyendo un literal |
+| `DEBT-PROBE-LIVENESS-01` (mitad producto) | **ABIERTA** | `probe_drain` sigue devolviendo `"status": "running"` como literal fijo en `server.rs:2794` |
+| `DEBT-UAT-TEARDOWN-01` | **ABIERTA** | Nueva, registrada arriba |
+| Robo de tracee entre hilos tracer | **cerrada** en R6.5 | Causa de producto encontrada y corregida con `__WNOTHREAD` |
+
+El veredicto de la release es `PASS_WITH_WARNINGS` en su forma nativa, mapeado a `PARTIAL` en el
+esquema de artefactos del proyecto. No es un PASS limpio y no debe leerse como tal: el producto
+sigue sin poder decir si un worker de captura esta muerto.
+
+**Un receipt que se deja a proposito.** Al sondear que aceptaba `evaluate-gate` se escribio de
+verdad `gate-tests-pass-dc6ca868269080de-1` con `outcome=failed` y `evidence={"probe":1}`. No fue
+una evaluacion, fue un descuido. No se borra: un ledger que omite en silencio un error vale menos
+que uno que lo muestra. El ciclo no se movio con el, y la evaluacion de verdad
+(`...-dc6ca868269080de-2`, con la evidencia material) lo sustituyo.
+
+---
+
+## DEBT-GATE-UNTRACKED-01 (2026-10-04) - un verde local sobre un arbol sin commitear no dice nada
+
+**Estado:** `OPEN` · **Severidad:** media, porque produce falso verde de forma sistematica.
+
+`CC#11` y `CC#22` de `vault-drift-sweep.md` filtran los directorios de ciclo **sin trackear** con
+`git ls-files`, y `CC#39` cuenta solo filas con artefactos trackeados. Consecuencia: los artefactos
+de un ciclo recien creado no entran en el alcance de esos checks hasta que se commitean. En este
+ciclo la suite local paso en verde con el directorio `release-v0-9-0` sin trackear, y la CI salio
+roja en `Vault Drift Sweep` con CC#11 y CC#22 en cuanto el commit lo puso en el alcance. Los
+faltantes eran `archived_at` y los cuatro campos canonicos del `release-receipt.md`.
+
+El filtro tiene su razon (no auditar residuos huerfanos del working tree), pero su coste es que
+**el gate local puede ejecutarse sobre un alcance mas estrecho que el que vera la CI**. Un verde
+local no equivale al verde remoto mientras haya directorios de ciclo sin commitear.
+
+**Condicion de cierre:** o los CC locales se ejecutan contra un indice que incluya lo no trackeado,
+o el gate de pre-push advierte explicitamente cuando hay directorios de ciclo sin trackear, o
+`validate_cycle_artifacts.py` deja de aceptar el caso "todavia no commiteado" como limpio.
