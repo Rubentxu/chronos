@@ -22,6 +22,11 @@ chronos-java = { path = "../crates/chronos-java" }
 chronos-go = { path = "../crates/chronos-go" }
 chronos-browser = { path = "../crates/chronos-browser" }
 chronos-log = { path = "../crates/chronos-log" }
+# The measurement probes in `examples/` build real `TraceEvent`s so the log is
+# readable by the same path production uses; a hand-rolled payload fails closed
+# and looks like a product bug. Already a normal dependency of this crate, so
+# this adds no new edge to the workspace — only to the dev/example targets.
+chronos-domain = { path = "../crates/chronos-domain" }
 # m1-03: sandbox UAT exercises the producer-side migration in
 # chronos-native (probe_backend → ExecutionLog).
 chronos-native = { path = "../crates/chronos-native" }
