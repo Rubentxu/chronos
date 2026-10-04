@@ -988,7 +988,24 @@ impl NativeProbeBackend {
                     tracer.continue_execution(event_pid)
                 };
                 if let Err(e) = continue_result {
-                    debug!("Failed to continue PID {}: {}", event_pid, e);
+                    // R6.5: this is `warn!`, not `debug!`, on purpose. A failed
+                    // resume leaves the tracee stopped and the capture loop
+                    // parked in a blocking `waitpid` that will never be woken,
+                    // so the session keeps reporting itself running while its
+                    // log stays empty. A defect that wedges a capture silently
+                    // is exactly the one that must not be compiled out of
+                    // release builds.
+                    warn!(
+                        "Failed to continue PID {} ({}): {}. The tracee may be left \
+                         stopped and this capture may stop producing events.",
+                        event_pid,
+                        if ptrace_config.trace_syscalls {
+                            "syscall_continue"
+                        } else {
+                            "continue_execution"
+                        },
+                        e
+                    );
                 }
             }
         }

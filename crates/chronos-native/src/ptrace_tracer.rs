@@ -463,8 +463,39 @@ mod imp {
         /// separate events before the stop event that triggered them.
         ///
         /// When `follow_children` is enabled and multiple PIDs are being traced,
-        /// uses `waitpid(-1, __WALL)` to catch events from all threads/processes.
-        /// Otherwise, waits on the main PID only.
+        /// uses `waitpid(-1, __WALL | __WNOTHREAD)` to catch events from all
+        /// threads/processes of this tracer's own tree. Otherwise, waits on the
+        /// main PID only.
+        ///
+        /// # Why `__WNOTHREAD` (R6.5)
+        ///
+        /// Without it, `waitpid(-1)` reaps the exit status of **any** child of
+        /// the process — not of the calling thread. This server hosts one tracer
+        /// thread per probe session, and concurrent sessions are a supported
+        /// feature (`tests/multi_session.rs` starts two probes and exercises
+        /// cross-session operations). So two tracer threads in one process
+        /// compete for the same children: whichever thread's `waitpid` returns
+        /// first consumes the status, and the loser never observes its own
+        /// tracee again. The loser's session stays alive, reports itself
+        /// running, and its ExecutionLog stays empty forever.
+        ///
+        /// That is the mechanism behind DEBT-PROBE-LIVENESS-01 and behind the
+        /// intermittency of `uat_c2_01_probe_drain_is_not_an_authority`, and it
+        /// explains why the symptom is load-sensitive: more scheduling means
+        /// more chances to lose the race. It also explains the 1-record
+        /// signature, since the winning thread drains the events the losing
+        /// thread never sees.
+        ///
+        /// `__WNOTHREAD` is the kernel's own answer for this, and it is what
+        /// strace and gdb use: a thread only reaps children it started itself.
+        /// Each capture thread does its own `TRACEME` fork, so every tracee it
+        /// is responsible for is its own child and nothing is lost.
+        ///
+        /// A previous comment in `test_support.rs` claimed the single-session
+        /// shape made this safe in production. It does not: that file describes
+        /// the constraint for tests running in parallel inside one test binary,
+        /// and its production premise is false because concurrent sessions are a
+        /// product feature.
         pub fn wait_event(&mut self) -> Result<Option<PtraceEvent>, TraceError> {
             // Return buffered events first
             if !self.pending_events.is_empty() {
@@ -472,14 +503,20 @@ mod imp {
             }
 
             // Decide whether to wait on any child or a specific PID.
-            // When follow_children is enabled, use waitpid(-1, __WALL) to catch
-            // clone/fork events from any traced process.
+            // When follow_children is enabled, use waitpid(-1, __WALL |
+            // __WNOTHREAD) to catch clone/fork events from any traced process
+            // *of this tracer's own thread*. __WNOTHREAD is load-bearing, not
+            // belt-and-braces: without it a second concurrent session's tracer
+            // thread can reap this session's statuses and starve it forever.
             if self.config.follow_children || self.main_pid.is_none() {
                 // Use BLOCKING waitpid for reliability — clone events are delivered
                 // immediately and we don't want to miss them with polling.
                 // The caller must ensure probe_stop interrupts us (e.g., by killing
                 // the traced process or sending PTRACE_INTERRUPT).
-                let status = match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::__WALL)) {
+                let status = match waitpid(
+                    Pid::from_raw(-1),
+                    Some(WaitPidFlag::__WALL | WaitPidFlag::__WNOTHREAD),
+                ) {
                     Ok(s) => s,
                     Err(nix::errno::Errno::ECHILD) => {
                         debug!("No more traced processes");
@@ -487,7 +524,7 @@ mod imp {
                     }
                     Err(e) => {
                         return Err(TraceError::CaptureFailed(format!(
-                            "waitpid(-1, __WALL) error: {}",
+                            "waitpid(-1, __WALL | __WNOTHREAD) error: {}",
                             e
                         )));
                     }
