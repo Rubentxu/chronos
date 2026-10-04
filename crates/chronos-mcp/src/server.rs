@@ -123,6 +123,50 @@ pub(crate) fn text_content(text: impl Into<String>) -> Vec<Content> {
     vec![Content::text(text.into())]
 }
 
+// DEBT-PROBE-LIVENESS-01: the hint that ships with `probe_drain` follows
+// the session's real liveness.
+//
+// It used to be a constant "Probe is still running", which is the same
+// fabrication as the old `status` literal: a response that says
+// `"status": "tracee_gone"` next to a hint claiming the probe is still
+// running tells the consumer to believe whichever line it happened to read.
+// Only the healthy state gets the "call me again" advice; every other one
+// names what happened, because a consumer that drained an empty page needs
+// to know whether to wait, stop, or report a product failure.
+fn probe_drain_hint(liveness: chronos_domain::ports::ProbeLiveness) -> &'static str {
+    use chronos_domain::ports::ProbeLiveness;
+    match liveness {
+        ProbeLiveness::Capturing => {
+            "Probe is still running. Call probe_drain again with 'evidence_cursor' for more \
+             events, or probe_stop to finalize."
+        }
+        ProbeLiveness::Starting => {
+            "Capture worker is up but no tracee has been observed yet. If this persists the \
+             launch is stuck; probe_stop and retry."
+        }
+        ProbeLiveness::NotStarted => {
+            "No capture worker ever started for this session: the events so far are not a live \
+             capture. probe_stop and retry."
+        }
+        ProbeLiveness::TraceeGone => {
+            "The traced process no longer exists: this session can capture nothing further and the \
+             drained range is final. probe_stop to finalize if you have not already."
+        }
+        ProbeLiveness::WorkerFinished => {
+            "The traced process finished and the capture ended normally. Drain what is left, \
+             then probe_stop to finalize."
+        }
+        ProbeLiveness::WorkerStopped => {
+            "The capture was stopped. Whatever is in the log is all there will be; probe_stop to \
+             finalize."
+        }
+        ProbeLiveness::WorkerFailed => {
+            "The capture worker failed: this session captured nothing further. The log may be \
+             empty or partial; treat it as a product failure, not a slow machine."
+        }
+    }
+}
+
 // Resource limits for read-path operations.
 //
 // SCALE_BUDGETS §5 D2 decided that `max_events` / `timeout_secs` are a hard
@@ -2789,9 +2833,15 @@ impl ChronosServer {
                     })
                     .collect();
 
+                // DEBT-PROBE-LIVENESS-01: `status` used to be the literal
+                // `"running"` on every `Ok`, which made a dead, wedged or
+                // never-started worker indistinguishable from a healthy
+                // one. It is now the session's real liveness, and the hint
+                // follows it so the response cannot contradict itself.
+                let liveness = result.liveness;
                 let output = serde_json::json!({
                     "session_id": params.session_id,
-                    "status": "running",
+                    "status": liveness.as_str(),
                     "total_buffered": result.total_buffered,
                     "returned": sliced.len(),
                     "offset": params.offset,
@@ -2808,7 +2858,7 @@ impl ChronosServer {
                     "legacy_cursor": serde_json::Value::Null,
                     "tripwires_fired": result.tripwires_fired,
                     "events": sliced,
-                    "hint": "Probe is still running. Call probe_drain again with 'evidence_cursor' for more events, or probe_stop to finalize."
+                    "hint": probe_drain_hint(liveness)
                 });
                 Ok(CallToolResult::success(json_content(&output)))
             }
@@ -8500,6 +8550,48 @@ mod cap_discovery_tests {
         assert!(!server.is_tool_listed("evaluate_expression"));
         assert!(!server.is_tool_listed("debug_get_variables"));
         assert!(!server.is_tool_listed("debug_get_memory"));
+    }
+
+    /// DEBT-PROBE-LIVENESS-01: `probe_drain`'s `status` is the session's
+    /// real liveness, and the hint that ships beside it may not claim the
+    /// probe is still running for any state that is not healthy.
+    ///
+    /// The second half is the one with teeth. A response carrying
+    /// `"status": "tracee_gone"` next to a hint that says "Probe is still
+    /// running" hands the consumer two contradictory facts and lets it pick
+    /// the flattering one — the same failure the old literal had, one line
+    /// down.
+    #[test]
+    fn probe_drain_hint_never_claims_running_for_a_non_healthy_session() {
+        use chronos_domain::ports::ProbeLiveness;
+
+        let all = [
+            ProbeLiveness::Capturing,
+            ProbeLiveness::Starting,
+            ProbeLiveness::NotStarted,
+            ProbeLiveness::TraceeGone,
+            ProbeLiveness::WorkerFinished,
+            ProbeLiveness::WorkerStopped,
+            ProbeLiveness::WorkerFailed,
+        ];
+
+        let mut hints: Vec<&str> = all.iter().map(|l| probe_drain_hint(*l)).collect();
+        let before = hints.len();
+        hints.sort_unstable();
+        hints.dedup();
+        assert_eq!(
+            hints.len(),
+            before,
+            "each liveness needs its own hint: {hints:?}"
+        );
+
+        for liveness in all {
+            let hint = probe_drain_hint(liveness);
+            assert!(
+                hint.to_lowercase().contains("still running") == liveness.is_healthy(),
+                "liveness {liveness} paired with a hint that does not match it: {hint:?}"
+            );
+        }
     }
 }
 

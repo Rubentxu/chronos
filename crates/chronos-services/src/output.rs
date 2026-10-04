@@ -977,6 +977,13 @@ pub struct ProbeDrainResult {
     pub total_buffered: usize,
     /// Persisted `TripwireFired` records in this page's examined range.
     pub tripwires_fired: usize,
+    /// DEBT-PROBE-LIVENESS-01: the real liveness of the capture session.
+    ///
+    /// Travels with the page because an empty drain is otherwise
+    /// indistinguishable from a dead producer: an exhausted range with no
+    /// records looks the same whether the worker is capturing, wedged, or
+    /// never started. This is the fact that tells them apart.
+    pub liveness: chronos_domain::ports::ProbeLiveness,
 }
 
 /// Output of `probe_drain_log`. JSON shape matches the existing literal in

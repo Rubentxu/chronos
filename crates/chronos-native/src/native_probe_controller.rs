@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use chronos_domain::error::TraceError;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
-use chronos_domain::ports::{AdvanceOutcome, NativeProbeController, StepOutcome};
+use chronos_domain::ports::{AdvanceOutcome, NativeProbeController, ProbeLiveness, StepOutcome};
 use chronos_domain::session_id::SessionId;
 use chronos_domain::trace::{CaptureConfig, CaptureSession};
 
@@ -125,6 +125,14 @@ impl NativeProbeController for NativeProbeControllerImpl {
     fn step(&self) -> Result<StepOutcome, TraceError> {
         self.backend.step(&self.session)?;
         Ok((true, Some("single-step".to_string())))
+    }
+
+    /// DEBT-PROBE-LIVENESS-01: forward the backend's real liveness. The
+    /// port's contract is that the answer rests on the tracee's
+    /// independent existence, not on a flag the backend sets, so this
+    /// wrapper adds nothing and hides nothing.
+    fn liveness(&self) -> ProbeLiveness {
+        self.backend.liveness()
     }
 
     fn execution_log(&self) -> Option<Arc<dyn ExecutionLogProvider>> {

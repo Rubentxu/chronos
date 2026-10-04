@@ -712,6 +712,14 @@ mod tests {
             Ok((false, None))
         }
 
+        /// DEBT-PROBE-LIVENESS-01: this double has no worker and no
+        /// tracee, so the honest answer is `NotStarted` — never
+        /// `Capturing`, which is the fabricated claim the port exists to
+        /// remove. A test that needs a healthy session has to say so.
+        fn liveness(&self) -> chronos_domain::ports::ProbeLiveness {
+            chronos_domain::ports::ProbeLiveness::NotStarted
+        }
+
         fn execution_log(
             &self,
         ) -> Option<std::sync::Arc<dyn chronos_domain::ports::execution_log::ExecutionLogProvider>>
@@ -1844,5 +1852,49 @@ mod tests {
         let probes = ctx.live_probes.lock().unwrap();
         let lp = probes.get("c33-no-ebpf").expect("session present");
         assert!(lp.uprobe_handle.is_none());
+    }
+
+    /// DEBT-PROBE-LIVENESS-01: `drain` must carry the controller's real
+    /// liveness to the application layer, and an empty page must not be
+    /// able to pass for a live capture.
+    ///
+    /// The controller here is the PRODUCTION one over a real
+    /// `NativeProbeBackend` that never started a worker, so the honest
+    /// answer is `NotStarted`. Before this change the field did not exist
+    /// and the MCP wrapper wrote `"running"` on every `Ok`, so an assertion
+    /// of "healthy" here would be asserting the fabrication.
+    #[tokio::test]
+    async fn drain_carries_the_controllers_real_liveness() {
+        use crate::probe::{ProbeDrainInput, ProbeService};
+        use chronos_domain::ports::ProbeLiveness;
+
+        let rig = TestRig::new();
+        let session_id = "liveness-drain";
+        rig.open_session(session_id).await;
+        register_fake_probe_session(&rig, session_id, 4242);
+
+        let ctx = rig.probe_ctx();
+        let result = ProbeService::drain(
+            &ctx,
+            ProbeDrainInput {
+                session_id: session_id.to_string(),
+                evidence_cursor: None,
+                offset: 0,
+                limit: 16,
+            },
+        )
+        .expect("drain of a live session with an empty log succeeds");
+
+        assert_eq!(
+            result.liveness,
+            ProbeLiveness::NotStarted,
+            "a session with no capture worker must not be reported healthy"
+        );
+        assert!(!result.liveness.is_healthy());
+
+        // The page itself is unchanged by this fix: it adds a fact, it does
+        // not alter what the evidence range reports.
+        assert_eq!(result.total_buffered, 0);
+        assert!(result.events.is_empty());
     }
 }

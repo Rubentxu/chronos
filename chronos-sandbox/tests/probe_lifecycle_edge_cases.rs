@@ -303,10 +303,27 @@ async fn test_probe_drain_empty_buffer_immediately() {
             println!("Immediate drain: {} events", response.total_buffered);
             // Should succeed with 0 or more events
             // (0 events is OK - nothing captured yet)
+            //
+            // DEBT-PROBE-LIVENESS-01: `status` is no longer the literal
+            // `"running"`. It is the session's real liveness, so this
+            // assertion checks that the server named one of the states a
+            // capture can actually be in. It must NOT accept a bare
+            // "running"-substring match again: that shape passes for every
+            // healthy-looking value and would hide exactly the dead-worker
+            // case this field now exists to expose.
+            const LIVENESS_STATES: [&str; 7] = [
+                "capturing",
+                "starting",
+                "not_started",
+                "tracee_gone",
+                "worker_finished",
+                "worker_stopped",
+                "worker_failed",
+            ];
             assert!(
-                response.status.to_lowercase().contains("running")
-                    || response.status.to_lowercase().contains("stopped"),
-                "Expected 'running' or 'stopped' status, got: {}",
+                LIVENESS_STATES.contains(&response.status.as_str()),
+                "Expected one of {:?}, got: {}",
+                LIVENESS_STATES,
                 response.status
             );
         }

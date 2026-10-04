@@ -665,6 +665,14 @@ impl ProbeService {
     /// responsible for serializing the events into the existing JSON shape
     /// (this lets the wrapper apply the `offset`/`limit` slicing after the
     /// service hands off the full snapshot, matching the original contract).
+    ///
+    /// DEBT-PROBE-LIVENESS-01: the result carries the session's real
+    /// [`ProbeLiveness`] alongside the page. The page alone cannot say
+    /// whether an empty drain means "nothing captured yet" or "the worker
+    /// is dead", because an exhausted range with no records is the same
+    /// shape in both cases. The liveness is read from the controller while
+    /// the live-probe lock is already held for the projection context, so
+    /// it costs no extra locking.
     pub fn drain(
         ctx: &ProbeContext<'_>,
         input: ProbeDrainInput,
@@ -690,7 +698,7 @@ impl ProbeService {
         // replaying the same durable Raw produces the same semantic view the
         // producer saw. Both are taken under a short lock and then the lock is
         // dropped: projection runs per event and must not hold it.
-        let (ctx_obj, pipeline) = {
+        let (ctx_obj, pipeline, liveness) = {
             let probes = ctx
                 .live_probes
                 .lock()
@@ -703,6 +711,10 @@ impl ProbeService {
                     .controller
                     .resolve_context(Some(live_probe.target.clone())),
                 live_probe.controller.clone_resolver_pipeline(),
+                // Read while the session is resolved: the same lock that
+                // proves the session exists also gives the honest answer
+                // about whether its worker is alive.
+                live_probe.controller.liveness(),
             )
         };
 
@@ -732,6 +744,7 @@ impl ProbeService {
             exhausted: page.exhausted,
             total_buffered: page.raw_events,
             tripwires_fired: page.tripwires_fired,
+            liveness,
         })
     }
 

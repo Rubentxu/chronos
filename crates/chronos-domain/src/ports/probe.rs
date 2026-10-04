@@ -217,6 +217,113 @@ pub type AdvanceOutcome = (bool, Option<String>, bool);
 /// `stepped = true` means the tracee executed one instruction.
 pub type StepOutcome = (bool, Option<String>);
 
+/// Real liveness of a capture session, as observed from the outside
+/// (DEBT-PROBE-LIVENESS-01).
+///
+/// `probe_drain` used to answer a hardcoded `"running"` on every success,
+/// so a session whose worker had died, wedged in a blocking `waitpid`, or
+/// never started was byte-identical on the wire to a healthy one. This
+/// enum is the fact that replaces that literal, and
+/// [`NativeProbeController::liveness`] is the only way to obtain it.
+///
+/// ## What the names mean
+///
+/// The variants name **what a caller can observe**, not what the product
+/// intended:
+///
+/// - `Capturing` — the worker is inside its capture loop *and* the tracee
+///   was independently confirmed to exist. This is the only healthy value.
+/// - `Starting` — the worker is inside its loop but has not published a
+///   tracee yet, so a tracee cannot be confirmed. Persistent `Starting` is
+///   a wedged launch, which is exactly the signature the old literal hid.
+/// - `NotStarted` — no worker ever entered its loop.
+/// - `TraceeGone` — a tracee was published and the process no longer
+///   exists.
+/// - `WorkerFinished` / `WorkerStopped` / `WorkerFailed` — the worker
+///   returned; each names the *reason* it returned, because "the capture
+///   ended" and "a stop was requested" and "the loop failed" are different
+///   things for a caller deciding whether to retry.
+///
+/// ## How an implementation must decide
+///
+/// The answer MUST rest on a fact the product does not author, and the only
+/// such fact available to a capture backend is **whether the tracee process
+/// still exists** (`kill(pid, 0)`, or `/proc/<pid>` on Linux). A backend
+/// that reads its own "should I keep looping" control flag and calls the
+/// result liveness reproduces the defect this type exists to remove: a
+/// wedged loop that never clears the flag would report healthy forever.
+///
+/// The worker-state half of the answer is real bookkeeping — the worker
+/// records where it is on entry and on every exit path — but it is
+/// *evidence about the worker*, not proof that a capture exists.
+///
+/// The precedence that follows from both halves, in this order:
+///
+/// 1. **Tracee confirmed gone → `TraceeGone`**, whatever the worker state
+///    says, including "the worker is inside its loop". A session whose
+///    tracee no longer exists cannot be capturing, and this is the rule
+///    that makes the R6.5-class session (worker alive, log frozen) stop
+///    reporting healthy.
+/// 2. **Otherwise the worker's recorded state decides**, and `Capturing` is
+///    reachable only when the tracee was confirmed alive.
+///
+/// A consequence worth knowing: because rule 1 is unconditional, a
+/// spawn-mode session that was stopped reports `TraceeGone` once the
+/// worker has killed and the kernel has reaped the tracee, rather than
+/// `WorkerStopped`. That is a true statement about the session — the
+/// tracee really is gone — and a consumer that needs the "you stopped
+/// this" fact should read `probe_stop`'s own result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProbeLiveness {
+    /// Worker inside its capture loop and the tracee confirmed alive —
+    /// the only state a consumer may treat as "this capture is working".
+    Capturing,
+    /// Worker inside its loop, but no tracee is published yet, so liveness
+    /// cannot be confirmed. A capture that stays here is stuck launching.
+    Starting,
+    /// No worker ever entered its capture loop.
+    NotStarted,
+    /// The published tracee no longer exists (confirmed outside the
+    /// product). Wins over any worker state.
+    TraceeGone,
+    /// The worker returned because the tracee produced no more events.
+    WorkerFinished,
+    /// The worker returned because a stop was requested.
+    WorkerStopped,
+    /// The worker returned through an error path (launch, attach, wait, or
+    /// a capture helper failure).
+    WorkerFailed,
+}
+
+impl ProbeLiveness {
+    /// Stable wire spelling, used as `probe_drain`'s `status` value.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProbeLiveness::Capturing => "capturing",
+            ProbeLiveness::Starting => "starting",
+            ProbeLiveness::NotStarted => "not_started",
+            ProbeLiveness::TraceeGone => "tracee_gone",
+            ProbeLiveness::WorkerFinished => "worker_finished",
+            ProbeLiveness::WorkerStopped => "worker_stopped",
+            ProbeLiveness::WorkerFailed => "worker_failed",
+        }
+    }
+
+    /// True only for [`ProbeLiveness::Capturing`].
+    ///
+    /// Every other value means "do not conclude this capture is working",
+    /// which is the distinction the old fabricated `"running"` erased.
+    pub fn is_healthy(&self) -> bool {
+        matches!(self, ProbeLiveness::Capturing)
+    }
+}
+
+impl std::fmt::Display for ProbeLiveness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Capability-focused port for native ptrace probes.
 ///
 /// Implementations wrap a real probe backend (production) or simulate
@@ -275,6 +382,19 @@ pub trait NativeProbeController: Send + Sync + Debug {
     /// Returns `(stepped, paused_reason)`. Returns
     /// `TraceError::capture_failed` if there is no traced pid.
     fn step(&self) -> Result<StepOutcome, TraceError>;
+
+    /// Real liveness of this capture session (DEBT-PROBE-LIVENESS-01).
+    ///
+    /// Read-only, non-blocking, and cheap enough to call per drain: it
+    /// inspects the worker's recorded lifecycle state plus one independent
+    /// existence check of the tracee, and must not block on the worker.
+    ///
+    /// Implementations MUST derive the answer under the rule documented on
+    /// [`ProbeLiveness`]: the tracee's existence outranks the worker's own
+    /// state, and `Capturing` requires the tracee to be confirmed alive.
+    /// Returning `Capturing` from a control flag the implementation itself
+    /// sets is a contract violation, not an optimisation.
+    fn liveness(&self) -> ProbeLiveness;
 
     /// Reach the session-owned execution log, if any.
     ///

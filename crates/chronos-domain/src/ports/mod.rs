@@ -49,8 +49,8 @@ pub use notification::{
 };
 pub use probe::{
     AdvanceOutcome, NativeProbeBuildError, NativeProbeController, NativeProbeControllerFactory,
-    NullProbeFactory, NullProbeRegistry, ProbeController, ProbeFactory, ProbeRegistry,
-    RawAcceptedObserver, StepOutcome,
+    NullProbeFactory, NullProbeRegistry, ProbeController, ProbeFactory, ProbeLiveness,
+    ProbeRegistry, RawAcceptedObserver, StepOutcome,
 };
 pub use session::{
     InMemorySessionArchive, InMemorySessionRepository, SessionArchive, SessionArchiveError,

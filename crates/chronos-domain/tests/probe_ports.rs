@@ -162,13 +162,16 @@ fn registry_works_through_dyn() {
 // concrete backend.
 
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
-use chronos_domain::ports::{AdvanceOutcome, NativeProbeController, StepOutcome};
+use chronos_domain::ports::{AdvanceOutcome, NativeProbeController, ProbeLiveness, StepOutcome};
 
 #[derive(Debug)]
 struct StubNativeController {
     id: SessionId,
     advance_outcome: AdvanceOutcome,
     step_outcome: StepOutcome,
+    /// Pre-set liveness so the round-trip test can prove the value crosses
+    /// the trait-object boundary instead of being invented downstream.
+    liveness: ProbeLiveness,
 }
 
 impl NativeProbeController for StubNativeController {
@@ -210,6 +213,10 @@ impl NativeProbeController for StubNativeController {
         Ok(self.step_outcome.clone())
     }
 
+    fn liveness(&self) -> ProbeLiveness {
+        self.liveness
+    }
+
     fn execution_log(&self) -> Option<Arc<dyn ExecutionLogProvider>> {
         None
     }
@@ -241,6 +248,11 @@ fn native_probe_controller_round_trip_via_dyn() {
         id: id.clone(),
         advance_outcome: advance_outcome.clone(),
         step_outcome: step_outcome.clone(),
+        // Not the healthy value on purpose: a test that asserted
+        // `Capturing` here would pass even if the port invented the
+        // answer, because `Capturing` is the value a consumer would
+        // wrongly assume by default.
+        liveness: ProbeLiveness::TraceeGone,
     };
     let controller: Box<dyn NativeProbeController> = Box::new(stub);
 
@@ -250,6 +262,10 @@ fn native_probe_controller_round_trip_via_dyn() {
     // Advance / step return the port types exactly.
     assert_eq!(controller.advance().unwrap(), advance_outcome);
     assert_eq!(controller.step().unwrap(), step_outcome);
+
+    // Liveness crosses the boundary verbatim (DEBT-PROBE-LIVENESS-01).
+    assert_eq!(controller.liveness(), ProbeLiveness::TraceeGone);
+    assert!(!controller.liveness().is_healthy());
 
     // Stop is observable as a typed outcome.
     assert!(controller.stop().is_ok());
@@ -296,4 +312,49 @@ fn step_outcome_preserves_pause_reason() {
     assert_eq!(stepped.1.as_deref(), Some("single-step"));
     assert!(!not_stepped.0);
     assert!(not_stepped.1.is_none());
+}
+
+/// DEBT-PROBE-LIVENESS-01: only `Capturing` may be called healthy, and
+/// every wire spelling must be distinct. Both halves have teeth: an
+/// `is_healthy` that accepted a second variant would let a dead session
+/// pass for a working one, and a duplicated spelling would collapse two
+/// states back into one on the wire — which is the defect in a new coat.
+#[test]
+fn probe_liveness_healthy_is_only_capturing_and_wire_values_are_distinct() {
+    let all = [
+        ProbeLiveness::Capturing,
+        ProbeLiveness::Starting,
+        ProbeLiveness::NotStarted,
+        ProbeLiveness::TraceeGone,
+        ProbeLiveness::WorkerFinished,
+        ProbeLiveness::WorkerStopped,
+        ProbeLiveness::WorkerFailed,
+    ];
+
+    let mut spellings: Vec<&str> = all.iter().map(|l| l.as_str()).collect();
+    let before = spellings.len();
+    spellings.sort_unstable();
+    spellings.dedup();
+    assert_eq!(
+        spellings.len(),
+        before,
+        "every ProbeLiveness variant needs its own wire spelling: {spellings:?}"
+    );
+
+    let healthy: Vec<&str> = all
+        .iter()
+        .filter(|l| l.is_healthy())
+        .map(|l| l.as_str())
+        .collect();
+    assert_eq!(
+        healthy,
+        vec!["capturing"],
+        "only the tracee-confirmed state may be reported healthy"
+    );
+
+    // `Display` and `as_str` must not drift apart: both are on the path
+    // from a classification to a consumer.
+    for liveness in all {
+        assert_eq!(liveness.to_string(), liveness.as_str());
+    }
 }

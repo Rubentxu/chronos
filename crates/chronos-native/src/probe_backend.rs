@@ -25,6 +25,7 @@ use crate::ptrace_tracer::PtraceTracer;
 #[cfg(target_os = "linux")]
 use crate::symbol_resolver::SymbolResolver;
 use chronos_domain::ports::execution_log::ExecutionLogProvider;
+use chronos_domain::ports::ProbeLiveness;
 use chronos_domain::semantic::{ResolveContext, ResolverPipeline, SemanticResolver};
 #[cfg(target_os = "linux")]
 use chronos_domain::MonotonicNs;
@@ -36,7 +37,7 @@ use std::path::Path;
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tracing::{debug, info, warn};
 
@@ -181,6 +182,151 @@ pub struct AcceptanceSeam {
     pub observer: Option<AcceptedRawObserver>,
 }
 
+/// Where the capture worker is in its lifecycle (DEBT-PROBE-LIVENESS-01).
+///
+/// This is the worker's own bookkeeping, written on entry to the capture
+/// loop and on **every** exit path. It is deliberately not a health claim:
+/// the honest answer combines it with the independent fact in
+/// [`TraceeExistence`] through [`classify_liveness`], because a worker that
+/// wedges inside `wait_event` keeps sitting in `InLoop` forever.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaptureWorkerState {
+    /// No worker has entered its capture loop on this backend.
+    NotStarted,
+    /// The worker is inside its capture loop.
+    InLoop,
+    /// The loop returned because the tracee produced no more events.
+    Finished,
+    /// The loop returned because a stop was requested.
+    Stopped,
+    /// The loop returned through an error path.
+    Failed,
+}
+
+/// The independent half of the liveness answer: does the tracee still exist?
+///
+/// Checked against the kernel (`kill(pid, 0)`), never against a flag this
+/// product sets. That is the whole point: the old `"running"` literal, and
+/// the old idea of reading the `running` control flag instead, both let the
+/// product grade its own homework.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TraceeExistence {
+    /// No tracee pid has been published, so existence is unknown.
+    Unknown,
+    /// The published pid answers `kill(pid, 0)`.
+    Alive,
+    /// The published pid answers `ESRCH`: the process is gone.
+    Gone,
+}
+
+/// The shared evidence slot: what the worker recorded, and the tracee it
+/// published.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CaptureWorkerObservation {
+    state: CaptureWorkerState,
+    tracee_pid: Option<i32>,
+}
+
+impl Default for CaptureWorkerObservation {
+    fn default() -> Self {
+        Self {
+            state: CaptureWorkerState::NotStarted,
+            tracee_pid: None,
+        }
+    }
+}
+
+/// Record a worker lifecycle transition without disturbing the pid slot.
+///
+/// Split from the pid write so the two producers (the launch callback and
+/// the loop's exit paths) cannot clobber each other's field.
+fn record_worker_state(slot: &Mutex<CaptureWorkerObservation>, state: CaptureWorkerState) {
+    let mut observation = slot.lock().unwrap_or_else(|e| e.into_inner());
+    observation.state = state;
+}
+
+/// Publish the tracee pid the worker is watching.
+fn record_tracee_pid(slot: &Mutex<CaptureWorkerObservation>, pid: i32) {
+    let mut observation = slot.lock().unwrap_or_else(|e| e.into_inner());
+    observation.tracee_pid = Some(pid);
+}
+
+/// Existence of a tracee pid, asked of the kernel rather than of us.
+///
+/// `kill(pid, 0)` is the check: `Ok` (or `EPERM`, which also means the
+/// process is there) is [`TraceeExistence::Alive`], `ESRCH` is
+/// [`TraceeExistence::Gone`], and any other error is reported as
+/// [`TraceeExistence::Unknown`] rather than guessed into "alive".
+///
+/// Two limits are worth stating rather than hiding:
+///
+/// - A tracee that is a **zombie still answers** `kill(pid, 0)`, so
+///   `Gone` becomes observable only once it has been reaped. The capture
+///   loop reaps with `WNOHANG` in `PtraceTracer::kill`, which can return
+///   before the process is actually reaped.
+/// - A **recycled pid** answers `Alive`. The window between reap and
+///   reuse is small, but it is not zero.
+///
+/// Without a tracee pid there is nothing to ask, so the answer is
+/// `Unknown` on every platform. On non-Linux there is no ptrace backend at
+/// all, so the pid is never published and the classification degrades to
+/// the worker's own state — which on that platform is `NotStarted`.
+fn tracee_existence(pid: Option<i32>) -> TraceeExistence {
+    let pid = match pid {
+        Some(p) if p > 0 => p,
+        _ => return TraceeExistence::Unknown,
+    };
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: `kill` with signal 0 performs no operation on the target
+        // beyond the existence/permission check and cannot dereference it.
+        let rc = unsafe { nix::libc::kill(pid, 0) };
+        if rc == 0 {
+            TraceeExistence::Alive
+        } else {
+            match std::io::Error::last_os_error().raw_os_error() {
+                Some(nix::libc::ESRCH) => TraceeExistence::Gone,
+                Some(nix::libc::EPERM) => TraceeExistence::Alive,
+                _ => TraceeExistence::Unknown,
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        TraceeExistence::Unknown
+    }
+}
+
+/// Combine the worker's own state with the tracee's independent existence
+/// into the port's answer.
+///
+/// The precedence is the contract documented on
+/// [`ProbeLiveness`](chronos_domain::ports::ProbeLiveness), restated here
+/// because this is the code that has to honour it:
+///
+/// 1. `Gone` outranks everything, including "the worker is inside its
+///    loop". A session whose tracee no longer exists cannot be capturing,
+///    and that is precisely the session the old literal reported healthy
+///    while its log stayed frozen.
+/// 2. Otherwise the worker's recorded state decides, and `Capturing` is
+///    reachable only from `Alive` — never from `Unknown`.
+fn classify_liveness(state: CaptureWorkerState, tracee: TraceeExistence) -> ProbeLiveness {
+    match (state, tracee) {
+        // Independent fact first, in every combination.
+        (_, TraceeExistence::Gone) => ProbeLiveness::TraceeGone,
+        (CaptureWorkerState::InLoop, TraceeExistence::Alive) => ProbeLiveness::Capturing,
+        // A worker inside its loop that has not published a tracee yet
+        // cannot be confirmed healthy; a capture stuck here is a wedged
+        // launch, which is exactly what the fabricated literal hid.
+        (CaptureWorkerState::InLoop, TraceeExistence::Unknown) => ProbeLiveness::Starting,
+        (CaptureWorkerState::NotStarted, _) => ProbeLiveness::NotStarted,
+        (CaptureWorkerState::Finished, _) => ProbeLiveness::WorkerFinished,
+        (CaptureWorkerState::Stopped, _) => ProbeLiveness::WorkerStopped,
+        (CaptureWorkerState::Failed, _) => ProbeLiveness::WorkerFailed,
+    }
+}
+
 /// Native ptrace probe backend for real-time event bus feeding.
 ///
 /// REC-C3.3.2: `execution_log` and `AcceptanceSeam.log` carry
@@ -213,6 +359,14 @@ pub struct NativeProbeBackend {
     /// concrete adapter on its own (REC-C1.2a: the session owns
     /// the log, the backend holds a writer clone).
     execution_log: std::sync::Arc<std::sync::Mutex<Option<Arc<dyn ExecutionLogProvider>>>>,
+    /// DEBT-PROBE-LIVENESS-01 — the worker's own lifecycle record plus
+    /// the tracee pid it published, read by [`Self::liveness`].
+    ///
+    /// Deliberately **not** `traced_pid`: `stop_probe` consumes that slot
+    /// (it takes the pid to signal the tracee), and this one is evidence,
+    /// which must survive the stop. `running` stays what it always was — a
+    /// "should I keep looping" control, never a liveness report.
+    worker_observation: Arc<Mutex<CaptureWorkerObservation>>,
 }
 
 impl Default for NativeProbeBackend {
@@ -241,6 +395,7 @@ impl NativeProbeBackend {
             attached_target: Arc::new(AtomicBool::new(false)),
             accepted_raw_observer: None,
             execution_log: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            worker_observation: Arc::new(Mutex::new(CaptureWorkerObservation::default())),
         }
     }
 
@@ -552,6 +707,11 @@ impl NativeProbeBackend {
             let traced_pid_thread = self.traced_pid.clone();
             // Clone for the closure - original `running` stays available for error handling
             let running_clone = running.clone();
+            // DEBT-PROBE-LIVENESS-01: the worker writes its lifecycle into
+            // this slot; `liveness` reads it back. A restart resets it, so
+            // a reused backend never inherits the previous worker's record.
+            record_worker_state(&self.worker_observation, CaptureWorkerState::NotStarted);
+            let worker_observation = Arc::clone(&self.worker_observation);
 
             // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
             running.store(true, Ordering::SeqCst);
@@ -571,6 +731,7 @@ impl NativeProbeBackend {
                             log: log_for_thread,
                             observer: accepted_raw_observer_for_thread,
                         },
+                        &worker_observation,
                         move |pid: i32| {
                             *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) =
                                 Some(pid);
@@ -637,6 +798,12 @@ impl NativeProbeBackend {
             let traced_pid_thread = self.traced_pid.clone();
             // Clone for the closure - original `running` stays available for error handling
             let running_clone = running.clone();
+            // DEBT-PROBE-LIVENESS-01: see `start_probe`. Attach publishes its
+            // pid from inside the thread, before the attach itself is
+            // attempted, so a failed attach is still attributable to a
+            // concrete tracee.
+            record_worker_state(&self.worker_observation, CaptureWorkerState::NotStarted);
+            let worker_observation = Arc::clone(&self.worker_observation);
 
             // CRIT-1: Set running=true BEFORE spawn so the thread never sees a stale false
             running.store(true, Ordering::SeqCst);
@@ -648,6 +815,7 @@ impl NativeProbeBackend {
                     // Set traced_pid at START of thread (before attaching),
                     // since we know the PID upfront for attach.
                     *traced_pid_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid as i32);
+                    record_tracee_pid(&worker_observation, pid as i32);
                     Self::run_probe_loop_attach(
                         pid,
                         &ptrace_config,
@@ -658,6 +826,7 @@ impl NativeProbeBackend {
                             log: attach_log_for_thread,
                             observer: attach_observer_for_thread,
                         },
+                        &worker_observation,
                     );
                 })
                 .map_err(|e| {
@@ -759,6 +928,7 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         language: Language,
         seam: AcceptanceSeam,
+        worker_observation: &Arc<Mutex<CaptureWorkerObservation>>,
         on_pid_launched: impl FnOnce(i32),
     ) {
         Self::run_probe_loop(
@@ -770,6 +940,7 @@ impl NativeProbeBackend {
             resolver_pipeline,
             language,
             seam,
+            worker_observation,
             on_pid_launched,
         );
     }
@@ -786,13 +957,21 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         _language: Language,
         seam: AcceptanceSeam,
+        worker_observation: &Arc<Mutex<CaptureWorkerObservation>>,
         on_pid_launched: impl FnOnce(i32),
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
         let adapter = NativeAdapter::new();
 
+        // DEBT-PROBE-LIVENESS-01: the worker is now inside its loop. Until
+        // it publishes a pid, `liveness` reports `Starting` rather than
+        // `Capturing` — the difference between "the thread is up" and "a
+        // tracee exists", which the old literal did not have.
+        record_worker_state(worker_observation, CaptureWorkerState::InLoop);
+
         // Check running flag before entering launch
         if !running.load(Ordering::Relaxed) {
+            record_worker_state(worker_observation, CaptureWorkerState::Stopped);
             return;
         }
 
@@ -802,10 +981,15 @@ impl NativeProbeBackend {
                 info!("Probe started for PID {}", p);
                 // Notify caller of the launched PID so stop_probe can kill it.
                 on_pid_launched(p);
+                // …and record it as the evidence `liveness` will re-check.
+                record_tracee_pid(worker_observation, p);
                 p
             }
             Err(e) => {
                 tracing::error!("Failed to launch {}: {}", program_path, e);
+                // The capture never produced a tracee: a session in this
+                // state must not read as healthy on a later drain.
+                record_worker_state(worker_observation, CaptureWorkerState::Failed);
                 return;
             }
         };
@@ -817,6 +1001,7 @@ impl NativeProbeBackend {
             if pid > 0 {
                 let _ = tracer.kill(pid);
             }
+            record_worker_state(worker_observation, CaptureWorkerState::Stopped);
             return;
         }
 
@@ -829,6 +1014,12 @@ impl NativeProbeBackend {
         // SegmentedExecutionLog v2 (REC-C2.3 retired the legacy half). On
         // any helper error we kill the tracee, fall through to cleanup, and
         // let the thread exit normally.
+        //
+        // DEBT-PROBE-LIVENESS-01: `loop_outcome` is why the worker will
+        // return, so every exit path below can name itself. It defaults to
+        // the normal end (the tracee produced no more events) and is
+        // overwritten by a failing path on the way out.
+        let mut loop_outcome = CaptureWorkerState::Finished;
         if ptrace_config.track_function_frames {
             if let Some(resolver) = symbol_resolver {
                 let timestamp_ns = MonotonicNs::from(
@@ -891,6 +1082,10 @@ impl NativeProbeBackend {
                         pid, err
                     );
                     let _ = tracer.kill(pid);
+                    // DEBT-PROBE-LIVENESS-01: a failed capture branch is a
+                    // failed worker, and the main loop below must not
+                    // upgrade the record to "finished" on its way out.
+                    loop_outcome = CaptureWorkerState::Failed;
                 }
                 // fall through to cleanup
             }
@@ -908,6 +1103,7 @@ impl NativeProbeBackend {
                 }
                 Err(e) => {
                     debug!("wait_event error: {}", e);
+                    loop_outcome = CaptureWorkerState::Failed;
                     break;
                 }
             };
@@ -1030,6 +1226,19 @@ impl NativeProbeBackend {
             debug!("Failed to kill root PID {}: {}", pid, e);
         }
 
+        // DEBT-PROBE-LIVENESS-01: record why the worker returned, so a drain
+        // after the capture ends reports that fact instead of an eternal
+        // "running". A cleared `running` means a stop was requested, which
+        // is a different answer from the tracee finishing on its own.
+        record_worker_state(
+            worker_observation,
+            if running.load(Ordering::Relaxed) {
+                loop_outcome
+            } else {
+                CaptureWorkerState::Stopped
+            },
+        );
+
         info!("Probe loop ended for PID {}", pid);
     }
 
@@ -1042,9 +1251,12 @@ impl NativeProbeBackend {
         resolver_pipeline: ResolverPipeline,
         _language: Language,
         seam: AcceptanceSeam,
+        worker_observation: &Arc<Mutex<CaptureWorkerObservation>>,
     ) {
         let mut tracer = PtraceTracer::new(ptrace_config.clone());
         let adapter = NativeAdapter::new();
+
+        record_worker_state(worker_observation, CaptureWorkerState::InLoop);
 
         if let Err(e) = tracer.attach(pid as i32) {
             tracing::error!("Failed to attach to PID {}: {}", pid, e);
@@ -1053,12 +1265,16 @@ impl NativeProbeBackend {
             // fails we must release that flag or every subsequent
             // attach_probe returns the "already running" guard.
             running.store(false, Ordering::SeqCst);
+            record_worker_state(worker_observation, CaptureWorkerState::Failed);
             return;
         }
 
         info!("Probe attached to PID {}", pid);
 
         let mut event_id: u64 = 0;
+        // DEBT-PROBE-LIVENESS-01: see the spawn loop — why the worker
+        // returns, named on the way out.
+        let mut loop_outcome = CaptureWorkerState::Finished;
 
         // Main event loop
         while running.load(Ordering::Relaxed) {
@@ -1070,6 +1286,7 @@ impl NativeProbeBackend {
                 }
                 Err(e) => {
                     debug!("wait_event error: {}", e);
+                    loop_outcome = CaptureWorkerState::Failed;
                     break;
                 }
             };
@@ -1141,7 +1358,42 @@ impl NativeProbeBackend {
             debug!("Failed to detach from PID {}: {}", pid, e);
         }
 
+        // DEBT-PROBE-LIVENESS-01: the attach loop records its exit reason
+        // too, for the same reason as the spawn loop.
+        record_worker_state(
+            worker_observation,
+            if running.load(Ordering::Relaxed) {
+                loop_outcome
+            } else {
+                CaptureWorkerState::Stopped
+            },
+        );
+
         info!("Probe loop ended for attached PID {}", pid);
+    }
+
+    /// DEBT-PROBE-LIVENESS-01 — the real liveness of this capture.
+    ///
+    /// Two inputs, and the order matters: the tracee's independent
+    /// existence outranks the worker's own state, and `Capturing` is
+    /// reachable only when a tracee was confirmed alive. The
+    /// `running` control flag is deliberately NOT consulted — reading it
+    /// here would make the product grade its own homework, and a worker
+    /// wedged in a blocking `wait_event` keeps it set forever.
+    ///
+    /// Cheap and non-blocking by contract: one mutex read plus one
+    /// `kill(pid, 0)`. The pid is copied out under the lock and the lock
+    /// is dropped before the syscall, so a slow `liveness` can never
+    /// serialise against the worker's own writes.
+    pub fn liveness(&self) -> ProbeLiveness {
+        let (state, tracee_pid) = {
+            let observation = self
+                .worker_observation
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            (observation.state, observation.tracee_pid)
+        };
+        classify_liveness(state, tracee_existence(tracee_pid))
     }
 }
 
@@ -1730,6 +1982,228 @@ mod tests {
             cleared,
             "failed attach must clear `running` (HIGH-4 invariant)"
         );
+    }
+
+    // ---- liveness (DEBT-PROBE-LIVENESS-01) ----
+    //
+    // These are the tests that replace the guarantee `probe_drain`'s
+    // fabricated `"running"` used to provide. The shape of every one of
+    // them is the same: put the backend in a state a real capture can be
+    // in, then ask the honest question.
+
+    /// The independent half, proven to be independent: it asks the kernel
+    /// about a pid, and the answer follows the process, not the product.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tracee_existence_follows_the_process_not_the_backend() {
+        use nix::sys::wait::{waitpid, WaitStatus};
+        use nix::unistd::{fork, ForkResult};
+
+        // No pid ⇒ nothing to ask.
+        assert_eq!(
+            super::tracee_existence(None),
+            super::TraceeExistence::Unknown
+        );
+        // Our own pid is trivially alive.
+        assert_eq!(
+            super::tracee_existence(Some(std::process::id() as i32)),
+            super::TraceeExistence::Alive
+        );
+
+        // A real child that exits and is reaped: the pid stops existing,
+        // which is the fact the whole design rests on.
+        // SAFETY: forking here is contained — the child only calls
+        // `_exit`, the parent only reaps it, and no lock is held across
+        // the fork. This is the pattern `tests/m2_function_frame_capture.rs`
+        // already uses to build a real child process.
+        match unsafe { fork() }.expect("fork") {
+            ForkResult::Child => {
+                // Immediate exit in the child, async-signal-safe as a fork
+                // in a multithreaded test harness requires. No external
+                // binary is needed, so the test depends on nothing outside
+                // the kernel.
+                // SAFETY: `_exit` is async-signal-safe and takes no
+                // argument the child could have failed to obtain.
+                unsafe { nix::libc::_exit(0) }
+            }
+            ForkResult::Parent { child } => {
+                let status = waitpid(child, None).expect("reap the child");
+                assert!(
+                    matches!(status, WaitStatus::Exited(_, 0)),
+                    "child exited normally, got {status:?}"
+                );
+
+                assert_eq!(
+                    super::tracee_existence(Some(child.as_raw())),
+                    super::TraceeExistence::Gone,
+                    "a reaped pid must read as gone, otherwise the whole \
+                     liveness answer collapses back into the product's own flags"
+                );
+            }
+        }
+    }
+
+    /// The R6.5-class session, constructed cheaply: the worker believes it
+    /// is still in its loop, and its tracee is gone. This is the exact
+    /// shape the old literal reported as `"running"` while the log stayed
+    /// frozen, and it must not read as healthy now.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn liveness_does_not_report_capturing_when_the_tracee_has_exited() {
+        use nix::unistd::{fork, ForkResult};
+
+        // SAFETY: see the sibling test — the child only `_exit`s and the
+        // parent only reaps, so nothing can deadlock around the fork.
+        let dead_pid = match unsafe { fork() }.expect("fork") {
+            ForkResult::Child => {
+                // SAFETY: see the sibling test — `_exit` is the only call
+                // a forked child of a multithreaded harness may make.
+                unsafe { nix::libc::_exit(0) }
+            }
+            ForkResult::Parent { child } => {
+                // Reap it: an unreaped child is a zombie, and a zombie still
+                // answers `kill(pid, 0)` — so the honest "gone" fact only
+                // exists after the reap.
+                nix::sys::wait::waitpid(child, None).expect("reap the child");
+                child.as_raw()
+            }
+        };
+
+        let backend = NativeProbeBackend::new();
+        // The worker says it is inside its loop, and the tracee it was
+        // watching is a pid the kernel no longer knows.
+        super::record_worker_state(
+            &backend.worker_observation,
+            super::CaptureWorkerState::InLoop,
+        );
+        super::record_tracee_pid(&backend.worker_observation, dead_pid);
+
+        let liveness = backend.liveness();
+        assert_eq!(
+            liveness,
+            ProbeLiveness::TraceeGone,
+            "a session whose tracee exited must report tracee_gone"
+        );
+        assert!(
+            !liveness.is_healthy(),
+            "the whole point: a dead tracee may never be reported healthy, \
+             whatever the worker believes about itself"
+        );
+    }
+
+    /// The healthy case, so the guard above is not trivially satisfiable by
+    /// always answering `TraceeGone`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn liveness_reports_capturing_while_the_worker_runs_and_the_tracee_lives() {
+        let backend = NativeProbeBackend::new();
+        super::record_worker_state(
+            &backend.worker_observation,
+            super::CaptureWorkerState::InLoop,
+        );
+        super::record_tracee_pid(&backend.worker_observation, std::process::id() as i32);
+
+        let liveness = backend.liveness();
+        assert_eq!(liveness, ProbeLiveness::Capturing);
+        assert!(liveness.is_healthy());
+    }
+
+    /// A worker in its loop that has published no tracee yet cannot be
+    /// confirmed healthy. Persistent `Starting` is the wedged-launch
+    /// signature that the old literal flattened into "running".
+    #[test]
+    fn liveness_reports_starting_until_a_tracee_is_published() {
+        let backend = NativeProbeBackend::new();
+        assert_eq!(
+            backend.liveness(),
+            ProbeLiveness::NotStarted,
+            "a fresh backend has no worker"
+        );
+
+        super::record_worker_state(
+            &backend.worker_observation,
+            super::CaptureWorkerState::InLoop,
+        );
+        let liveness = backend.liveness();
+        assert_eq!(liveness, ProbeLiveness::Starting);
+        assert!(
+            !liveness.is_healthy(),
+            "a worker with no confirmed tracee is not a healthy capture"
+        );
+    }
+
+    /// Each terminal worker state is reported as itself, and none of them
+    /// is healthy. `NotStarted` is the state a fresh backend — and, in
+    /// production, a session whose worker thread was never scheduled — sits
+    /// in.
+    #[test]
+    fn liveness_reports_each_terminal_worker_state_and_none_is_healthy() {
+        let cases = [
+            (
+                super::CaptureWorkerState::NotStarted,
+                ProbeLiveness::NotStarted,
+            ),
+            (
+                super::CaptureWorkerState::Finished,
+                ProbeLiveness::WorkerFinished,
+            ),
+            (
+                super::CaptureWorkerState::Stopped,
+                ProbeLiveness::WorkerStopped,
+            ),
+            (
+                super::CaptureWorkerState::Failed,
+                ProbeLiveness::WorkerFailed,
+            ),
+        ];
+        for (state, expected) in cases {
+            let backend = NativeProbeBackend::new();
+            super::record_worker_state(&backend.worker_observation, state);
+            let liveness = backend.liveness();
+            assert_eq!(liveness, expected, "state {state:?} misreported");
+            assert!(!liveness.is_healthy(), "{state:?} must not be healthy");
+        }
+    }
+
+    /// The precedence table, in full. Written out rather than derived from
+    /// the implementation so a change in the rule shows up here as a failed
+    /// expectation instead of silently redefining what "healthy" means.
+    ///
+    /// The rows that carry the design are `InLoop` + `Gone` (independent
+    /// fact beats the worker's own state) and `InLoop` + `Unknown` (no
+    /// tracee confirmed ⇒ never healthy).
+    #[test]
+    fn classify_liveness_follows_the_documented_precedence() {
+        use super::classify_liveness;
+        use super::CaptureWorkerState as S;
+        use super::TraceeExistence as T;
+
+        let rows = [
+            // (worker state, tracee, expected)
+            (S::NotStarted, T::Unknown, ProbeLiveness::NotStarted),
+            (S::NotStarted, T::Alive, ProbeLiveness::NotStarted),
+            (S::NotStarted, T::Gone, ProbeLiveness::TraceeGone),
+            (S::InLoop, T::Unknown, ProbeLiveness::Starting),
+            (S::InLoop, T::Alive, ProbeLiveness::Capturing),
+            (S::InLoop, T::Gone, ProbeLiveness::TraceeGone),
+            (S::Finished, T::Unknown, ProbeLiveness::WorkerFinished),
+            (S::Finished, T::Alive, ProbeLiveness::WorkerFinished),
+            (S::Finished, T::Gone, ProbeLiveness::TraceeGone),
+            (S::Stopped, T::Unknown, ProbeLiveness::WorkerStopped),
+            (S::Stopped, T::Alive, ProbeLiveness::WorkerStopped),
+            (S::Stopped, T::Gone, ProbeLiveness::TraceeGone),
+            (S::Failed, T::Unknown, ProbeLiveness::WorkerFailed),
+            (S::Failed, T::Alive, ProbeLiveness::WorkerFailed),
+            (S::Failed, T::Gone, ProbeLiveness::TraceeGone),
+        ];
+
+        for (state, tracee, expected) in rows {
+            assert_eq!(
+                classify_liveness(state, tracee),
+                expected,
+                "worker {state:?} + tracee {tracee:?}"
+            );
+        }
     }
 }
 
