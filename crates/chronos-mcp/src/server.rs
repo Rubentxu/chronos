@@ -41,9 +41,6 @@ use chronos_domain::{
 use chronos_index::builder::IndexBuilder;
 use chronos_query::QueryEngine;
 use chronos_services::browser_probe::BrowserProbeSession;
-use chronos_services::browser_probe::{
-    BrowserProbeContext, BrowserProbeService, BrowserProbeStartInput,
-};
 use chronos_services::debug_read::DebugReadService;
 use chronos_services::error::ServiceError;
 use chronos_services::events_read::{ChronosEventsReadService, EventsReadContext, EventsReadInput};
@@ -81,7 +78,15 @@ use tracing::info;
 pub use crate::tools_params::*;
 
 // Helper to create JSON text content
-fn json_content(value: &serde_json::Value) -> Vec<Content> {
+//
+// `pub(crate)` since R5.0: `crate::browser_probe_wire` renders tool output
+// with this exact function. It was duplicated there first, and the copy was
+// NOT equivalent — it used `to_string()` instead of `to_string_pretty(...).
+// unwrap_or_default()`, so a pure refactor silently changed the JSON three
+// browser tools put on the wire. One implementation, reached from every
+// module: `wire_content_helpers_have_exactly_one_implementation` in the
+// `cap_discovery_tests` module below fails if a second one appears.
+pub(crate) fn json_content(value: &serde_json::Value) -> Vec<Content> {
     vec![Content::text(
         serde_json::to_string_pretty(value).unwrap_or_default(),
     )]
@@ -111,7 +116,10 @@ fn session_envelope(degraded: bool, value: serde_json::Value) -> serde_json::Val
     }
 }
 
-fn text_content(text: impl Into<String>) -> Vec<Content> {
+// `pub(crate)` for the same reason as `json_content` above: the wire content
+// helpers have exactly one implementation, and a second one is a silent
+// output-shape change rather than a refactor.
+pub(crate) fn text_content(text: impl Into<String>) -> Vec<Content> {
     vec![Content::text(text.into())]
 }
 
@@ -175,7 +183,12 @@ pub struct ChronosServer {
     connected_sessions: Arc<std::sync::Mutex<HashSet<String>>>,
     /// Currently active session for phased workflows.
     /// Automatically set after probe_start or capture completes.
-    active_session: Arc<Mutex<Option<String>>>,
+    ///
+    /// `pub(crate)` since R5.0: `crate::browser_probe_wire` builds its
+    /// `BrowserProbeContext` from this field. It is the active-session pointer,
+    /// not a browser-specific one, which is why it did not move with the
+    /// browser group.
+    pub(crate) active_session: Arc<Mutex<Option<String>>>,
     /// Tripwire manager for condition-based event notification.
     tripwire_manager: Arc<TripwireManager>,
     /// Uprobe counter map (session_id → next uprobe subscription id
@@ -220,7 +233,11 @@ pub struct ChronosServer {
     /// Live browser probe sessions: session_id → BrowserProbeSession.
     /// These are real-time WASM debugging sessions via Chrome CDP.
     /// Use `browser_probe_drain` to read events and `browser_probe_stop` to finalize.
-    live_browser_probes: Arc<std::sync::Mutex<HashMap<String, BrowserProbeSession>>>,
+    ///
+    /// `pub(crate)` since R5.0: owned by `crate::browser_probe_wire`, which
+    /// builds the `BrowserProbeContext` from it. The field stays on the server
+    /// because the server owns session lifetime, not the browser module.
+    pub(crate) live_browser_probes: Arc<std::sync::Mutex<HashMap<String, BrowserProbeSession>>>,
     /// Whether the underlying store is in-memory (degraded) instead of
     /// file-backed (persistent). m9-82 closes FIND-M9-75 by exposing this
     /// to tool callers via `is_degraded()` and through a top-level
@@ -287,7 +304,9 @@ pub struct ChronosServer {
     /// `Arc<dyn BrowserProbeFactory>` and threads it into every
     /// `BrowserProbeContext`. The factory is stateless and cheap to
     /// share — every `create` call spawns a fresh backend.
-    browser_probe_factory: Arc<dyn BrowserProbeFactory>,
+    ///
+    /// `pub(crate)` since R5.0, for `crate::browser_probe_wire`.
+    pub(crate) browser_probe_factory: Arc<dyn BrowserProbeFactory>,
 }
 
 impl ChronosServer {
@@ -572,7 +591,11 @@ impl ChronosServer {
     /// byte-identical inline blocks at dispatch handlers.
     ///
     /// Spec: REQ-CAP-008 `ToolsetGuardSingleSource`.
-    fn toolset_guard(&self, tool_name: &str) -> Option<CallToolResult> {
+    ///
+    /// `pub(crate)` since R5.0: the browser handlers in
+    /// `crate::browser_probe_wire` call it. The guard stays here because it
+    /// reads `is_tool_listed`, which is the toolset decision itself.
+    pub(crate) fn toolset_guard(&self, tool_name: &str) -> Option<CallToolResult> {
         if self.is_tool_listed(tool_name) {
             None
         } else {
@@ -898,7 +921,14 @@ impl ChronosServer {
         }
     }
 
-    async fn build_and_store_engine(
+    /// Index a session's events and publish it as queryable.
+    ///
+    /// `pub(crate)` since R5.0: `browser_probe_stop` lives in
+    /// `crate::browser_probe_wire` after the browser group was extracted, and
+    /// stopping a browser probe is precisely the moment a session becomes
+    /// queryable. It stayed here rather than moving with the group because it is
+    /// not browser-specific — several capture paths call it.
+    pub(crate) async fn build_and_store_engine(
         &self,
         session_id: &str,
         events: Vec<TraceEvent>,
@@ -3075,8 +3105,12 @@ further would be a Silent Lie."
 
     // ========================================================================
     // SF10 — Browser/WASM Probe Tools (T15–T16)
+    //
+    // R5.0: the three handlers moved to `crate::browser_probe_wire`. They are
+    // re-exported here rather than removed, because the `#[tool_router]` macro
+    // reads the handlers off THIS impl block — moving them out of the router
+    // would delete three tools from the wire, not from a file.
     // ========================================================================
-
     #[tool(
         name = "browser_probe_start",
         description = "Start a browser debugging session. Launches Chrome headless, connects via CDP, detects WASM modules, and sets breakpoints. Use browser_probe_drain to read events and browser_probe_stop to finalize."
@@ -3085,38 +3119,7 @@ further would be a Silent Lie."
         &self,
         params: Parameters<BrowserProbeStartParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        if let Some(err) = self.toolset_guard("browser_probe_start") {
-            return Ok(err);
-        }
-        let params = params.0;
-
-        let ctx = BrowserProbeContext {
-            live_browser_probes: &self.live_browser_probes,
-            active_session: &self.active_session,
-            factory: &self.browser_probe_factory,
-        };
-
-        match BrowserProbeService::start(
-            &ctx,
-            BrowserProbeStartInput {
-                url: params.url,
-                headless: params.headless,
-                chrome_path: params.chrome_path,
-            },
-        )
-        .await
-        {
-            Ok(result) => {
-                let output = serde_json::json!({
-                    "session_id": result.session_id,
-                    "status": "running",
-                    "url": result.url,
-                    "hint": "Use browser_probe_drain to read WASM events, browser_probe_stop to finalize."
-                });
-                Ok(CallToolResult::success(json_content(&output)))
-            }
-            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
-        }
+        crate::browser_probe_wire::browser_probe_start_impl(self, params).await
     }
 
     #[tool(
@@ -3127,46 +3130,7 @@ further would be a Silent Lie."
         &self,
         params: Parameters<BrowserProbeStopParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        if let Some(err) = self.toolset_guard("browser_probe_stop") {
-            return Ok(err);
-        }
-        let params = params.0;
-
-        let ctx = BrowserProbeContext {
-            live_browser_probes: &self.live_browser_probes,
-            active_session: &self.active_session,
-            factory: &self.browser_probe_factory,
-        };
-
-        match BrowserProbeService::stop(
-            &ctx,
-            chronos_services::browser_probe::BrowserProbeStopInput {
-                session_id: params.session_id,
-            },
-        )
-        .await
-        {
-            Ok(result) => {
-                if result.total_events > 0 {
-                    self.build_and_store_engine(
-                        &result.session_id,
-                        result.raw_events,
-                        result.language,
-                    )
-                    .await;
-                }
-
-                let output = serde_json::json!({
-                    "session_id": result.session_id,
-                    "status": "stopped",
-                    "url": result.url,
-                    "total_events": result.total_events,
-                    "hint": "Session is now queryable. Use query_events, get_call_stack, etc."
-                });
-                Ok(CallToolResult::success(json_content(&output)))
-            }
-            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
-        }
+        crate::browser_probe_wire::browser_probe_stop_impl(self, params).await
     }
 
     #[tool(
@@ -3177,57 +3141,7 @@ further would be a Silent Lie."
         &self,
         params: Parameters<BrowserProbeDrainParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        if let Some(err) = self.toolset_guard("browser_probe_drain") {
-            return Ok(err);
-        }
-        let params = params.0;
-
-        let ctx = BrowserProbeContext {
-            live_browser_probes: &self.live_browser_probes,
-            active_session: &self.active_session,
-            factory: &self.browser_probe_factory,
-        };
-
-        match BrowserProbeService::drain(
-            &ctx,
-            chronos_services::browser_probe::BrowserProbeDrainInput {
-                session_id: params.session_id,
-                offset: params.offset,
-                limit: params.limit,
-            },
-        )
-        .await
-        {
-            Ok(result) => {
-                let events_json: Vec<serde_json::Value> = result
-                    .events
-                    .into_iter()
-                    .map(|e| {
-                        serde_json::json!({
-                            "event_id": e.event_id,
-                            "timestamp_ns": e.timestamp_ns,
-                            "thread_id": e.thread_id,
-                            "language": e.language,
-                            "kind": e.kind,
-                            "description": e.description,
-                        })
-                    })
-                    .collect();
-
-                let output = serde_json::json!({
-                    "session_id": result.session_id,
-                    "status": "running",
-                    "total_buffered": result.total_buffered,
-                    "returned": result.returned,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "events": events_json,
-                    "hint": "Browser probe is still running. Call browser_probe_drain again for more events, or browser_probe_stop to finalize."
-                });
-                Ok(CallToolResult::success(json_content(&output)))
-            }
-            Err(e) => Ok(CallToolResult::error(text_content(e.to_string()))),
-        }
+        crate::browser_probe_wire::browser_probe_drain_impl(self, params).await
     }
 
     #[tool(
@@ -8287,14 +8201,23 @@ mod cap_discovery_tests {
         );
     }
 
-    /// Pins the number the doc comment above asserts.
+    /// The set of handlers that call `toolset_guard` is a contract: it says
+    /// which tools narrow the profile and which only declare it.
     ///
     /// The prose is the part that rots: the "exactly four" claim survived one
     /// repair pass that was itself trying to fix a stale claim, and stayed
-    /// wrong because nobody counted. This test counts the call sites in this
-    /// file's own source and fails with the actual list when it drifts, so the
-    /// next added or removed `toolset_guard` call site is a red test rather
-    /// than a quietly false sentence.
+    /// wrong because nobody counted.
+    ///
+    /// The count has to be made over the code that actually RUNS, which after
+    /// R5.0 is no longer just this file — the browser group's guards live in
+    /// `crate::browser_probe_wire`. `include_str!("server.rs")` alone counted
+    /// the guard calls of a module that had moved, and the honest response to
+    /// that failure would have been to accept `2` and let the prose keep
+    /// claiming five. A guard that only sees part of the code it governs is a
+    /// guard that will lie the next time a group moves.
+    ///
+    /// `this.` and `self.` are both accepted so the check does not depend on
+    /// which receiver a module happens to bind.
     #[test]
     fn toolset_enforcing_handlers_are_exactly_five() {
         const EXPECTED: [&str; 5] = [
@@ -8305,12 +8228,24 @@ mod cap_discovery_tests {
             "browser_probe_drain",
         ];
 
-        let source = include_str!("server.rs");
-        let mut found: Vec<&str> = source
-            .lines()
-            .filter_map(|line| line.split("self.toolset_guard(\"").nth(1))
-            .filter_map(|rest| rest.split('"').next())
-            .collect();
+        let mut found: Vec<&str> = Vec::new();
+        // Every source file that can host a `#[tool]` handler. A new module
+        // that adds one must be added here, and `the_router_tool_count_...`
+        // style checks exist to make a miss loud.
+        for source in [
+            include_str!("server.rs"),
+            include_str!("browser_probe_wire.rs"),
+        ] {
+            for line in source.lines() {
+                for receiver in ["self.toolset_guard(\"", "this.toolset_guard(\""] {
+                    if let Some(rest) = line.split(receiver).nth(1) {
+                        if let Some(name) = rest.split('"').next() {
+                            found.push(name);
+                        }
+                    }
+                }
+            }
+        }
         found.sort_unstable();
 
         let mut expected: Vec<&str> = EXPECTED.to_vec();
@@ -8322,6 +8257,51 @@ mod cap_discovery_tests {
              doc comment on `is_tool_listed` and this list together, or the \
              prose starts describing handlers that do not exist"
         );
+    }
+
+    /// An extracted module renders tool output through the canonical helpers.
+    ///
+    /// This guard exists because R5.0 shipped the bug it prevents. Extracting
+    /// the browser group, `browser_probe_wire` declared its own
+    /// `json_content` — justified in a comment as "six lines each, not worth
+    /// the coupling" — and the copy used `value.to_string()` where the
+    /// original used `to_string_pretty(...).unwrap_or_default()`. Three tools
+    /// changed their on-the-wire JSON in a commit whose whole claim was that
+    /// no logic moved, and 113 unit tests plus the integration lane stayed
+    /// green, because none of them reads the shape of that output.
+    ///
+    /// The obvious companion check — "no module defines its own `json_content`
+    /// or `text_content`" — is **not** here, and its absence is deliberate.
+    /// It was written first and then measured: it cannot fail. Naming a
+    /// module-local `fn json_content` alongside
+    /// `use crate::server::json_content` is E0255, a compile error, so the
+    /// situation the check was meant to catch never reaches a test run. A
+    /// guard that cannot fail is decoration with an assertion in it, and
+    /// would have cost a false sense of coverage forever.
+    ///
+    /// What is left is the part the compiler genuinely does not cover: a
+    /// module may call `Content::text` itself, under any helper name, and it
+    /// will compile. That is the door the divergence came through. No-vacuity
+    /// was measured — a `render()` helper calling `Content::text(value
+    /// .to_string())` turns this red, and that is a file which compiles
+    /// cleanly and ships the wrong JSON.
+    #[test]
+    fn wire_content_helpers_have_exactly_one_implementation() {
+        let extracted: [(&str, &str); 1] = [(
+            "browser_probe_wire.rs",
+            include_str!("browser_probe_wire.rs"),
+        )];
+
+        for (name, source) in extracted {
+            assert!(
+                !source.contains("Content::text"),
+                "{name} calls `Content::text` directly. Tool output goes through \
+                 `server::{{json_content, text_content}}` so one place decides its \
+                 shape. A hand-rolled `Content::text` here is exactly how the \
+                 browser group shipped compact JSON where the server shipped \
+                 pretty JSON, and it compiles without a single warning."
+            );
+        }
     }
 
     #[tokio::test]

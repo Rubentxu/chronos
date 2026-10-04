@@ -3,6 +3,7 @@
 //! Implements the Model Context Protocol server that exposes Chronos
 //! debugging tools to AI assistants.
 
+pub mod browser_probe_wire;
 pub mod composition;
 pub mod concurrency_wire;
 pub mod cost_memory_wire;
