@@ -751,7 +751,52 @@ dentro de `mod tests`. Cero enforcement en el read path.
 > de D2. Pero significa que "1M eventos dentro de budget" es cierto **en el borde**, no más allá, y
 > que un lector que lo lea como "1M o más" se equivoca. Medido el 2026-10-04: los 42 agregados
 > completos del lane de p95 (§8) corrieron sobre una sesión de exactamente 1.000.000 y ninguno
-> tocó el techo, lo que confirma el borde por el lado bueno y deja el otro sin medir.
+> tocó el techo, lo que confirma el borde por el lado bueno.
+>
+> **MEDIDO el 2026-10-04: el lado malo, y no es lo que este artículo suponía.** Con una sesión de
+> **1.000.001** eventos, `summarize` **se detiene** — y se detiene de un modo que conviene escribir
+> con precisión, porque no es un descuido de corrección sino una decisión de contrato:
+>
+> ```
+> read-path budget exceeded: `summarize` stopped because the max_events was reached.
+> Read 1000001 events over 977 pages in 11.33s and stopped at next_seq=1000001;
+> resume from that cursor. The policy in force was max_events=1000000, timeout_secs=60.
+> ```
+>
+> Y la reanudación desde ese ancla responde `total_events: 0`, porque `next_seq=1000001` es el
+> último seq de la sesión: no queda nada que reanudar. El recorrido que se reanuda es
+> instantáneo (0,0 s), lo que confirma que la segunda llamada no recorrió nada.
+>
+> El techo se cobra **por página** (`charge_page` se llama tras plegar la página), así que dispara
+> en la página que cruza la línea. Aquí esa página es **la última**: 976 páginas completas más una
+> parcial cubren los 1.000.001. O sea que el recorrido **ya había leído la sesión entera** y el
+> techo descartó el agregado que tenía computed. Y el ancla queda en `next_seq=1000001`, el final
+> de la sesión, de modo que **reanudar devuelve un agregado vacío**.
+>
+> Esto es exactamente el margen que el propio `read_budget` declara como precio aceptado —*"an
+> operation may overshoot by at most one page"*— y aquí el rebose es **el log entero**. El margen
+> no es benigno: es un techo que en este caso destruye un resultado ya calculado en vez de acotar
+> trabajo. **No se corrige aquí, y el motivo es concreto:** el test
+> `d2_summarize_stops_at_its_deadline_instead_of_running_on` **pinea la parada** como contrato de
+> D2, y cambiarla es cambiar una decisión aceptada y probada, no cerrar un descuido. Queda
+> registrado para quien tenga esa autoridad, con la evidencia de arriba.
+>
+> **Lo que sí queda probado, y es la mitad que importa:** `parada + reanudación == 1.000.001`. La
+> aritmética reconstruye el total exacto, así que el techo **pierde eventos en ningún caso** — lo
+> que hace es negarse a devolverlos. Esa es la frontera del Silent Lie por el otro lado: no
+> inventa un número, retira uno correcto.
+>
+> **Un segundo hallazgo, de otra naturaleza y mucho más tonto.** El envelope de error con hechos
+> estructurados lleva **dos** bloques de contenido: la prosa primero y el JSON después. Es
+> deliberado —`wire_retention_facts.rs` lo pinea con `content[0]` = texto verbatim y
+> `content[1]` = JSON, y la prosa existe porque otros consumidores la leen— así que el primer
+> bloque **no** es un sitio fiable donde buscar el payload. El helper compartido de los lanes
+> tomaba `content.first()` y exigía que fuera JSON: funciona en todo éxito y **se rompe en toda
+> parada estructurada**, incluida la rama de parada de presupuesto que el propio lane de 1M
+> documenta y que nunca había ejercido. Se rompió el día que un lane chocó de verdad con el techo.
+> Leer el bloque equivocado no falla ruidosamente —la prosa no es JSON, así que el síntoma es un
+> error de parseo citando el mensaje legible, que parece un bug de producto y es un bug del
+> lector— y por eso queda escrito aquí y no solo en el commit.
 
 
 ### 9.4 La caracterización in-tree de 1M no ejercita el fallo de D3
