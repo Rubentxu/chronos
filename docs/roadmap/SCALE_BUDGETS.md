@@ -861,6 +861,22 @@ verde a 1M**; las de `poll` sí se describen como correctas.
 > arranque con la sesion valida frente a uno sin ella. Para dimensionar el **read path** lo que
 > cuenta es ese ~3 MB por agregado; los ~944 MB son el coste de tener la sesion resident, que es
 > otra pregunta y la que `DEBT-SCALE-MEM-01` acaba de recibir.
+>
+> **Y esa segunda pregunta ya tiene respuesta (R4.0, 2026-10-04).** La resident de arranque era
+> en buena parte **una copia duplicada**: `ReplayPlan` retenia todos los registros decodificados
+> mientras el backend se llenaba con una segunda copia de ellos. Medido con la misma sonda,
+> abriendo un log de 200.000 eventos ya sembrado:
+>
+> | | Coste de abrir | Por evento |
+> |---|---|---|
+> | Antes | 95.416 KB | 489 B |
+> | Despues | **32.824 KB** | **168 B** |
+>
+> Una reduccion del **65,6%**, replicada. A 1M de eventos son ~164 MB menos. El coste **sigue
+> escalando** con el tamano de la sesion — el backend en memoria es el modelo de
+> `InMemoryExecutionLog` — asi que la cifra no es un techo, pero ya no es el doble de lo que
+> tiene que ser. **No se fija threshold:** §0 prohibe una cifra que nadie pueda re-medir, y 168
+> B por evento en este host es tan poco un contrato como lo era 489.
 
 | Fuente | Fecha | Host | `summarize` a 1M | RSS |
 |---|---|---|---|---|

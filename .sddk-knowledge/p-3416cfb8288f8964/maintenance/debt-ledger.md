@@ -55,6 +55,12 @@ Candidate follow-up cycles:
 
 ## DEBT-SCALE-MEM-01 (2026-10-04): la sesion se materializa al ARROLLAR, no al leer
 
+> **SUPERADA POR LA SECCION DE CIERRE DE MAS ABAJO (R4.0).** Esta entrada y la siguiente se
+> conservan como historia: las tres pasaron por la misma entrada y cada una corrijo a la anterior.
+> Lo vigente es la seccion `DEBT-SCALE-MEM-01 — CERRADA (R4.0)` con la medicion antes/despues.
+> Se conserva sobre todo la **primera** version, que atribuyo los 949 MB al read path y era falsa:
+> es el ejemplo de por que la regla de verificar antes de actuar esta paid.
+
 **Esta si es deuda real, y es la unica que R3.1/R3.2 anaden. Se corrigio a si misma el mismo
 dia:** la primera version decia que "el camino de lectura carga la sesion en memoria — 949 MB
 para responder un agregado". **Eso era falso**, y lo desmentio una medicion por fases hecha horas
@@ -109,6 +115,47 @@ util es si la validacion puede dejar de retener entradas**: validar por rangos y
 o por tandas, de modo que el plan no tenga que vivir entero en memoria. Es un cambio local a
 `replay.rs`, con su propia no-vacuidad que comprobar (contiguedad, huecos, solapes y el
 `PayloadRangeMismatch` del control de gap retroactivo) — y es un bloque con valor propio.
+
+## DEBT-SCALE-MEM-01 — CERRADA (R4.0, 2026-10-04)
+
+**Medicion antes y despues, mismo host, misma sonda (`chronos-sandbox/examples/open_probe.rs`,
+200.000 eventos, apertura sobre un directorio ya poblado):**
+
+| | Coste de abrir | Por evento |
+|---|---|---|
+| Antes | 95.416 KB | **489 B** |
+| Despues | 32.824 KB | **168 B** |
+
+**Reduccion del 65,6%**, y replicada. A 1M de eventos son ~164 MB menos en el arranque, lo que
+situa al servidor por debajo de la cifra de ~344 MB que R3.2 atribuyo a la materializacion.
+
+**Lo que se hizo, en dos commits.** `6cd757d7` (fix): `build_and_apply_replay_listing` valida,
+aplica y descarta un segmento cada vez, y devuelve el listado aplicado para que el llamante no
+necesite un segundo recorrido — un `build_replay_plan` extra ahi habria reconstruido el plan que
+la funcion existe para no construir, y habria pagado la memoria justo al intentar ahorrarla.
+`replay_into_inner` y `populate_with_replay` usan esa forma. `9f46b06f` (test): el guard que
+obliga a las dos rutas de validacion a coincidir.
+
+**Lo que NO cambio, y es la condicion de aceptacion.** La disciplina de backend nuevo e
+intercambio solo en exito se conserva intacta: un fallo sigue sin poder publicar un log medio
+reconstruido, que es lo que las dos rutas lenient anteriores rompian. `build_replay_plan` y
+`apply_replay_plan` siguen siendo API publica para "validar una vez, aplicar despues"; solo
+salen de la ruta de arranque, que es la que paga el pico.
+
+**EL GUARD ENCONTRO UN BUG EL DIA QUE SE ESCRIBIO, y era mio.** El primer
+`PayloadRangeMismatch` de la ruta nueva reportaba `header_start: header.start_seq` donde la
+canonica usa `cursor` — el punto exacto donde la secuencia se desvia. El mensaje decia que el
+segmento "cubre 3..=5 pero su cabecera declara 0..=9" cuando el desacuerdo real estaba en el 10.
+**Las dos rutas rechazaban el log, luego ninguna suite existente lo noto:** solo el guard, que
+compara las dos respuestas, vio que no decian lo mismo. Es el segundo guard de este bloque que
+paga su coste el dia que se escribe.
+
+**Lo que queda, y es menor que la deuda original.** El arranque sigue materializando la sesion
+(~168 B por evento), porque el backend en memoria es el modelo de `InMemoryExecutionLog`. Bajar
+de ahi es un cambio de arquitectura de la recuperacion, no de memoria, y no se abre aqui. **No
+se fija ningun threshold:** `SCALE_BUDGETS` §0 prohibe una cifra que nadie pueda re-medir, y
+168 B/evento en este host es tan poco un contrato como lo eran 489.
+
 
 **Por que la deuda sigue abierta siendo que el read path esta bien.** El coste de arranque escala
 con el tamano de la sesion y ningun contrato lo acota: abrir un servidor contra un log grande
