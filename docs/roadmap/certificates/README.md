@@ -39,11 +39,11 @@ G0 chain (2026-09-21) + R6.0 (2026-10-04).
 | **UAT-M6-02** | base | [uat-m6-02-base.md](uat-m6-02-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m6_02` o la semántica de retry/idempotencia de `otlp::ingest`; al añadir `cross_service_wire`. |
 | **UAT-M7-01** | base | [uat-m7-01-base.md](uat-m7-01-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m7_01`, `UatResult`/`UatResultWire` o `wire_version`; al cerrar una limitación de `M7-CLOSE.md`. |
 | **UAT-M7-02** | base | [uat-m7-02-base.md](uat-m7-02-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m7_02`, `UatOutcome::UnknownUnsupported` o su contador de regiones; al cambiar `wire_version`. |
-
+| **REC-C7 (recert R6.1)** | base | [REC-C7-base-r6-recert.md](REC-C7-base-r6-recert.md) | `5994843e` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T07:22Z | Al cambiar los contratos G0.1/G0.2/G0.4 o su wiring; al entrar o salir un tool de `tools/list`; al cambiar la toolchain local o la de CI. |
 ## Estado agregado (G0 chain)
 
-**Total certificados:** 10
-**`passed`:** 9 (REC-C7 con CERT-0..2 + UAT-G0-01 + UAT-G0-02 + UAT-G0-03 + UAT-G0-05 + UAT-M6-01 + UAT-M6-02 + UAT-M7-01 + UAT-M7-02)
+**Total certificados:** 11
+**`passed`:** 10 (REC-C7 con CERT-0..2, **su recertificacion R6.1 sobre `5994843e`**, UAT-G0-01/02/03/05, UAT-M6-01/02, UAT-M7-01/02 + UAT-G0-01 + UAT-G0-02 + UAT-G0-03 + UAT-G0-05 + UAT-M6-01 + UAT-M6-02 + UAT-M7-01 + UAT-M7-02)
 **`not_run` per directiva:** 1 (UAT-G0-04 privileged)
 **`failed`:** 0
 **`blocked`:** 0

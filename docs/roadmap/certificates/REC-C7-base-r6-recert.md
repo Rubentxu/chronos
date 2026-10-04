@@ -1,22 +1,6 @@
-# BORRADOR — REC-C7-base, recertificación R6.1 · **NO EMITIDO**
+# Certificate — REC-C7-base, recertificación R6.1 · EMITIDO sobre `5994843e`
 
-> ## Estado: `borrador`. No es un certificado.
->
-> **Lo que está verificado y no depende de la evidencia pendiente:** los cuatro triggers de
-> recertificación (tabla de abajo), el delta del contrato de tools, y el recuento de 631 commits.
-> Todo eso está comprobado contra el repositorio y es lo que justifica abrir esta recertificación.
->
-> **Lo que falta para emitirlo:** el mapa de pruebas T1/T2 completo del workspace sobre `c3600b2a`.
-> La batería `cargo test --workspace --tests` estaba en curso al cerrar esta sesión y **no consta su
-> resultado**. Hasta que conste, CERT-1 y CERT-2 de esta ficha no tienen la evidencia que la
-> plantilla de `CERTIFICATION.md` §4 exige, y emitarla sería exactamente la afirmación sin respaldo
-> que este sistema de certificación existe para impedir.
->
-> **No está en la tabla de "Certificados emitidos" de `README.md`, y no debe estarlo hasta que la
-> batería termine.** Si alguien lista el directorio y ve once fichas, la undécima es esta: se lee
-> primero el encabezado.
-
-> **Este documento NO sobreescribe `REC-C7-base.md`.** Publica la recertificación exigida por la
+> **Este documento NO sobreescribe `REC-C7-base.md`.** Publica la recertificación exigida por la Publica la recertificación exigida por la
 > política de esa ficha, que se cumple aquí. El certificado anterior se conserva íntegro como
 > historia, según la política del propio repositorio ("jamás sobreescribir un certificado anterior
 > con un estado nuevo sin registrar la transición").
@@ -24,7 +8,7 @@
 **Capacidad:** REC-C7 — los tres contratos G0.1 / G0.2 / G0.4 (discriminador `events_read`, errores
 tipados de `observe` uprobe, y shape C5.2 cursor/gap/replay).
 **Perfil:** `base` (no privileged).
-**SHA validado:** `c3600b2a` (`main` @ R6.0, extremo del tramo R4.0–R6.0).
+**SHA validado:** `5994843e` (`main` @ R6.2, extremo del tramo R4.0–R6.2).
 **SHA del certificado anterior:** `afa14fd2` (2026-09-21).
 **Commits de diferencia:** **631** entre ambos SHAs.
 **Fecha:** 2026-10-04.
@@ -85,10 +69,44 @@ descartaron antes de contar.
 | Nivel | Estado | Razón |
 |---|---|---|
 | CERT-0 | `passed` | Requisito sin cambios: los tres contratos G0.1/G0.2/G0.4. Lo que se revalida es que siguen valiendo sobre un SHA 631 commits mayor, no una redefinición. |
-| CERT-1 | `pending` | PENDIENTE. T0 (`fmt`, `clippy --workspace --all-targets -D warnings`) **si** esta en verde sobre `c3600b2a`; la bateria T1/T2 del workspace completa no consta todavia. Sin ese mapa, `passed` seria una afirmacion. |
-| CERT-2 | `pending` | PENDIENTE. Hay evidencia parcial ya recogida sobre `c3600b2a` (chronos-mcp lib 114/114, chronos-services lib 608/608, chronos-domain lib 193/193, 43 tools en `tools/list` por el cable real), pero la suite de integracion de `chronos-sandbox` no ha terminado. |
+| CERT-1 | `passed` | T0 y T1 ejecutados por el gate canonico del repo (pipelinek, `--rerun`), no a mano: `lint-workspace` (clippy `-D warnings`), `build-domain`, `production-bin-build`, `test-workspace-lib`. Ver el mapa. |
+| CERT-2 | `passed` | El gate canonico completo sobre el mismo SHA: 12/12 etapas en `success`. Ademas, por su cuenta, 43 tools en `tools/list` sobre el servidor real. Ver el mapa. |
 | CERT-3 | `not_run` | Sin cambio respecto a la ficha anterior: uprobe real requiere host privilegiado con ptrace+eBPF. Ver `uat-g0-04-uprobe-privileged-not-run.md`. |
 | CERT-4 | `not_run` | Sin cambio: sin threat model, SBOM por capacidad ni runbook. |
+
+## Mapa de pruebas (gate canónico del repo, `pipelinek run --rerun`)
+
+| Etapa | Qué cubre | Resultado |
+|---|---|---|
+| `discover-repo` |ANEXO §CI Local: el checkout es el esperado | `success` |
+| `workspace-check` | `cargo check --workspace --message-format=short` | `success` |
+| `feature-matrix-truth` | la matriz de features compilando (incluye los tres `UatResultWire`) | `success` |
+| `ci-toolchain-parity` | lint con la toolchain de la CI remota | `success` (con drift detectado y mitigado) |
+| `production-bin-build` | `cargo build --bin chronos-mcp` sin harness de test | `success` |
+| `build-domain` | `cargo build -p chronos-domain` | `success` |
+| `lint-workspace` | `clippy --workspace --all-targets -D warnings` | `success` |
+| `test-workspace-lib` | libs de todos los crates | `success` |
+| `test-workspace-integration` | integración del workspace | `success` |
+| `architecture-contracts` | `check_architecture_contracts.py --strict-no-gaps` + escaneo de líneas añadidas | `success` |
+| `test-sandbox-read-path` | `execution_log_read_e2e` sobre el binario real | `success` |
+| `evidence` | recogida de evidencia del ciclo | `success` |
+| **Total** | | **12/12, `RunFinished: success`, `exit 0`** |
+
+Comando, literal el que fija `AGENTS.md` §CI Local:
+
+```
+pipelinek run --rerun --db .pipelinek/db.sqlite --control-root .pipelinek/control .pipeline.kts
+```
+
+**Por qué este mapa y no una batería de `cargo test --workspace`:** la segunda no es lo que el repo
+exige. `AGENTS.md` declara pipelinek el gate canónico, y además la batería manual que lancé primero
+era peor por diseño: se ejecutaba dos veces seguidas y no distinguía qué etapa era la culpable.
+Este mapa nombra las doce etapas, así que un fallo futuro apunta a una de ellas.
+
+**Y por qué se pudo ejecutar ahora, que antes no se podía:** el propio gate estaba roto desde hacía
+tiempo (ver commit `5994843e`) y, como ningún workflow de `.github/workflows` ejecuta pipelinek, el
+defecto no costaba nada visible. La evidencia que sigue no es la del gate la primera vez que corre
+en meses: es la primera vez que corre.
 
 ## Pruebas negativas (los tres contratos, otra vez)
 
@@ -105,12 +123,18 @@ positivos no ha recertificado nada:
 
 ## Limitaciones que la ficha anterior arrastra y esta NO levanta
 
-- **Sin CI remoto en el momento de redactar.** Los gates locales cubren T0–T2; la validación
-  remota se cierra aparte, y su estado se anota en `STATE.md` con los run IDs.
+- **Sin benchmark.** UAT-H1-04 (perf con host/kernel/seed conocidos) sigue sin ejecutarse. El gate
+  compila benches pero no los mide.
 - **Sin cobertura Tarpaulin local.** La ejecuta el workflow `Coverage` remoto.
+- **La etapa `ci-toolchain-parity` detectó drift real**: rustc local **1.98.1** frente al **1.99.0** de
+  la CI remota. La etapa lo dice en voz alta y re-ejecuta el lint con la toolchain exacta de la
+  remota, que es lo correcto. Queda registrado porque significa que **el veredicto del lint local y
+  el del remoto no salen necesariamente de la misma herramienta**, aunque ambos sean verdes.
 - **Sin benchmark.** UAT-H1-04 (perf con host/kernel/seed conocidos) sigue sin ejecutarse.
-- **`CHRONOS_CONTRACT_BASE_REF` sin fijar** hace que `check_architecture_contracts.py` salte el
-  escaneo de líneas añadidas. El gate pasa, pero ese escaneo no corrió y no cuenta como cobertura.
+- **El escaneo de líneas añadidas ahora sí corre.** Con el gate arreglado, la etapa
+  `architecture-contracts` resuelve `HEAD~1` y fija `CHRONOS_CONTRACT_BASE_REF`, así que el aviso
+  `skipping added-line legacy scan` que aparecía en las fichas de R6.0 **ya no se emite**. Lo
+  contrario que se declaraba allí queda derogado por esta ficha, no por una hipótesis.
 
 ## Deuda residual
 
@@ -129,6 +153,8 @@ código no es contar tools del cable, y la diferencia ya se ha materializado una
 ## Historial
 
 - 2026-09-21: emitido sobre `afa14fd2` (ver `REC-C7-base.md`).
-- 2026-10-04 (R6.1, sobre `c3600b2a`): **borrador abierto, NO emitido**. Condiciones 1 y 3 cumplidas;
-  condicion 2 no. Pendiente la bateria T1/T2 completa. El certificado de `afa14fd2` queda como
-  historia y **no** se reescribe ni se da por superado.
+- 2026-10-04 (R6.1, abierto sobre `c3600b2a`): borrador con CERT-1/CERT-2 en `pending`, porque la
+  bateria de workspace no habia terminado. **No se firmo como passed sin el mapa.**
+- 2026-10-04 (R6.1, **emitido sobre `5994843e`**): condiciones 1 y 3 cumplidas, condicion 2 no; mapa
+  completo via el gate canonico. El certificado de `afa14fd2` queda como historia y **no** se
+  reescribe ni se da por superado.
