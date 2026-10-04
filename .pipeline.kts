@@ -83,8 +83,21 @@
 //   1. NO resuelve el cwd del script: las rutas dentro de sh(...) son LITERALES.
 //      Hay que hardcodear la ruta absoluta del checkout en REPO.
 //   2. sh("cmd 2>&1 | tail -N") retorna exit code del pipe (= 0 de tail).
-//      Workaround: usar `${PIPESTATUS[0]}` y `test` para preservar el exit code.
+//      Workaround correcto (R6.2): redirigir a fichero y usar el codigo de
+//      salida del comando, no el del pipe. Ver el bloque repetido mas abajo.
+//      Lo que este fichero hacia antes, `${PIPESTATUS[0]}`, NO funciona aqui:
+//      pipelinek escribe script.sh SIN shebang, asi que se ejecuta con /bin/sh
+//      (dash en Fedora) y PIPESTATUS es una variable de bash. El shell recibia
+//      la cadena literal y `test` fallaba con exit 1. Medido el 2026-10-04:
+//      el gate llevaba tiempo sin compilar y por eso nadie llego a verlo.
 //   3. La primera stage debe ser discover-repo (contrato AGENTS.md §CI Local).
+//   4. OJO con los raw strings (sh("""...""")). Ahi `\$` NO escapa el dollar:
+//      Kotlin los procesa igual, asi que `$CI_VER` se resuelve contra Kotlin
+//      ("Unresolved reference") y hay que escribir `${'$'}CI_VER`. El mismo
+//      descuido en un string normal NO ocurre: ahi `\$` si escapa.
+//   5. En shell, la ASIGNACION no lleva dollar (`GATE_LOG=...`, `GATE_RC=$?`);
+//      solo las LECTURAS lo llevan (`> "$GATE_LOG"`, `test $GATE_RC -eq 0`).
+//      Escribir `$GATE_LOG=...` hace que sh intente ejecutar `$GATE_LOG`.
 
 val REPO = "/var/mnt/DiscoChino2-fast/Proyectos/rust/chronos"
 
@@ -97,7 +110,7 @@ pipeline {
 
         stage("workspace-check") {
             // cargo check --workspace: acota tiempo evitando compilar deps pesadas.
-            sh("cd $REPO && cargo check --workspace --message-format=short 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo check --workspace --message-format=short > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -20 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         // ---------------------------------------------------------------
@@ -125,7 +138,7 @@ pipeline {
         // un `check`, no un `build`: no compila deps de release ni enlaza.
         // -----------------------------------------------------------------
         stage("feature-matrix-truth") {
-            sh("cd $REPO && cargo check --workspace --all-targets --all-features 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo check --workspace --all-targets --all-features > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -20 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         // ---------------------------------------------------------------
@@ -169,7 +182,7 @@ pipeline {
         // más. Se declara sin medir en vez de inventar una cifra.
         // -----------------------------------------------------------------
         stage("ci-toolchain-parity") {
-            sh("""cd $REPO && CI_VER="1.99.0" && LOCAL_VER=$(rustc --version | cut -d' ' -f2) && echo "clippy local: $LOCAL_VER | CI (último run observado): $CI_VER" && if [ "$LOCAL_VER" = "$CI_VER" ]; then echo 'PARIDAD OK: el gate local lint corre con la misma toolchain que la CI remota'; else echo "DRIFT DETECTADO: local=$LOCAL_VER != CI=$CI_VER. Un lint nuevo puede pasar aqui y rechazar en remoto. Re-ejecutando el lint con la toolchain exacta de la CI."; if rustup toolchain list | grep -q "^$CI_VER-"; then CARGO_TARGET_DIR=/tmp/chronos-parity-target cargo +$CI_VER clippy --workspace --all-targets -- -D warnings 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0; else echo "PARIDAD NO VERIFICADA: la toolchain $CI_VER no está instalada en este host. Instálala con 'rustup toolchain install $CI_VER --component clippy' y repite el gate. Esta stage no declara PASS sin verificar."; exit 1; fi; fi""")
+            sh("""cd $REPO && GATE_LOG="/tmp/chronos-gate-${'$'}${'$'}.log" && CI_VER="1.99.0" && LOCAL_VER=${'$'}(rustc --version | cut -d' ' -f2) && echo "clippy local: ${'$'}LOCAL_VER | CI (último run observado): ${'$'}CI_VER" && if [ "${'$'}LOCAL_VER" = "${'$'}CI_VER" ]; then echo 'PARIDAD OK: el gate local lint corre con la misma toolchain que la CI remota'; else echo "DRIFT DETECTADO: local=${'$'}LOCAL_VER != CI=${'$'}CI_VER. Un lint nuevo puede pasar aqui y rechazar en remoto. Re-ejecutando el lint con la toolchain exacta de la CI."; if rustup toolchain list | grep -q "^${'$'}CI_VER-"; then CARGO_TARGET_DIR=/tmp/chronos-parity-target cargo +${'$'}CI_VER clippy --workspace --all-targets -- -D warnings > "${'$'}GATE_LOG" 2>&1; GATE_RC=${'$'}?; tail -30 "${'$'}GATE_LOG"; test ${'$'}GATE_RC -eq 0; else echo "PARIDAD NO VERIFICADA: la toolchain ${'$'}CI_VER no está instalada en este host. Instálala con 'rustup toolchain install ${'$'}CI_VER --component clippy' y repite el gate. Esta stage no declara PASS sin verificar."; exit 1; fi; fi""")
         }
 
         stage("production-bin-build") {
@@ -202,12 +215,12 @@ pipeline {
             //
             // Coste: SIN MEDIR. No se inventa una cifra.
             // -----------------------------------------------------------------
-            sh("""cd $REPO && echo "== build de produccion (sin harness de test) ==" && cargo build --bin chronos-mcp 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0""")
+            sh("""cd $REPO && GATE_LOG="/tmp/chronos-gate-${'$'}${'$'}.log" && echo "== build de produccion (sin harness de test) ==" && cargo build --bin chronos-mcp > "${'$'}GATE_LOG" 2>&1; GATE_RC=${'$'}?; tail -20 "${'$'}GATE_LOG"; test ${'$'}GATE_RC -eq 0""")
         }
 
         stage("build-domain") {
             // Compilar el crate domain (más pequeño, no requiere eBPF ni Go).
-            sh("cd $REPO && cargo build -p chronos-domain 2>&1 | tail -10; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo build -p chronos-domain > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -10 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         // ---------------------------------------------------------------
@@ -224,7 +237,7 @@ pipeline {
         // ---------------------------------------------------------------
         stage("lint-workspace") {
             echo("Lint del workspace: cargo clippy --workspace --all-targets -- -D warnings (paridad con ci.yml)")
-            sh("cd $REPO && cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo clippy --workspace --all-targets -- -D warnings > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -30 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         // ---------------------------------------------------------------
@@ -241,7 +254,7 @@ pipeline {
         // ---------------------------------------------------------------
         stage("test-workspace-lib") {
             echo("Tests unitarios del workspace: cargo test --workspace --lib (1421 tests medidos el 2026-10-01)")
-            sh("cd $REPO && cargo test --workspace --lib -- --test-threads=1 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo test --workspace --lib -- --test-threads=1 > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -30 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         // ---------------------------------------------------------------
@@ -286,8 +299,8 @@ pipeline {
         // ---------------------------------------------------------------
         stage("test-workspace-integration") {
             sh("cd $REPO && if [ \"\${CHRONOS_FULL_GATE:-0}\" = \"1\" ]; then echo 'TIER 2 ACTIVADO (CHRONOS_FULL_GATE=1): ejecutando la matriz completa de integración'; else echo 'TIER 2 NO EJECUTADO: CHRONOS_FULL_GATE != 1. Este run cubre TIER 1 (lint + 1421 tests unitarios + contratos de arquitectura + E2E read-path). La matriz completa --workspace --tests corre íntegra en ci.yml; para replicarla en local usa CHRONOS_FULL_GATE=1'; fi")
-            sh("cd $REPO && if [ \"\${CHRONOS_FULL_GATE:-0}\" = \"1\" ]; then python3 scripts/derive_test_buckets.py --check-inventory --out-dir .sddk-state/test-buckets 2>&1 | tail -5; test \${PIPESTATUS[0]} -eq 0; else echo 'skip de sentinel: no requerido en TIER 1'; fi")
-            sh("cd $REPO && if [ \"\${CHRONOS_FULL_GATE:-0}\" = \"1\" ]; then SKIP_ARGS=\$(awk '{printf \" --skip %s\", \$1}' .sddk-state/test-buckets/cargo-skip.txt) && echo \"Skip args: \$SKIP_ARGS\" && cargo test --workspace --tests --exclude chronos-e2e -- --test-threads=1 \$SKIP_ARGS 2>&1 | tail -30; test \${PIPESTATUS[0]} -eq 0; else echo 'matriz de integración omitida en TIER 1 por diseño; no es un PASS de integración'; fi")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && if [ \"\${CHRONOS_FULL_GATE:-0}\" = \"1\" ]; then python3 scripts/derive_test_buckets.py --check-inventory --out-dir .sddk-state/test-buckets > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -5 \"\$GATE_LOG\"; test \$GATE_RC -eq 0; else echo 'skip de sentinel: no requerido en TIER 1'; fi")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && if [ \"\${CHRONOS_FULL_GATE:-0}\" = \"1\" ]; then SKIP_ARGS=\$(awk '{printf \" --skip %s\", \$1}' .sddk-state/test-buckets/cargo-skip.txt) && echo \"Skip args: \$SKIP_ARGS\" && cargo test --workspace --tests --exclude chronos-e2e -- --test-threads=1 \$SKIP_ARGS > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -30 \"\$GATE_LOG\"; test \$GATE_RC -eq 0; else echo 'matriz de integración omitida en TIER 1 por diseño; no es un PASS de integración'; fi")
         }
 
         // ---------------------------------------------------------------
@@ -318,7 +331,7 @@ pipeline {
         // ---------------------------------------------------------------
         stage("architecture-contracts") {
             echo("Contratos de arquitectura: check_architecture_contracts.py --strict-no-gaps (base=HEAD~1)")
-            sh("cd $REPO && if git rev-parse --verify -q HEAD~1 >/dev/null; then CHRONOS_CONTRACT_BASE_REF=HEAD~1 python3 scripts/check_architecture_contracts.py --strict-no-gaps 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0; else echo 'HEAD~1 no resuelve: se omite el escaneo de legacy y el script lo declara'; python3 scripts/check_architecture_contracts.py --strict-no-gaps 2>&1 | tail -20; test \${PIPESTATUS[0]} -eq 0; fi")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && if git rev-parse --verify -q HEAD~1 >/dev/null; then CHRONOS_CONTRACT_BASE_REF=HEAD~1 python3 scripts/check_architecture_contracts.py --strict-no-gaps > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -20 \"\$GATE_LOG\"; test \$GATE_RC -eq 0; else echo 'HEAD~1 no resuelve: se omite el escaneo de legacy y el script lo declara'; python3 scripts/check_architecture_contracts.py --strict-no-gaps > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -20 \"\$GATE_LOG\"; test \$GATE_RC -eq 0; fi")
         }
 
         // ---------------------------------------------------------------
@@ -339,8 +352,8 @@ pipeline {
         // que se corrigió en .github/workflows/sandbox-smoke.yml (da93f6cf).
         // ---------------------------------------------------------------
         stage("test-sandbox-read-path") {
-            sh("cd $REPO && cargo build --bin chronos-mcp 2>&1 | tail -10; test \${PIPESTATUS[0]} -eq 0")
-            sh("cd $REPO && cargo test -p chronos-sandbox --test execution_log_read_e2e -- --test-threads=1 2>&1 | tail -25; test \${PIPESTATUS[0]} -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo build --bin chronos-mcp > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -10 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
+            sh("cd $REPO && GATE_LOG=\"/tmp/chronos-gate-\$\$.log\" && cargo test -p chronos-sandbox --test execution_log_read_e2e -- --test-threads=1 > \"\$GATE_LOG\" 2>&1; GATE_RC=$?; tail -25 \"\$GATE_LOG\"; test \$GATE_RC -eq 0")
         }
 
         stage("evidence") {
