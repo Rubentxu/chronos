@@ -111,7 +111,7 @@ no `SKIP_PRE_PUSH_GATE` was used. The second `sddk release apply` converged with
 | implementation-receipt | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/implementation-receipt.json` | `59556122eeb7e6ddd0b5d0dcca9f2593797ca5c6066918493b5e68efbd56d302` |
 | verification-report | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/verification-report.json` | `606854c47edbc8eed436c2cb074d899c7c8c19ec4e62df0e8e92d7bf9cee7920` |
 | verify-findings | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/verify-findings.json` | `c5ad0b4575b14a1bb5174b1ae00321a73d30b8ea7dea04f0a30c2aa299e7b7bd` |
-| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/release-receipt.md` | `bd43d639e58256fce281c708322d492d74393768e58ce0811cb07171913d9689` |
+| release-receipt | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/release-receipt.md` | `13ea4b12be4a3d8fc274c534d624224207879d5dd85f9f4f551fba74b389121a` |
 | merge-receipt | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/merge-receipt.md` | `942a208404d44a8f9018def3345fcd190e048e5867d7c5797e70883c16f85daf` |
 | release-report | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/release-report.md` | `cd77d917a9c194ad1785283059153bc45a3dc0cf59101eb189c74a0b562202f8` |
-| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/apply-checkpoint.json` | `e7293dde21b05157d05282403c5f9eb5808316931f2b686a742f2ee07d08b98d` |
+| apply-checkpoint | `cycle-artifacts/p-3416cfb8288f8964/release-v0-9-0/apply-checkpoint.json` | `ac118bac27e0f48f02c9a2776cfe382637dc19ca7fb1d3673ed1885689a01d5e` |

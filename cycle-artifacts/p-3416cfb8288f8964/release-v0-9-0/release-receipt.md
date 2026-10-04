@@ -1,11 +1,17 @@
 # release-receipt — v0.9.0
 
-- cycle: `p-3416cfb8288f8964/release-v0-9-0`
-- path: B-direct
-- tag: `v0.9.0` (annotated)
-- tag object: `9debf57174ad31ef20f17b6ac71e89c084322bbd`
-- peels to: `aac0965909935cfa0294fd3fcf389ea33a371f6a`
-- same SHA as verified `main`: yes
+| Field | Value |
+|---|---|
+| Cycle | `release-v0-9-0` |
+| Path | B-direct |
+| Branch | `main` |
+| Date | 2026-10-04 |
+| Base SHA | `98c4cd2341058872102f458655791ec53f21bd8c` |
+| Head SHA | `aac0965909935cfa0294fd3fcf389ea33a371f6a` |
+| Remote tag | `v0.9.0` |
+| Remote tag object | `9debf57174ad31ef20f17b6ac71e89c084322bbd` |
+| Remote tag_peel | `aac0965909935cfa0294fd3fcf389ea33a371f6a` |
+| Peel match | `true` |
 
 ## Remote postcondition
 
