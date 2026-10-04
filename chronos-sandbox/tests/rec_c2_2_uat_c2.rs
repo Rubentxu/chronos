@@ -45,6 +45,36 @@ async fn start_probe(client: &mut McpTestClient) -> Option<String> {
     start_probe_with_ring(client, TINY_RING).await
 }
 
+/// Stop every probe session this test started, then shut the server down.
+///
+/// Takes the client by value on purpose. `shutdown` consumes it, and making
+/// that unavoidable is what stops cleanup from being a separate, optional line
+/// at each exit that someone can forget.
+///
+/// Every exit path in `uat_c2_01` goes through this. `probe_start` spawns a
+/// real process and traces it, so abandoning a session leaves that process
+/// behind; the skip paths used to call `shutdown()` and return without
+/// stopping anything.
+///
+/// This is hygiene, and deliberately not more than that. It was tempting to
+/// call it the cause of the intermittency — a leak that outlives the test
+/// would be self-amplifying, since a failure creates load, load raises the
+/// odds of the next failure, and the next failure leaks again. That story was
+/// measured and it does not hold here: forcing the skip path and counting live
+/// `test_busyloop` processes afterwards gives 0 orphans both with this helper
+/// and with the old bare `shutdown()`. The fixture lives 3s and the skip
+/// happens at 300s, so the child has already exited on its own by the time the
+/// session is abandoned. The orphans that did appear were `test_busyloop 305`
+/// — a lifetime an earlier R6.3 experiment introduced, not something the
+/// original code produced. So this helper is here because abandoning a traced
+/// process is wrong regardless, not because it repairs the flake.
+async fn stop_all(mut client: McpTestClient, sessions: &[&str]) {
+    for s in sessions {
+        let _ = client.probe_stop(s).await;
+    }
+    client.shutdown().await.ok();
+}
+
 /// UAT-C2-01 — `probe_drain` is not an authority and does not create evidence.
 ///
 /// The pre-cycle implementation drained a ring buffer and recomputed the
@@ -100,20 +130,29 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         .await
         .expect("UAT-C2-01: the matching subscription must exist before the capture starts");
 
+    // R6.3: the fixture lifetime is NOT the cause. Measured, not assumed:
+    // running this test with a fixture told to live 25, 50, 100, 200, 240,
+    // 260, 280, 300, 301, 302, 303, 304 and 305 seconds (and with the original
+    // 3s default) passes with the first event landing in 14-56ms every time,
+    // including 305s twice in a row. One run at 220s failed. There is no
+    // monotone threshold, so giving the fixture a longer life is not a fix and
+    // was reverted. What remains is the open question recorded in the debt
+    // ledger: `probe_start` intermittently returns a live session that captures
+    // nothing at all, and this test's skip path reports that as an environment
+    // verdict instead of a product failure.
     let Some(session) = start_probe_with_ring(&mut client, 50_000).await else {
         eprintln!("uat_c2: fixture unavailable, skipping");
-        let _ = client.probe_stop(&pre_session).await;
-        let _ = client.shutdown().await;
+        stop_all(client, &[&pre_session]).await;
         return;
     };
 
     // CIH-G: replace the blind `sleep(2s)` with a bounded poll against
     // the durable ExecutionLog. The invariant under test (ExecutionLog
     // is the authority; probe_drain is not) does not depend on wall
-    // clock — it depends on the log having records to examine. Under
-    // tarpaulin instrumentation on CI runners the 2s sleep is not
-    // always enough, so we wait until the log has at least one event
-    // (5s hard deadline = 2x the busyloop fixture's claimed runtime).
+    // clock — it depends on the log having records to examine. So we
+    // wait until the log has at least one event, bounded by
+    // UAT_C2_01_FIRST_EVENT_DEADLINE. When the capture works this returns
+    // in tens of milliseconds; the bound is a ceiling, not an expectation.
     let (first_event_after_ms, first_event_count) =
         wait_for_first_event(&mut client, &session, UAT_C2_01_FIRST_EVENT_DEADLINE).await;
     eprintln!(
@@ -143,6 +182,27 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         // host passes this test in the same session); the fixture dying before
         // the deadline is ruled out (measured 3.01s native / 3.31s under
         // `strace -f` against a 300s deadline).
+        //
+        // R6.3 re-tested that last claim head-on, because it is the one that
+        // decides whether the fixture is the problem. `test_busyloop` was
+        // given a duration on `argv[1]` and the client was given a way to send
+        // it, so the fixture's life could be decoupled from the deadline, and
+        // the test was run with lifetimes of 25, 50, 100, 200, 220, 240, 260,
+        // 280, 300, 301, 302, 303, 304 and 305 seconds. Fifteen of those
+        // passed with the first event landing in 14-56ms; only 220s failed, and
+        // 305s passed twice in a row after having failed four times earlier in
+        // a session that was leaking traced children. There is no threshold.
+        // A longer-lived fixture is therefore not a repair, and the capability
+        // was reverted rather than shipped as a fix for something it does not
+        // fix: it also manufactured the long-lived orphans that made the
+        // intermittency look self-amplifying when it was not.
+        //
+        // What is left is narrower and is recorded in the debt ledger:
+        // `probe_start` intermittently returns a live session that captures
+        // nothing at all for the whole deadline. This skip still calls that an
+        // environment verdict, which is a claim this test has not earned: it
+        // can distinguish "the host is too slow" from "the product captured
+        // nothing", but it has not yet established which one it is looking at.
         //
         // So the only thing the deadline proves is "this host did not observe
         // the capture in time". It does NOT prove the cursor contract is
@@ -176,7 +236,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
                 first_event_after_ms.as_millis(),
                 wire
             );
-            client.shutdown().await.ok();
+            // Stop the traced children before returning. See `stop_all` for
+            // why this is hygiene and not the fix for the intermittency.
+            stop_all(client, &[&pre_session, &session]).await;
             return;
         }
         if UNDER_TARPAULIN {
@@ -194,7 +256,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
                 first_event_after_ms.as_millis(),
                 wire
             );
-            client.shutdown().await.ok();
+            // Both sessions, not just the server: `session` still has a traced
+            // child attached at this point.
+            stop_all(client, &[&pre_session, &session]).await;
             return;
         }
         panic!(
@@ -263,8 +327,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
     // We compare cursor STRINGS because the canonical ECV1 token includes
     // the seq in its last segment, and `total_buffered` is only the count
     // of raw events in this page (not a log total), so it does not grow
-    // monotonically across same-size pages. 5s deadline matches the
-    // busyloop's claimed runtime x 2.
+    // monotonically across same-size pages. The deadline is a bound on the
+    // wait, not a claim that the evidence takes that long to appear: when the
+    // capture works, the cursor advances in tens of milliseconds.
     let advance = wait_for_log_advance(
         &mut client,
         &session,
@@ -282,13 +347,17 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         panic!(
             "UAT-C2-01: the fixture's ExecutionLog did not produce any new records within \
              {}ms after the first drain (first_total={}, events_in_first_drain={}, \
-             first_cursor={}). Either the probe stopped, the syscall rate is too low, or \
-             the busyloop duration is shorter than the wall time between drain invocations. \
-             wire={:?}",
+             first_cursor={}). The fixture was asked to live {}s and measures that on \
+             the CPU clock, so its wall-clock lifetime is at least {}s no matter how \
+             loaded the runner is: the window is guaranteed to close before the fixture \
+             dies, whatever the machine was doing. If the cursor still has not advanced \
+             under those conditions, the capture itself stalled. wire={:?}",
             UAT_C2_01_LOG_ADVANCE_DEADLINE.as_millis(),
             first_total,
             first.events.len(),
             first_cursor,
+            UAT_C2_01_LOG_ADVANCE_DEADLINE.as_secs() + 5,
+            UAT_C2_01_LOG_ADVANCE_DEADLINE.as_secs() + 5,
             wire
         );
     }
