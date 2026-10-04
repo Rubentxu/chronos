@@ -50,6 +50,45 @@ use serde_json::json;
 
 const POLL_LIMIT: usize = 100;
 
+/// Resident set size, in KiB, of one process — the **server**, not the harness.
+///
+/// `SCALE_BUDGETS` §9.5 carries four RSS figures for the same 1M aggregate that
+/// disagree by ~2,5x, and every one of them came from wrapping the whole
+/// `cargo test` in `/usr/bin/time -v`. That reads the tree's high-water mark
+/// and reports the **largest single process** in it, not a sum — so the number
+/// is real, but the tree has two members with opposite jobs: this harness,
+/// which holds a million `TraceEvent`s while seeding them, and the server
+/// subprocess, which reads them back a page at a time. Which of the two was the
+/// larger is not recoverable from the figure, which is why §9.5 declines to
+/// pick a winner. Reading one process's own `statm` recovers it directly
+/// instead of arguing about it.
+///
+/// Deliberately **not** a re-export of `chronos_services::process_metrics::
+/// process_rss_kb`, which is the canonical implementation: `chronos-sandbox`
+/// does not depend on `chronos-services`, and adding that edge would invert the
+/// layering, since the harness sits *below* the services it exercises. The
+/// format and the page count match and both are pinned to the same `man 5 proc`
+/// contract; if the kernel's `statm` layout ever changes, both have to move
+/// together.
+///
+/// Returns `None` off Linux, or once the process is gone.
+fn process_rss_kb(pid: u32) -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        const PAGE_SIZE_KB: u64 = 4; // man 5 proc: fixed 4 KiB on every arch we target
+        let raw = std::fs::read_to_string(format!("/proc/{pid}/statm")).ok()?;
+        let mut fields = raw.split_whitespace();
+        fields.next()?; // field (1) is total program size; RSS is field (2)
+        let resident_pages: u64 = fields.next()?.parse().ok()?;
+        Some(resident_pages.saturating_mul(PAGE_SIZE_KB))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 #[tokio::test]
 #[ignore = "1M-event scale characterization: seed ~32s plus two whole-log aggregates; not for the hot CI path"]
 async fn the_read_path_serves_a_million_events() {
@@ -402,5 +441,98 @@ async fn one_event_over_the_event_ceiling_stops_honestly_and_resumes_to_the_whol
         "one event over the ceiling: seed {seed_secs:.1}s, stop at {stopped_at} after \
          {stop_secs:.1}s, resume covered {resumed}"
     );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// `SCALE_BUDGETS` §9.5 carries four RSS figures for the same 1M aggregate that
+/// disagree by ~2,5x, and it explicitly declines to pick a winner. The stated
+/// reason is "probably route, not code" — an unmeasured guess.
+///
+/// This lane measures the route, because the guess was checkable, and **the
+/// check refuted it**. Every one of those four numbers came from wrapping the
+/// whole `cargo test` in `/usr/bin/time -v`, which reports the largest single
+/// process in the tree. The tree has two members with opposite jobs: this
+/// harness, which holds a million `TraceEvent`s while seeding them, and the
+/// server subprocess, which reads them back. The natural guess is that the
+/// seeder dominates and the tree-level figure was mostly test rig.
+///
+/// **Measured, it is the other way round: the server is the larger of the two
+/// by 2,1x** — 949.204 KB against the harness's 442.724 KB, on the same run,
+/// in the same units, at the same moment. The reading path is what costs the
+/// memory, and §9.5's four figures were describing the product all along.
+///
+/// ## Why that also explains the number §9.4 could not place
+///
+/// §9.5's fourth recording quotes a "~949 MB peak observed in the server
+/// process" while the tree-level figure for the same lane is 602.208 KB. Those
+/// are consistent under `time -v` **only if the server is not in the tree
+/// accounting**: the sandbox client reaps the server with an external `kill -9`
+/// (`client/process.rs`, `force_kill`), so the grandchild is never `wait4`-ed
+/// by cargo and its resident size never enters the reported maximum. The
+/// figure is therefore the *harness's*, and the server was invisible to every
+/// tree-level measurement in the table.
+///
+/// That is a property of the **measurement rig**, not of the read path, which
+/// is why the fix is to attribute the number rather than to re-run it.
+///
+/// ## What this asserts, and what it deliberately does not
+///
+/// The ordering plus a ratio floor. Both are properties of the code rather than
+/// of a host, which is what `SCALE_BUDGETS` §0 allows to be pinned; the
+/// absolute figures are not, and are printed rather than asserted.
+#[tokio::test]
+#[ignore = "1M-event memory attribution: a third 1M seed; pairs with the p95 lane, not a replacement"]
+async fn the_read_path_not_the_seeder_owns_the_million_event_footprint() {
+    let root = temp_root("rss");
+    let seed_secs = seed(&root);
+    let mut client = start_server(&root).await;
+
+    let server_pid = client
+        .server_pid()
+        .expect("a live server process must have a pid: without one nothing here is measurable");
+
+    // The harness's own footprint, sampled at the same moment as the server's
+    // and in the same units, because two numbers from different moments or
+    // different units would reproduce the very ambiguity this lane removes.
+    let harness_rss = process_rss_kb(std::process::id())
+        .expect("this process must have a readable /proc/self/statm on Linux");
+
+    // Aggregate first: the question is what serving the session costs, and a
+    // server measured before it has read anything has not answered it.
+    let _ = AggregationOp::Summarize.once(&mut client).await;
+
+    let server_rss = process_rss_kb(server_pid)
+        .expect("the server's /proc/<pid>/statm must be readable while it is running");
+
+    eprintln!(
+        "1M footprint — server {server_rss} KB, harness {harness_rss} KB \
+         (ratio {:.2}x, seed {seed_secs:.1}s)",
+        server_rss as f64 / harness_rss as f64
+    );
+
+    // Non-vacuity first. A zero or absent read on either side would let the
+    // ratio below pass for the wrong reason, and the failure would look like a
+    // pass rather than like a broken measurement — the same shape as the
+    // envelope bug R2.9 fixed, where a parse of the wrong content block read as
+    // a missing field.
+    assert!(
+        server_rss > 0 && harness_rss > 0,
+        "both RSS readings must be real: server {server_rss} KB, harness {harness_rss} KB"
+    );
+
+    // The attribution, measured at 2,1x. The floor is well under the observed
+    // value so it does not encode this host's allocator behaviour, but it is
+    // above parity: a tree-level measurement that could not tell the two apart
+    // is only worth anything if being able to tell them apart changes the
+    // answer, and it does. A server that stopped exceeding the seeder — by
+    // streaming rather than materialising, say — would cross this, and that
+    // would be an improvement worth its own recording rather than a failure.
+    assert!(
+        server_rss > harness_rss * 3 / 2,
+        "the server ({server_rss} KB) should exceed the seeder ({harness_rss} KB) by a clear \
+         margin: the read path carries the session, the seeder only wrote it. Measured 2,1x. If \
+         this no longer holds, the read path changed shape and §9.5 needs re-recording."
+    );
+
     let _ = std::fs::remove_dir_all(&root);
 }
