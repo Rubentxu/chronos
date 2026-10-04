@@ -280,6 +280,13 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             stop_all(client, &[&pre_session, &session]).await;
             return;
         }
+        // DEBT-UAT-TEARDOWN-01: tear down BEFORE unwinding. `Drop` cannot
+        // await `probe_stop`, so a panic used to abandon `session` and
+        // `pre_session` still ptrace-attached, leaving traced processes
+        // running for the rest of the run and competing for the tracer.
+        // The failure path is the path that can least afford it: the whole
+        // reason to be here is that something already went wrong.
+        stop_all(client, &[&pre_session, &session]).await;
         panic!(
             "UAT-C2-01: this capture produced no records within {}ms \
              (first_event_after_ms={}), but an independent control capture on the \
@@ -367,6 +374,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             .probe_drain_wire(&session, None)
             .await
             .expect("diagnostic re-read");
+        // DEBT-UAT-TEARDOWN-01: tear down before unwinding; see the note at
+        // the first panic path.
+        stop_all(client, &[&pre_session, &session]).await;
         panic!(
             "UAT-C2-01: the fixture's ExecutionLog did not produce any new records within \
              {}ms after the first drain (first_total={}, events_in_first_drain={}, \
@@ -421,6 +431,9 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             .expect("diagnostic re-read");
         // CIH-E: scope the diagnostic list to the session that owns the subscription.
         let listed = client.tripwire_list(Some(&pre_session)).await;
+        // DEBT-UAT-TEARDOWN-01: tear down before unwinding; see the note at
+        // the first panic path.
+        stop_all(client, &[&pre_session, &session]).await;
         panic!(
             "UAT-C2-01: the EventType(SyscallEnter) tripwire must match the stream, otherwise the \
              invariance below is vacuous (raw event count {}, tripwire_list {:?}, drain {:?})",

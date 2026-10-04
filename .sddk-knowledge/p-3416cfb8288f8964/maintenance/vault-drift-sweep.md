@@ -3080,3 +3080,63 @@ green, and it is the case this catches.
 
 **History:** DEBT-GATE-UNTRACKED-01 in `maintenance/debt-ledger.md`, found
 and recorded 2026-10-04 while closing `release-v0-9-0`.
+
+---
+
+### 58. Every `panic!` path in `rec_c2_2_uat_c2.rs` must tear down before unwinding (DEBT-UAT-TEARDOWN-01, 2026-10-04)
+
+```python
+import re
+
+# `Drop` cannot await `probe_stop`, so a test that panics abandons its
+# probe sessions with traced children still attached. In a file whose
+# whole purpose is deciding whether an empty capture is a product
+# failure or a slow machine, the failure path is the one that can least
+# afford to leave load behind: it is already the path where something
+# went wrong, and the abandoned tracees compete with every later run.
+#
+# All three `panic!` paths therefore call `stop_all(...)` first. This
+# check exists so that stays true when someone adds a fourth panic path
+# and forgets: a fix with no guard is a fix one edit away from gone, and
+# "we were careful" is not a property of the tree.
+#
+# The window is deliberately generous (12 lines) because the teardown
+# belongs immediately before the `panic!` but the diagnostic reads that
+# feed the panic message sit above it. A panic with no teardown anywhere
+# in that window is drift.
+
+PATH = 'chronos-sandbox/tests/rec_c2_2_uat_c2.rs'
+WINDOW = 12
+
+try:
+    with open(PATH, encoding='utf-8') as fh:
+        lines = fh.read().split('\n')
+except FileNotFoundError:
+    print(f"DRIFT: {PATH} is missing; the UAT-C2 gate cannot be audited")
+    lines = []
+
+errors = 0
+for index, line in enumerate(lines):
+    if not line.strip().startswith('panic!('):
+        continue
+    low = max(0, index - WINDOW)
+    window = lines[low:index]
+    if not any('stop_all(' in w for w in window):
+        print(
+            f"DRIFT: {PATH}:{index + 1}: a panic! path with no teardown in the "
+            f"{WINDOW} lines above it. Drop cannot await probe_stop, so this "
+            f"abandons the probe sessions with traced children still attached."
+        )
+        errors += 1
+print(f"Total: {errors}")
+```
+
+**Why the window is not wider.** Loosening it until the check cannot fail
+is the same mistake as removing a guard, so the bound is tight enough to be
+meaningful and explicit about what it allows: a teardown anywhere in the
+twelve lines before the `panic!`. If a future edit pushes the teardown
+further away, the honest response is to move it back next to the panic, not
+to widen the window.
+
+**History:** DEBT-UAT-TEARDOWN-01 in `maintenance/debt-ledger.md`, found
+and fixed 2026-10-04 while closing `release-v0-9-0` and its follow-ups.

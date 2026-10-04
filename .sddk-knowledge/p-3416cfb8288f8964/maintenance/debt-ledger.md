@@ -572,16 +572,30 @@ resume en `warn!` y no en `debug!`.
 
 ## DEBT-UAT-TEARDOWN-01 (2026-10-04) - las rutas de `panic!` de `uat_c2_01` no limpian la sesion
 
-**Estado:** `OPEN` · **Abierta en:** R6.5 (2026-10-04) · **Owner:** agente principal · **Severidad:** baja.
+**Estado:** `CERRADA` en R6.8 (2026-10-04) con `CC#58` como guard · **Severidad original:** baja.
 
-Las tres rutas de `panic!` de `chronos-sandbox/tests/rec_c2_2_uat_c2.rs` abandonan la sesion de
-captura sin detenerla. La causa es que `Drop` no puede hacer `await`, asi que `probe_stop` no llega
-a ejecutarse cuando el test aborta. Hoy solo se nota porque el proceso de test muere y el kernel
-recoge los hijos, pero deja el fixture sin cerrar y gasta el `timeout` del runner en el camino de
-error, que es justo el camino donde mas caro sale.
+Las tres rutas de `panic!` de `chronos-sandbox/tests/rec_c2_2_uat_c2.rs` abandonaban la sesion de
+captura sin detenerla. La causa es que `Drop` no puede hacer `await`, asi que `probe_stop` no llegaba
+a ejecutarse cuando el test abortaba. En un fichero cuyo trabajo consiste en decidir si un log vacio
+es un fallo de producto o una maquina lenta, el camino de error es el que menos puede permitirse dejar
+carga detras: ya es el camino en el que algo ha salido mal, y los tracees abandonados compiten con
+cada corrida posterior.
 
-**Condicion de cierre:** reestructurar el test para que el teardown se haga `await` en todas las
-salidas, o mover el `panic!` a un helper que llame a `probe_stop` antes de propagar.
+**Arreglo:** las tres rutas llaman ahora a `stop_all(client, &[&pre_session, &session]).await` antes
+de `panic!`. Los tres mensajes usaban solo datos locales ya ligados, asi que mover el cliente al
+teardown no rompia la compilacion.
+
+**Guard (`CC#58`):** toda ruta de `panic!` del fichero debe tener un teardown en las 12 lineas
+anteriores. Un arreglo sin guard es un arreglo a una edicion de ser eliminado, y "nos fuimos
+cuidadosos" no es una propiedad del arbol. La ventana es deliberadamente estrecha: ensancharla hasta que
+el check no pueda fallar es el mismo error que quitar el guard, asi que ante una edicion que aleje el
+teardown la respuesta honesta es devolverlo junto al `panic!`, no abrir la ventana.
+
+**No-vacuidad medida:** con los 3 teardowns, `PASS (50 python CCs, 7 bash CCs)`. Al borrar el
+teardown de una sola ruta de panico, `DRIFT: CC#58 reported 1 drift lines`. Restaurado, PASS otra vez.
+
+**Verificado ademas:** `rec_c2_2_uat_c2` 6/6 en 113.90s, con binario mas nuevo que el fuente para no
+reportar un verde sobre un binario obsoleto.
 
 ---
 
