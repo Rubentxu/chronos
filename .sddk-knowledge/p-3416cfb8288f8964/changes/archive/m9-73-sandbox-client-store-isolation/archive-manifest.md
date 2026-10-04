@@ -91,8 +91,8 @@ Two commits:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-73-sandbox-client-store-isolation/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `eb4ddeca71e91a77bd2eef7be5fd6fbb1dafc5074f94ad450b9a2487020f3360` |
-| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `e67e3fbcfee7a96628e0b80e09cf5b8c2cdafe9313ba447600240a2260927978` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `371ae07149e0a04e88469f759649a1ba65f53bd1fba6f42bd6f8d85f1374f1e5` |
+| source (sandbox process spawn) | `chronos-sandbox/src/client/process.rs` | `0fe809faaac210775c3e2954a32268383a2871e657116e3e1fadb2f4fce7799d` |
 | test (store isolation) | `chronos-sandbox/tests/client_store_isolation.rs` | `a48c78a31a5a1517418e560a2982b2ec39ea435f78b627cda79d38133ce56495` |
 | test (session edge cases) | `chronos-sandbox/tests/session_edge_cases.rs` | `9e7fe072358918c156502cc8093e9164aff59b1eeb17e460a475db10ee2d82b3` |
 | test (counterexample tools) | `chronos-sandbox/tests/counterexample_tools.rs` | `a6c5834a633f1fcc25a5ccaec26fb7ae0e9cb529e6ac3a0058f977e42c52a12e` |
