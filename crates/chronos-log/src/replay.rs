@@ -130,6 +130,20 @@ pub struct ReplayPlan {
     pub retained_from: EventSeq,
     pub segments: Vec<PlannedSegment>,
     /// Entries in seq order, already validated as contiguous.
+    ///
+    /// **Retaining these is what costs the memory, not what guarantees the
+    /// validation.** Every integrity property this module enforces is decided
+    /// from `segments` — continuity compares one segment's `start_seq` against
+    /// the previous `end_seq` — plus per-segment checks that run while that
+    /// segment is decoded. The entries were kept only so `apply_replay_plan`
+    /// would not have to re-read the files, and that convenience means the plan
+    /// holds the whole session while the backend it is filling holds a second
+    /// copy of it. Measured on this host: opening a 200.000-event log costs
+    /// **95.416 KB, 489 bytes per event**, and the two copies are the reason
+    /// the figure is roughly double what one copy of the session needs.
+    ///
+    /// `build_and_apply_replay` does not build this field at all; it is kept
+    /// for the callers that genuinely need a detached, re-appliable plan.
     pub entries: Vec<SegmentEntry>,
     /// Highest seq the plan reconstructs, if any.
     pub reconstructed_tail: Option<EventSeq>,
@@ -141,16 +155,17 @@ impl ReplayPlan {
     }
 }
 
-/// Read and validate every live segment. Nothing is applied here.
+/// List the live segments of `session_id` above `retained_from`, in seq order,
+/// paired with the start seq their FILENAME declares.
 ///
-/// `retained_from` is the C1.5.1 logical boundary: segments entirely below it
-/// are expected leftovers and are excluded. Segments at or above it are
-/// validated; a failure anywhere means NO plan.
-pub fn build_replay_plan(
+/// Split out of [`build_replay_plan`] so the streaming variant below shares the
+/// exact same selection — a second copy of this loop would be a second place for
+/// the retention rule to drift.
+fn live_segments(
     dir: &Path,
     session_id: &SessionId,
     retained_from: EventSeq,
-) -> Result<ReplayPlan, ReplayIntegrityError> {
+) -> Result<Vec<(EventSeq, PathBuf)>, ReplayIntegrityError> {
     let safe = sanitize_session(session_id);
     let prefix = format!("{safe}-");
 
@@ -158,15 +173,7 @@ pub fn build_replay_plan(
     let mut declared: Vec<(EventSeq, PathBuf)> = Vec::<(EventSeq, PathBuf)>::new();
     let read_dir = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(ReplayPlan {
-                session_id: session_id.clone(),
-                retained_from,
-                segments: Vec::new(),
-                entries: Vec::new(),
-                reconstructed_tail: None,
-            })
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(declared),
         Err(e) => {
             return Err(ReplayIntegrityError::CorruptSegment {
                 path: dir.to_path_buf(),
@@ -189,20 +196,41 @@ pub fn build_replay_plan(
         let Ok(seq) = rest.parse::<u64>() else {
             continue;
         };
+        // Retired leftovers: present on disk, logically gone. Not evidence.
+        if EventSeq::new(seq) < retained_from {
+            continue;
+        }
         declared.push((EventSeq::new(seq), entry.path()));
     }
     declared.sort_by_key(|(seq, _)| seq.0);
+    Ok(declared)
+}
 
+/// Read and validate every live segment. Nothing is applied here.
+///
+/// `retained_from` is the C1.5.1 logical boundary: segments entirely below it
+/// are expected leftovers and are excluded. Segments at or above it are
+/// validated; a failure anywhere means NO plan.
+pub fn build_replay_plan(
+    dir: &Path,
+    session_id: &SessionId,
+    retained_from: EventSeq,
+) -> Result<ReplayPlan, ReplayIntegrityError> {
+    let declared = live_segments(dir, session_id, retained_from)?;
+    if declared.is_empty() {
+        return Ok(ReplayPlan {
+            session_id: session_id.clone(),
+            retained_from,
+            segments: Vec::new(),
+            entries: Vec::new(),
+            reconstructed_tail: None,
+        });
+    }
     let mut segments: Vec<PlannedSegment> = Vec::new();
     let mut entries: Vec<SegmentEntry> = Vec::new();
     let mut reconstructed_tail: Option<EventSeq> = None;
 
     for (filename_start, path) in declared {
-        // Retired leftovers: present on disk, logically gone. Not evidence.
-        if filename_start < retained_from {
-            continue;
-        }
-
         let decoded = read_segment(&path).map_err(|e| ReplayIntegrityError::CorruptSegment {
             path: path.clone(),
             reason: e.to_string(),
@@ -336,6 +364,232 @@ pub fn apply_replay_plan(
         }
     }
     Ok(())
+}
+
+/// Validate every live segment and apply it to `backend` in ONE pass, without
+/// ever holding the whole session in the plan.
+///
+/// This is the memory fix for `DEBT-SCALE-MEM-01`. [`build_replay_plan`] keeps
+/// every decoded entry in [`ReplayPlan::entries`] so that
+/// [`apply_replay_plan`] does not have to re-read the files, and because the
+/// plan is retained while the backend fills up, the live set holds the session
+/// twice: measured at **489 bytes per event** on this host for a 200.000-event
+/// log, where one copy of the session is roughly half that.
+///
+/// Nothing about the *validation* changes. Every integrity decision in this
+/// module is made from segment headers and the per-segment entry loop, and both
+/// run here exactly as they run in the plan-building path; the only difference
+/// is that each segment is handed to the backend and then dropped, so peak
+/// memory is one segment plus the growing backend rather than the whole session
+/// plus the whole session.
+///
+/// # Atomicity, deliberately unchanged
+///
+/// `apply_plan` in the segmented log builds a FRESH backend and swaps it in only
+/// on success, so a failure cannot publish a half-reconstructed log. This
+/// function applies into the backend it is given, so **the caller must still
+/// apply into a fresh one and swap on success** — that is why the two lenient
+/// replay paths that skipped segments were deleted, and this function does not
+/// reintroduce them. `SegmentedExecutionLog::apply_plan` keeps doing the swap.
+///
+/// # Errors
+///
+/// An integrity error is returned *before* any of that segment's entries reach
+/// the backend, but segments already applied stay applied. That is why the
+/// caller needs the fresh-backend discipline rather than a partial rollback.
+pub fn build_and_apply_replay(
+    dir: &Path,
+    session_id: &SessionId,
+    retained_from: EventSeq,
+    backend: &crate::memory::InMemoryExecutionLog,
+) -> Result<Option<EventSeq>, ReplayIntegrityErrorOrLog> {
+    build_and_apply_replay_listing(dir, session_id, retained_from, backend)
+        .map(|segments| segments.last().map(|s| s.end_seq))
+}
+
+/// The segments the replay covered, in seq order.
+///
+/// Returning the list is what lets the caller keep its `flushed_segments`
+/// bookkeeping without a SECOND pass over the directory — a second
+/// `build_replay_plan` here would rebuild the very plan this function exists to
+/// avoid, and pay the memory again at exactly the moment the fix is trying to
+/// save it.
+pub type AppliedSegments = Vec<PlannedSegment>;
+
+/// Validate and apply in one pass, returning the segments applied.
+///
+/// The body of [`build_and_apply_replay`]; this is the form the segmented log
+/// uses, because it needs the segment list as well as the tail.
+pub fn build_and_apply_replay_listing(
+    dir: &Path,
+    session_id: &SessionId,
+    retained_from: EventSeq,
+    backend: &crate::memory::InMemoryExecutionLog,
+) -> Result<AppliedSegments, ReplayIntegrityErrorOrLog> {
+    let declared = live_segments(dir, session_id, retained_from)?;
+    let mut segments: Vec<PlannedSegment> = Vec::new();
+
+    for (filename_start, path) in declared {
+        let decoded = read_segment(&path).map_err(|e| ReplayIntegrityError::CorruptSegment {
+            path: path.clone(),
+            reason: e.to_string(),
+        })?;
+        let header = decoded.metadata;
+
+        if header.start_seq != filename_start {
+            return Err(ReplayIntegrityError::FilenameHeaderMismatch {
+                path,
+                filename_start: filename_start.0,
+                header_start: header.start_seq.0,
+            }
+            .into());
+        }
+        if header.start_seq > header.end_seq {
+            return Err(ReplayIntegrityError::HeaderRangeMismatch {
+                path,
+                start: header.start_seq.0,
+                end: header.end_seq.0,
+            }
+            .into());
+        }
+        if decoded.entries.is_empty() {
+            return Err(ReplayIntegrityError::EmptySegment { path }.into());
+        }
+
+        // Seq-space semantics inside the segment — identical checks to the
+        // plan-building path, including the entry-count-in-entries rule that
+        // fixed FIND-C1.8-01 (a gap-bearing segment could not reopen).
+        let mut cursor = header.start_seq;
+        let mut entry_total = 0u64;
+        for entry in &decoded.entries {
+            entry_total += 1;
+            let (entry_start, entry_end) = match entry {
+                SegmentEntry::Record(r) => {
+                    if r.session_id != *session_id {
+                        return Err(ReplayIntegrityError::RecordSessionMismatch {
+                            path: path.clone(),
+                            expected: session_id.as_str().to_string(),
+                            found: r.session_id.as_str().to_string(),
+                        }
+                        .into());
+                    }
+                    (r.seq, r.seq)
+                }
+                SegmentEntry::Gap(g) => (g.first_missing, g.last_missing),
+            };
+            if entry_start != cursor {
+                return Err(ReplayIntegrityError::PayloadRangeMismatch {
+                    path: path.clone(),
+                    first: entry_start.0,
+                    last: entry_end.0,
+                    // `cursor`, not the header's start: this is the seq the
+                    // payload SHOULD have continued from, and reporting the
+                    // header start instead makes the message say the segment
+                    // "covers 3..=5 but its header declares 0..=9" when the
+                    // real disagreement is at 10. The equivalence guard
+                    // (`streaming_replay_agrees_with_plan`) caught exactly
+                    // that: this arm was transcribed with the wrong field.
+                    header_start: cursor.0,
+                    header_end: header.end_seq.0,
+                }
+                .into());
+            }
+            cursor = EventSeq::new(entry_end.0 + 1);
+        }
+        if cursor != EventSeq::new(header.end_seq.0 + 1) {
+            return Err(ReplayIntegrityError::PayloadRangeMismatch {
+                path: path.clone(),
+                first: header.start_seq.0,
+                last: cursor.0.saturating_sub(1),
+                header_start: header.start_seq.0,
+                header_end: header.end_seq.0,
+            }
+            .into());
+        }
+        if entry_total != header.entry_count {
+            return Err(ReplayIntegrityError::EntryCountMismatch {
+                path: path.clone(),
+                declared: header.entry_count,
+                actual: entry_total,
+            }
+            .into());
+        }
+
+        // Continuity with the previous live segment — the same rule, decided
+        // from `segments`, which is why retaining entries was never required to
+        // guarantee it.
+        if let Some(prev) = segments.last() {
+            let expected = EventSeq::new(prev.end_seq.0 + 1);
+            if header.start_seq < expected {
+                return Err(ReplayIntegrityError::OverlappingSegments {
+                    prev_end: prev.end_seq.0,
+                    next_start: header.start_seq.0,
+                }
+                .into());
+            }
+            if header.start_seq > expected {
+                return Err(ReplayIntegrityError::MissingRange {
+                    expected_from: expected.0,
+                    found_from: header.start_seq.0,
+                }
+                .into());
+            }
+        } else if header.start_seq != retained_from {
+            return Err(ReplayIntegrityError::MissingRange {
+                expected_from: retained_from.0,
+                found_from: header.start_seq.0,
+            }
+            .into());
+        }
+
+        // The segment passed every check: hand it to the backend and let it go.
+        // This is the line that removes the second copy of the session.
+        for entry in &decoded.entries {
+            match entry {
+                SegmentEntry::Record(r) => backend
+                    .replay_record(r)
+                    .map_err(ReplayIntegrityErrorOrLog::from)?,
+                SegmentEntry::Gap(g) => crate::backend::ExecutionLogBackend::record_gap(
+                    backend,
+                    session_id.clone(),
+                    g.clone(),
+                )
+                .map_err(ReplayIntegrityErrorOrLog::from)?,
+            }
+        }
+
+        segments.push(PlannedSegment {
+            path,
+            start_seq: header.start_seq,
+            end_seq: header.end_seq,
+        });
+    }
+
+    Ok(segments)
+}
+
+/// Either a rejected replay or a failure while applying an already-validated
+/// segment.
+///
+/// Both matter and they are not the same: the first means the on-disk evidence
+/// is inconsistent and nothing about this session may be published, the second
+/// means the evidence was fine and the in-memory reconstruction failed.
+#[derive(Debug)]
+pub enum ReplayIntegrityErrorOrLog {
+    Integrity(ReplayIntegrityError),
+    Apply(crate::error::LogError),
+}
+
+impl From<ReplayIntegrityError> for ReplayIntegrityErrorOrLog {
+    fn from(e: ReplayIntegrityError) -> Self {
+        Self::Integrity(e)
+    }
+}
+
+impl From<crate::error::LogError> for ReplayIntegrityErrorOrLog {
+    fn from(e: crate::error::LogError) -> Self {
+        Self::Apply(e)
+    }
 }
 
 /// Convenience: the gaps in a plan (used by callers that need them without

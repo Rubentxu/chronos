@@ -980,11 +980,81 @@ impl SegmentedExecutionLog {
     /// This is the ONLY replay primitive. The previous lenient paths
     /// (`replay_into_inner`, `populate_with_replay`) both skipped unreadable
     /// segments, so a side door could reconstruct a different truth.
+    ///
+    /// It streams: each segment is validated, applied to a fresh backend, and
+    /// dropped before the next one is read, so the session is never resident
+    /// twice. The strictness is unchanged — an unreadable or discontinuous
+    /// segment still refuses the whole replay, and the fresh backend is still
+    /// swapped in only on success. Before this, the plan held every decoded
+    /// entry while the backend filled with a second copy of it, which measured
+    /// 489 bytes per event on this host (`DEBT-SCALE-MEM-01`).
     pub fn replay_into_inner(&self) -> Result<(), LogError> {
-        let plan = self.build_replay_plan()?;
-        self.apply_plan(&plan)
+        self.apply_streaming()
     }
 
+    /// Replay the log into `backend` without ever holding the whole session
+    /// in a plan, and report the segment list the replay covered.
+    ///
+    /// The fresh-backend discipline of [`Self::apply_plan`] is preserved
+    /// exactly — the caller applies into a new backend and swaps it in only on
+    /// success — but the plan itself is never built, so the session is never
+    /// resident twice. This is the `DEBT-SCALE-MEM-01` fix; see
+    /// [`crate::replay::build_and_apply_replay`].
+    fn replay_into_fresh_backend(
+        &self,
+        fresh: &InMemoryExecutionLog,
+    ) -> Result<Vec<FlushedSegment>, LogError> {
+        let dir = self.config.segment_dir.clone();
+        let flushed = crate::replay::build_and_apply_replay_listing(
+            &dir,
+            &self.session_id,
+            self.retained_from(),
+            fresh,
+        )
+        .map_err(|e| match e {
+            crate::replay::ReplayIntegrityErrorOrLog::Integrity(i) => LogError::ReplayIntegrity {
+                session_id: self.session_id.as_str().to_string(),
+                kind: Box::new(i),
+            },
+            crate::replay::ReplayIntegrityErrorOrLog::Apply(l) => l,
+        })?
+        .into_iter()
+        .map(|seg| FlushedSegment {
+            start_seq: seg.start_seq,
+            end_seq: seg.end_seq,
+            path: seg.path,
+        })
+        .collect();
+        Ok(flushed)
+    }
+
+    /// Replay the log into a fresh backend and swap it in, in one streaming
+    /// pass. The peak holds one copy of the session instead of two.
+    fn apply_streaming(&self) -> Result<(), LogError> {
+        let fresh = InMemoryExecutionLog::new();
+        let flushed = self.replay_into_fresh_backend(&fresh)?;
+
+        let mut inner = self.inner.lock().expect("poisoned");
+        inner.backend = fresh;
+        inner.flushed_segments.clear();
+        inner.last_flushed_tail = None;
+        for seg in flushed {
+            inner.last_flushed_tail = Some(seg.end_seq);
+            inner.flushed_segments.push(seg);
+        }
+        Ok(())
+    }
+
+    /// Apply an ALREADY-BUILT plan to a fresh backend and swap it in.
+    ///
+    /// Not on the open path any more: `replay_into_inner` streams, so the
+    /// session is never resident twice. This stays because the plan-building
+    /// half of the pair is still public API and is used directly by callers
+    /// that want to inspect or hold a validated plan — `build_replay_plan` and
+    /// `apply_replay_plan` remain the way to "validate once, apply later", and
+    /// removing the segmented-log convenience would only push that shape onto
+    /// every caller.
+    #[allow(dead_code)]
     fn apply_plan(&self, plan: &crate::replay::ReplayPlan) -> Result<(), LogError> {
         // Apply to a FRESH backend built from the plan, then swap it in: a
         // failure cannot publish a half-reconstructed log.
@@ -1007,9 +1077,25 @@ impl SegmentedExecutionLog {
     }
 
     fn populate_with_replay(&self, target: &InMemoryExecutionLog) -> Result<(), LogError> {
-        // Same strict primitive as `replay_into_inner`: one validated plan.
-        let plan = self.build_replay_plan()?;
-        crate::replay::apply_replay_plan(&plan, target)
+        // Same strict primitive as `replay_into_inner`, and the same streaming
+        // form: validate, apply, drop, per segment. `target` is the fresh
+        // backend the caller swaps in, so the atomicity discipline is the
+        // caller's and is unchanged.
+        let dir = self.config.segment_dir.clone();
+        crate::replay::build_and_apply_replay_listing(
+            &dir,
+            &self.session_id,
+            self.retained_from(),
+            target,
+        )
+        .map(|_| ())
+        .map_err(|e| match e {
+            crate::replay::ReplayIntegrityErrorOrLog::Integrity(i) => LogError::ReplayIntegrity {
+                session_id: self.session_id.as_str().to_string(),
+                kind: Box::new(i),
+            },
+            crate::replay::ReplayIntegrityErrorOrLog::Apply(l) => l,
+        })
     }
 
     /// Replay and rebuild the in-memory backend (used by tests
