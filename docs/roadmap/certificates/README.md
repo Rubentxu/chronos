@@ -23,7 +23,9 @@ La plantilla mínima está definida en `CERTIFICATION.md` §4 e incluye:
 - Pruebas negativas, seguridad, perf, recovery/rollback.
 - Incompatibilidades, deuda residual, fecha de recertificación.
 
-## Certificados emitidos (G0 chain)
+## Certificados emitidos
+
+G0 chain (2026-09-21) + R6.0 (2026-10-04).
 
 | ID | Perfil | Archivo | SHA base | Estado | Fecha emisión | Próxima recertificación |
 |---|---|---|---|---|---|---|
@@ -33,14 +35,25 @@ La plantilla mínima está definida en `CERTIFICATION.md` §4 e incluye:
 | **UAT-G0-03** | base | [uat-g0-03-cursor-gap-replay-base.md](uat-g0-03-cursor-gap-replay-base.md) | `afa14fd2` | `passed` | 2026-09-21T16:19Z | Al cambiar `TraceEvent`/`GetEventResponse`/`V2Query`/`V2Result` o el wire shape de `events_read`. |
 | **UAT-G0-04** | privileged | [uat-g0-04-uprobe-privileged-not_run.md](uat-g0-04-uprobe-privileged-not_run.md) | n/a | `not_run` per directiva (env sin ptrace+eBPF) | 2026-09-21T16:21Z | Cuando exista host Linux con ptrace+eBPF + capabilities CAP_SYS_PTRACE+CAP_BPF. |
 | **UAT-G0-05** | base | [uat-g0-05-ci-architecture-vault-base.md](uat-g0-05-ci-architecture-vault-base.md) | `afa14fd2` | `passed` local con 2 exclusiones (Tarpaulin, CI remoto) | 2026-09-21T16:21Z | Al cambiar código que invalide clippy/fmt; al bump `Cargo.lock`; al introducir nuevos CC al vault. |
+| **UAT-M6-01** | base | [uat-m6-01-base.md](uat-m6-01-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m6_01`, `UatResult` o `otlp::correlation`; al añadir `cross_service_wire`; al haber collector OTLP real. |
+| **UAT-M6-02** | base | [uat-m6-02-base.md](uat-m6-02-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m6_02` o la semántica de retry/idempotencia de `otlp::ingest`; al añadir `cross_service_wire`. |
+| **UAT-M7-01** | base | [uat-m7-01-base.md](uat-m7-01-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m7_01`, `UatResult`/`UatResultWire` o `wire_version`; al cerrar una limitación de `M7-CLOSE.md`. |
+| **UAT-M7-02** | base | [uat-m7-02-base.md](uat-m7-02-base.md) | `61efb0f0` | CERT-0..2 `passed`; CERT-3..4 `not_run` | 2026-10-04T06:12Z | Al cambiar `run_uat_m7_02`, `UatOutcome::UnknownUnsupported` o su contador de regiones; al cambiar `wire_version`. |
 
 ## Estado agregado (G0 chain)
 
-**Total certificados:** 6
-**`passed`:** 5 (REC-C7 con CERT-0..2 + UAT-G0-01 + UAT-G0-02 + UAT-G0-03 + UAT-G0-05)
+**Total certificados:** 10
+**`passed`:** 9 (REC-C7 con CERT-0..2 + UAT-G0-01 + UAT-G0-02 + UAT-G0-03 + UAT-G0-05 + UAT-M6-01 + UAT-M6-02 + UAT-M7-01 + UAT-M7-02)
 **`not_run` per directiva:** 1 (UAT-G0-04 privileged)
 **`failed`:** 0
 **`blocked`:** 0
+
+**Antiguedad del registro, y por que R6.0 existe.** Hasta el 2026-10-04 los seis certificados
+emitidos colgaban todos de `afa14fd2` (2026-09-21) y el indice no habia seguido al ledger. Cuatro
+de ellos tenian su trigger cumplido en `reconstruction-contracts.toml` desde el 2026-09-22
+(`OTEL-001` y `DIFF-001` promoteidos a `verified`) y seguian sin emitir. **La asercion que
+importa: el registro de certificacion es derivado, el ledger es la autoridad.** Cuando el
+registro y el ledger discrepan, el ledger gana y el registro es deuda.
 
 ## Cobertura por UAT_CATALOG.md
 
@@ -51,8 +64,25 @@ La plantilla mínima está definida en `CERTIFICATION.md` §4 e incluye:
 | UAT-G0-03 (cursor/gap/replay) | `passed` base | wire smoke confirma wire shape C5.2 |
 | UAT-G0-04 (uprobe real privileged) | `not_run` | env-locked; documentado en DEBT-G0-04 |
 | UAT-G0-05 (CI/Arch/Vault same SHA) | `passed` base local | Tarpaulin + CI remoto excluidos per scope |
+| UAT-M6-01 (correlación extremo a extremo) | `passed` base | 153/153 con el ejecutor; e2e por el cable MCP real. Fixture, sin collector OTLP en vivo. |
+| UAT-M6-02 (procedencia y retry idempotente) | `passed` base | 153/163 shared suite; deriva conservada y retry con `trace_id` estable. |
+| UAT-M7-01 (primera divergencia semántica) | `passed` base | 925/925; recibo JSON canónico reproducible byte a byte. |
+| UAT-M7-02 (unknown/unsupported, sin igualdad falsa) | `passed` base | 925/925; recibo declara 2 regiones sin cobertura y `UnknownUnsupported`, no igualdad. |
 
-## Histórico
+## Exclusiones comunes a los certificados R6.0 (2026-10-04)
+
+- `CHRONOS_CONTRACT_BASE_REF` sin fijar hace que `check_architecture_contracts.py` emita
+  `WARN: ... skipping added-line legacy scan`. **El gate pasa, pero el escaneo de lineas anadidas
+  no se ejecuto** en ninguna de las cuatro fichas. No se cuenta como cobertura.
+- Los cuatro ejecutadores corren sobre **fixtures deterministas**, no sobre trazas reales de dos
+  procesos, retencion real ni collector OTLP en vivo. Por eso CERT-3 es `not_run` en las cuatro y
+  no `passed` con matices.
+- `M6` no tiene adaptador de wire (a diferencia de `M7`), porque `UatResult` no deriva `serde` por
+  diseno. Su recibo se emite en `Debug`; el de `M7` es el JSON canonico de producto.
+- Recibo reproducible: `cargo run -p chronos-sandbox --example uat_receipt` (sonda sin
+  aserciones; las aserciones viven en las suites existentes, no duplicadas aqui).
+
+## Historico
 
 | Fecha | Acción | Resultado |
 |---|---|---|

@@ -39,12 +39,16 @@ Formato del recibo: `UAT-ID | commit | binario/hash | host/kernel/runtime | fixt
 | **UAT-M6-01** | Petición atraviesa dos servicios y llega a mutación y property violation: correlación trace/span externo -> invocación Chronos -> mutación con IDs distintos; dos peticiones concurrentes no mezclan contexto. |
 | **UAT-M6-02** | Sin contexto, span huérfano, reloj monotónico diferente o OTLP temporalmente indisponible: error/procedencia completos, sin timestamps Unix inventados; ingestión y exportación recuperables/idempotentes dentro del contrato. |
 
+**Certificados emitidos (R6.0, 2026-10-04, sobre `61efb0f0`):** UAT-M6-01 -> [uat-m6-01-base.md](certificates/uat-m6-01-base.md) (CERT-0..2 `passed`, CERT-3..4 `not_run`) | UAT-M6-02 -> [uat-m6-02-base.md](certificates/uat-m6-02-base.md) (CERT-0..2 `passed`, CERT-3..4 `not_run`). Trigger cumplido por `OTEL-001` `verified`. La marca va como nota y no como columna porque todas las tablas de este catalogo son de dos columnas; anadir una tercera solo aqui rompia la lectura del resto.
+
 ## M7 — Diferencia semántica
 
 | ID | Escenario y aserción observable |
 |---|---|
 | **UAT-M7-01** | Ejecución good y bad con ruido en orden/timestamps y un bug de estado conocido: encuentra primera divergencia semántica sustentada por eventos y no confunde símbolo con invocación. |
 | **UAT-M7-02** | Comparación con gaps, contexto externo ausente o datos incomparables devuelve `unknown/unsupported` y región sin cobertura, no declara igualdad falsa. |
+
+**Certificados emitidos (R6.0, 2026-10-04, sobre `61efb0f0`):** UAT-M7-01 -> [uat-m7-01-base.md](certificates/uat-m7-01-base.md) (CERT-0..2 `passed`, CERT-3..4 `not_run`) · UAT-M7-02 -> [uat-m7-02-base.md](certificates/uat-m7-02-base.md) (CERT-0..2 `passed`, CERT-3..4 `not_run`). Trigger cumplido por `DIFF-001` `verified`.
 
 ## M8 — Reducir y reproducir
 
