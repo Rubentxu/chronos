@@ -1,0 +1,106 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/release-v020",
+  "path": "B-direct",
+  "phase": "verify",
+  "release_tag": "v0.9.0",
+  "head_sha": "aac09659",
+  "supersedes": "the FAIL verdict of the first pass, produced before R6.4 and R6.5 existed. Kept, not erased: the findings that verdict raised are what led to both changes.",
+  "verdict": "PASS_WITH_WARNINGS",
+  "why_not_plain_pass": "the root cause of the silent-session defect is fixed and verified not to regress any covered path, but `probe_drain` still reports its status as a hardcoded literal, so the API still cannot distinguish a dead worker from a healthy one. That half of DEBT-PROBE-LIVENESS-01 stays open and is recorded as such.",
+  "verification": [
+    {
+      "argv": "pipelinek run --rerun --db .pipelinek/db.sqlite --control-root .pipelinek/control .pipeline.kts",
+      "exit_code": 0,
+      "result": "12/12 STAGES success on the final tree, run 510619aa-33b1-49ad-bad3-b0b8aeeedf04. IMPORTANT: this local run is TIER 1 ONLY. Its test-workspace-integration stage echoed 'TIER 2 NO EJECUTADO: CHRONOS_FULL_GATE != 1' and ran no integration tests; the stage-level 'success' is NOT an integration PASS. Read the T4 authority in the t4_authority field instead.",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "gh run list --commit aac09659 (full SHA aac0965909935cfa0294fd3fcf389ea33a371f6a)",
+      "exit_code": 0,
+      "result": "6 runs success, 0 red: CI, Coverage, Architecture Contracts, Vault Drift Sweep, Sandbox Debt Sentinel, Supply chain security",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-native --lib -- --test-threads=1",
+      "exit_code": 0,
+      "result": "114 passed, 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test multi_session -- --test-threads=1",
+      "exit_code": 0,
+      "result": "7 passed in 140.77s; the concurrent-session surface the __WNOTHREAD change touches",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test multi_session test_two_concurrent_probes_isolation",
+      "exit_code": 0,
+      "result": "1 passed in 18.61s, isolated",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test program_scenarios -- --test-threads=1",
+      "exit_code": 0,
+      "result": "11 passed in 207.18s; the clone/follow_children path that __WALL must keep working for",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test race_depth -- --test-threads=1",
+      "exit_code": 0,
+      "result": "4 passed in 81.66s",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test m1_04_live_probe_execution_log -- --test-threads=1",
+      "exit_code": 0,
+      "result": "2 passed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 -- --test-threads=1 --nocapture",
+      "exit_code": 0,
+      "result": "6 passed in 76.32s with first_event_after_ms=13 and log_advance_ms=93: a real pass, no skip",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exit_code": 0,
+      "result": "clean",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "result": "clean",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "python3 scripts/regen_manifest_index_shas.py --check",
+      "exit_code": 0,
+      "result": "clean across 102 manifests; the pre-push hook caught CC#4 drift on probe_backend.rs and the m9-76 ritual resolved it",
+      "class": "OBSERVED"
+    }
+  ],
+  "non_vacuity_proofs": [
+    "R6.4: mutating verdict_is_unobservable back to the old semantics turns both exhaustive guards FAILED with 'verdict_is_unobservable(false, true, false) must be true'. The new verdict rule can fail.",
+    "R6.5: the cross-session race is documented as a hazard by the repository's own test_support.rs, and the premise that made it look safe (a single active_session in production) is disproved by multi_session.rs, which starts two probes and exercises cross-session operations as a product feature."
+  ],
+  "honest_limits": [
+    "The race could not be reproduced on demand: it is scheduler-dependent. There is therefore no controlled before/after measurement of it. That it happens in practice rests on two independent reproductions of the same signature (the independent verifier at first_event_after_ms=300047, and CI on 684b3d16 with the control seeing an event at 5ms), not on a demonstration.",
+    "One apparent hang during R6.5 verification was investigated before being treated as a regression: multi_session simply takes ~140s and was competing with another project's cargo test. It was confirmed green rather than assumed either way."
+  ],
+  "still_open": [
+    "DEBT-PROBE-LIVENESS-01, product half: probe_drain still answers status as the hardcoded literal 'running' at crates/chronos-mcp/src/server.rs:2794. R6.5 removes one cause of a silent session, but if another appears the API still cannot report it, and a consumer would again need a control capture to find out. Surfacing real worker liveness remains the closing condition for that debt.",
+    "uat_c2_01's three panic! paths still do not tear down: Drop cannot await probe_stop, so it needs a restructure."
+  ],
+  "t4_authority": {
+    "resolution": "The integration matrix was NOT run locally. It is executed by the remote CI Test job, which runs byte-identical cargo invocation to the .pipeline.kts TIER 2 stage: 'cargo test --workspace --tests --exclude chronos-e2e -- --test-threads=1 $SKIP_ARGS' (compare ci.yml:63 with .pipeline.kts:303).",
+    "degraded_locally_on_purpose": "The .pipeline.kts header documents TIER 2 as >47min and unfinished on this workstation, and states the full matrix runs in ci.yml. A local replica that competes with other projects for CPU is worse evidence than the authoritative runner, so T4 is delegated to CI.",
+    "skips_in_ci": "EMPTY. The CI log line 'Skip args:' carries no --skip argument, so zero tests were deferred.",
+    "head_sha_covered": "aac0965909935cfa0294fd3fcf389ea33a371f6a",
+    "job": "run 37228104451, job 'Test', conclusion success (Release Build and Benchmarks also success)",
+    "rec_c2_2_uat_c2_in_ci": "Compiled and executed at 20:14:00Z in step 'Test (integration, mandatory surface)'. uat_c2_01_probe_drain_is_not_an_authority ... ok at 20:14:34.810Z, 18.16s after its sibling cih_g_uat_c2_01_diagnostic_first_event_timing (20:14:16.650Z). A skip would have burned the 300s deadline, so this is a real pass and not the vacuous green the first pass produced.",
+    "other_runs_on_same_sha": "6/6 success, 0 red: CI, Coverage, Architecture Contracts, Vault Drift Sweep, Sandbox Debt Sentinel, Supply chain security",
+    "not_triggered_here": "Sandbox Smoke Tests did not run on this SHA: its path filter is chronos-sandbox/** and R6.5 touched crates/chronos-native/**. This is a path filter, not a skipped check; the affected tests are covered by the CI Test job verified above."
+  }
+}

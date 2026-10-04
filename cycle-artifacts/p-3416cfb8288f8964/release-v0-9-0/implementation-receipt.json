@@ -1,0 +1,116 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/release-v0-9-0",
+  "path": "B-direct",
+  "phase": "build",
+  "status": "success",
+  "head_sha": "aac0965909935cfa0294fd3fcf389ea33a371f6a",
+  "base_tag": "v0.1.4",
+  "base_sha": "98c4cd2341058872102f458655791ec53f21bd8c",
+  "base_tag_selection": "v0.1.4 is the nearest tag to HEAD (git describe -> v0.1.4-360-gaac09659) and the most recent by creatordate (2026-09-29). v0.8.0 also exists at 9e3b928b but belongs to an older parallel version line; the repo restarted its 0.1.x line in September while the 0.7.x/0.8.0 line was still moving. Both facts are recorded rather than one being hidden.",
+  "range": "v0.1.4..aac09659",
+  "commits_in_range": 360,
+  "files_changed_in_range": 216,
+  "version": "0.9.0",
+  "version_derivation": "3 commits carry the breaking marker and a BREAKING CHANGE footer: 0745ead4 feat(domain)!, d8f1a414 fix(query)!, 97d592c3 fix(sandbox)!. Under the repository's 0.x semver convention a breaking change is a MINOR bump. The MINOR candidates below 1.0 are taken from the remote namespace, where 0.1.0-0.1.4, 0.2.0-0.8.0 and v0.8.0 are all already published (0.2.0 was found already in origin at 3bee3ad3, 1978 commits behind v0.1.4, which is why the first bump target 0.2.0 was wrong). 0.9.0 is therefore the lowest free MINOR. sddk release plan --tag v0.9.0 reported version_authority: cross_checked. Cargo.toml and Cargo.lock both read 0.9.0.",
+  "commit_mix": {
+    "docs": 166,
+    "fix": 101,
+    "test": 58,
+    "chore": 15,
+    "refactor": 8,
+    "feat": 5,
+    "perf": 3,
+    "ci": 3,
+    "style": 1
+  },
+  "headline_capabilities": [
+    "R6.3: the DEBT-CI-TIMING-01 hypothesis was refuted by measurement. 15 of 16 fixture durations passed with no monotonic threshold, so fixture lifetime was not the trigger; the A/B of the skip path showed 0 orphans with stop_all and 0 without, which retired the 'self-amplifying leak' explanation. The whole change was reverted rather than shipped on a refuted premise.",
+    "DEBT-PROBE-LIVENESS-01: probe_drain answers 'status: running' as a hardcoded literal at crates/chronos-mcp/src/server.rs:2794, so the empty state was byte-identical between producer-never-started, dead, parked and simply-idle. The test that consumed it was circular.",
+    "R6.4: uat_c2_01 now earns its verdict from an independent control capture on the same host instead of inheriting a product-produced literal, and two guards that could not fail were removed (an elapsed<deadline assertion true by construction, replaced by a 60s latency budget, and the circular diagnostic call). Non-vacuity proven by mutation: with the old semantics both guards go FAILED.",
+    "R6.4 also surfaced a release blocker that had gone unnoticed: v0.2.0 was already published in origin at 3bee3ad3. An independent verifier caught it, together with the fact that the '12/12' pipelinek run was TIER 1 only and that the 'environment verdict' was contradicted by a sibling test seeing an event at 47ms on the same host.",
+    "R6.5: root cause of the production defect. CI on 684b3d16 closed 6/7 with Sandbox Smoke red, and R6.4 turned that red into a diagnosis: first_event_after_ms=300034, count=0, total_buffered=0, while the control capture saw an event at 5ms on the same host. PtraceTracer::wait_event used waitpid(-1, __WALL), which reaps the exit state of any child of the process rather than of the calling thread. The server spawns one tracer thread per session and concurrent sessions are a product feature, so two tracer threads competed for the same children and the loser never saw its tracee again: session stuck at 'running', log empty forever. Fixed with __WALL | __WNOTHREAD, keeping __WALL for syscall and clone/fork accounting. The resume failure was also promoted from debug! to warn!, because a defect that wedges a capture in silence must not compile out of release builds.",
+    "The premise that kept the defect alive was false and is now documented: crates/chronos-native/src/test_support.rs justified waitpid(-1) by a single active_session in production, disproved by multi_session.rs, which starts two probes and exercises cross-session operations.",
+    "CC#4: manifest SHA drift on probe_backend.rs caught by the pre-push hook and closed with the m9-76 ritual; regen_manifest_index_shas.py --check is clean across 102 manifests."
+  ],
+  "verification": [
+    {
+      "argv": "gh run view 37228104451 --json conclusion,jobs (CI Test job)",
+      "exit_code": 0,
+      "result": "6/6 workflows success on this SHA, 0 red. The Test job runs the TIER 2 integration command byte-identically to .pipeline.kts:303, and its log shows 'Skip args:' empty, so zero tests were deferred.",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "pipelinek run --rerun --db .pipelinek/db.sqlite --control-root .pipelinek/control .pipeline.kts",
+      "exit_code": 0,
+      "result": "12/12 stages success, run 510619aa-33b1-49ad-bad3-b0b8aeeedf04. This is TIER 1 ONLY: its test-workspace-integration stage echoed 'TIER 2 NO EJECUTADO: CHRONOS_FULL_GATE != 1' and ran no integration test, so its stage success is not counted as integration evidence.",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-native --lib -- --test-threads=1",
+      "exit_code": 0,
+      "result": "114 passed, 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test multi_session -- --test-threads=1",
+      "exit_code": 0,
+      "result": "7 passed in 140.77s; the concurrent-session surface __WNOTHREAD touches",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test program_scenarios -- --test-threads=1",
+      "exit_code": 0,
+      "result": "11 passed in 207.18s; the clone/follow_children path __WALL must keep working for",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test race_depth -- --test-threads=1",
+      "exit_code": 0,
+      "result": "4 passed in 81.66s",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test m1_04_live_probe_execution_log -- --test-threads=1",
+      "exit_code": 0,
+      "result": "2 passed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 -- --test-threads=1 --nocapture",
+      "exit_code": 0,
+      "result": "6 passed in 76.32s with first_event_after_ms=13 and log_advance_ms=93: a real pass, no skip",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exit_code": 0,
+      "result": "clean",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "result": "clean",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "python3 scripts/regen_manifest_index_shas.py --check",
+      "exit_code": 0,
+      "result": "clean across 102 manifests",
+      "class": "OBSERVED"
+    }
+  ],
+  "non_vacuity_proofs": [
+    "R6.4: mutating verdict_is_unobservable back to the old semantics turns both exhaustive guards FAILED with 'verdict_is_unobservable(false, true, false) must be true'. The new verdict rule can fail.",
+    "R6.5: the cross-session race is documented as a hazard by the repository's own test_support.rs, and the premise that made it look safe (a single active_session in production) is disproved by multi_session.rs."
+  ],
+  "honest_limits": [
+    "The race could not be reproduced on demand: it is scheduler-dependent. There is no controlled before/after measurement of it. That it happens in practice rests on two independent reproductions of the same signature (the independent verifier at first_event_after_ms=300047, and CI on 684b3d16 with the control seeing an event at 5ms), not on a demonstration."
+  ],
+  "still_open": [
+    "DEBT-PROBE-LIVENESS-01, product half: probe_drain still answers status with the hardcoded literal 'running' at crates/chronos-mcp/src/server.rs:2794. R6.5 removes one cause of a silent session, but the API still cannot report a dead worker, so a consumer would again need a control capture to find out. Surfacing real worker liveness is the closing condition for that debt.",
+    "uat_c2_01's three panic! paths still do not tear down: Drop cannot await probe_stop, so it needs a restructure."
+  ],
+  "supersedes_cycle": "p-3416cfb8288f8964/release-v020",
+  "supersede_reason": "that cycle was started with --branch feat/release-v020, but the work was committed straight to main. The local release route requires the cycle to point at trunk, and SDDK offers no CLI to retarget a cycle's branch (replan only restages to propose|specify|design|tasks|apply). Rather than edit runtime state by hand, a new B-direct cycle bound to main carries the same verification evidence and supersedes it."
+}

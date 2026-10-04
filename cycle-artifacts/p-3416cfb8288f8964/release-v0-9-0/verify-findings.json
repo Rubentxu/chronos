@@ -1,0 +1,68 @@
+{
+  "subject": {
+    "cycle_id": "release-v0-9-0",
+    "head_sha": "aac0965909935cfa0294fd3fcf389ea33a371f6a",
+    "base_sha": "98c4cd2341058872102f458655791ec53f21bd8c",
+    "base_note": "base_sha is origin/main immediately before this release pushed 98c4cd23..aac09659; the nearest tag to HEAD is v0.1.4 and it peels to 98c4cd23.",
+    "implementation_commit": "afa42c70",
+    "tag": "v0.9.0",
+    "tag_object": "9debf57174ad31ef20f17b6ac71e89c084322bbd",
+    "branch": "main",
+    "route": "B-direct",
+    "subject_note": "Release of the tracer-liveness fix. waitpid(-1, __WALL) let any child of the process be reaped by whichever tracer thread called it, so two concurrent sessions could steal each other's tracee and wedge a session at status 'running' with an empty log forever. Fixed with __WALL | __WNOTHREAD. Verified on release SHA aac09659 and published as annotated tag v0.9.0."
+  },
+  "cycle_id": "release-v0-9-0",
+  "verdict": "PARTIAL",
+  "all_passed": false,
+  "lens_summary": {
+    "tiers_run": [
+      "T0",
+      "T1",
+      "T2",
+      "T3",
+      "T4-remote-ci"
+    ],
+    "synthesis_only": false,
+    "_note": "all_passed is false because two findings remain open and are recorded below rather than counted as satisfied. The T4 integration matrix was executed by the remote CI Test job, not locally: the local canonical gate is TIER 1 and its integration stage runs no tests.",
+    "checks": [
+      "verification-report.json: 12 verification entries with argv + exit_code + OBSERVED class",
+      "remote CI run 37228104451: Test job success, 'Skip args:' empty so 0 tests deferred; runs the TIER 2 command byte-identically to .pipeline.kts:303",
+      "uat_c2_01_probe_drain_is_not_an_authority ok at 20:14:34.810Z, 18.16s after its sibling diagnostic at 20:14:16.650Z; a skip would have burned the 300s deadline, so this is a real pass",
+      "6/6 GitHub Actions workflows success on aac09659, 0 red",
+      "local pipelinek run 510619aa: 12/12 stages success but TIER 1 only; not counted as integration evidence",
+      "targeted local suites: chronos-native --lib 114/114, multi_session 7/7 in 140.77s, program_scenarios 11/11 in 207.18s, race_depth 4/4, m1_04 2/2, rec_c2_2_uat_c2 6/6 in 76.32s with first_event_after_ms=13",
+      "non-vacuity proven by mutation: reverting verdict_is_unobservable to the old semantics turns both exhaustive guards FAILED",
+      "pre-push gate green on the publishing push: fmt OK, clippy OK, CC#4 clean across 102 manifests"
+    ]
+  },
+  "resolved_in_this_cycle": [
+    "R6.3: the DEBT-CI-TIMING-01 hypothesis was refuted by measurement (15 of 16 fixture durations passed with no monotonic threshold), and the change was reverted rather than shipped on a false premise",
+    "R6.4: uat_c2_01 now earns its verdict from an independent control capture; two guards that could not fail were removed; non-vacuity proven by mutation",
+    "R6.5: root cause of the production defect found and fixed (__WNOTHREAD); the resume failure promoted from debug! to warn!",
+    "Release blocker caught by independent verification: v0.2.0 was already published in origin at 3bee3ad3, so the bump target moved to v0.9.0",
+    "False premise in crates/chronos-native/src/test_support.rs documented and corrected",
+    "CC#4 manifest SHA drift on probe_backend.rs closed across 102 manifests"
+  ],
+  "open_findings": [
+    {
+      "id": "DEBT-PROBE-LIVENESS-01",
+      "half": "product",
+      "summary": "probe_drain still returns the hardcoded literal '\"status\": \"running\"' at crates/chronos-mcp/src/server.rs:2794, so the API cannot distinguish a dead worker from a healthy one. The empty state is byte-identical whether the producer never started, died, parked or is simply idle.",
+      "closing_condition": "Surface real worker liveness from the backend AtomicBool that no one currently reads.",
+      "severity": "medium"
+    },
+    {
+      "id": "DEBT-UAT-TEARDOWN-01",
+      "half": "test",
+      "summary": "uat_c2_01's three panic! paths do not tear down the probe session, because Drop cannot await probe_stop.",
+      "closing_condition": "Restructure the test so teardown is awaited on every exit path.",
+      "severity": "low"
+    }
+  ],
+  "limits_of_this_verification": [
+    "The tracer race is scheduler-dependent and was not reproduced on demand, so there is no controlled before/after measurement of it. Its occurrence rests on two independent reproductions of the same signature: the independent verifier at first_event_after_ms=300047, and CI on 684b3d16 with the control capture seeing an event at 5ms.",
+    "The first local verification-report draft described the pipelinek run as 'including test-workspace-integration'. Reading the run events showed that stage echoed 'TIER 2 NO EJECUTADO' and executed no integration test, so the claim was corrected before the report was stored."
+  ],
+  "verdict_native": "PASS_WITH_WARNINGS",
+  "verdict_note": "This project's artifact schema accepts only PASS/FAIL/PARTIAL. The SDDK-native verdict is PASS_WITH_WARNINGS, recorded in verdict_native. PARTIAL is the faithful mapping: the release is verified, published and its gates satisfied, but two findings remain open and are not counted as satisfied."
+}
