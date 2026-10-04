@@ -2252,6 +2252,15 @@ impl McpTestClient {
                          Build it first: cargo build --bin chronos-mcp",
                         candidate.display()
                     );
+                    // Worth knowing before you read the failure this causes: a
+                    // stale binary makes EVERY sandbox test fail, and the
+                    // failure is reported per-test as a spawn error, not as a
+                    // build problem. During R4.0 a change to `chronos-log`
+                    // turned 8 tests in `query_filters` red at once — including
+                    // tests with nothing to do with the log — and the honest
+                    // reading of that wall of red is "rebuild and re-run", not
+                    // "revert". This guard is what made the distinction visible
+                    // instead of leaving it to be guessed.
                     return PathBuf::from("chronos-mcp-not-built");
                 }
                 return candidate;
