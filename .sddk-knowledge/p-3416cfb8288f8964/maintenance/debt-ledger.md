@@ -179,3 +179,48 @@ ocurrio" de un resultado silencioso en un fallo ruidoso.
 tabla de `SCALE_BUDGETS` §9.5 describen el RIG, no el producto.** El sandbox liquida al servidor
 con `kill -9` externo, asi que el nieto nunca entra en la contabilidad de `/usr/bin/time -v`.
 Cualquier dimensionado hecho con esas cifras estaba sobrestimando o subestimando sin saber cual.
+
+---
+
+## DEBT-CI-TIMING-01 — `uat_c2_01_probe_drain_is_not_an_authority` falla por carga del runner, no por el producto
+
+**Estado:** `OPEN` · **Abierta en:** R6.2 (2026-10-04) · **Owner:** agente principal · **Origen:** job `Test`
+del run `37183456326` (`8b1e2e5a`), en `chronos-sandbox/tests/rec_c2_2_uat_c2.rs:282`.
+
+**Lo que se ve.** El test drena el probe, obtiene `first_event_after_ms=4` y `count=1`, y despues
+espera a que el `ExecutionLog` del fixture produzca registros nuevos dentro de
+`deadline_ms=300000`. No llega ninguno y el test falla con *"the fixture's ExecutionLog did not
+produce any new records within 300000ms after the first drain"*. Los otros cinco tests del mismo
+binario pasan, incluido `uat_c2_03_durable_evidence_exceeds_the_ring`.
+
+**Evidencia de que es flake y no regresion, y no una suposicion.** El **mismo binario, en el mismo
+runner y con el mismo codigo**, pasa a las `07:14:17Z` (run `37179456792`, sobre `c7796d35`) y falla
+a las `07:26:54Z` (run `37183456326`, sobre `8b1e2e5a`): doce minutos de diferencia. Entre los dos
+SHAs no hay cambio de codigo en esa ruta.
+
+**Por que ocurre.** La propiedad que el test verifica —*el drain no es una autoridad: lo que llega
+despues viene del log, no del probe*— se comprueba esperando a que el probe uprobe genere syscalls
+suficientes. Eso convierte la carga de la maquina en parte del criterio. En un runner compartido, si
+el ritmo de syscalls cae por debajo del umbral durante la ventana, el fixture no produce registros
+nuevos y el test falla aunque el producto este bien. El propio mensaje de diagnostico del test lo
+reconoce: *"Either the probe stopped, the syscall rate is too low, or ..."*.
+
+**Por que es deuda y no solo una molestia.** Un test cuyo veredicto depende de la carga del runner
+no puede ser un gate: hace que un CI rojo signifique dos cosas a la vez, y quien llegue despues
+gastara el tiempo mirando el producto cuando el defecto esta en el criterio. Un gate que miente
+cuando no debe es peor que no tener gate.
+
+**Lo que NO se hace todavia, y por que.** No se marca `#[ignore]`: el test cubre una propiedad real,
+y un `ignore` sin mas razon que "a veces falla" solo reduce la senal. La reparacion que toca es
+**separar la propiedad del ruido**: que el fixture produzca registros nuevos de forma determinista
+—por ejemplo, disparando la senal que el probe observa en vez de esperar a que el proceso genere
+syscalls solo— y dejar el drain como la variable que se mide. Eso exige leer el fixture entero, y
+se deja para quien lo retome con el contexto delante.
+
+**Se relanzo el job fallido** (`gh run rerun 37183456326 --failed`) para confirmar que el veredicto
+es no determinista. Si vuelve a pasar, la evidencia queda en los dos runs; si vuelve a fallar, esta
+entrada pasa de flake a defecto reproducible y hay que tratarlo como tal.
+
+**Fecha / condicion de cierre:** cerrar cuando el fixture deje de depender del ritmo de syscalls del
+runner, o cuando exista un modo determinista de producir los registros nuevos. Revisar si en tres
+runs seguidos sobre el mismo codigo aparece mas de un fallo.
