@@ -74,6 +74,24 @@ tiempo**, y eso no estaba medido en ningun sitio: C3 (§7.3) acoto el tiempo y n
 la memoria del recorrido. El cociente de 2,14x que R3.1 midio entre harness y servidor es
 **correcto y sigue en pie**; lo que estaba mal era leerlo como "el read path es el que pesa".
 
+**CAUSA RAIZ LOCALIZADA (2026-10-04, sin abrir frente).** El arranque comprueba
+`this.config.replay_on_open` (`crates/chronos-log/src/segmented.rs:492`) y, si esta activo, llama
+a `replay_into_inner()` (`:983`), que construye un plan de replay y lo aplica con `apply_plan`
+(`:988-996`) sobre un `InMemoryExecutionLog` **nuevo**, swapping el backend entero. Esa es la
+materializacion: **la sesion completa queda resident antes de la primera pregunta.** No es un
+desbordamiento del read path, es el diseño del arranque.
+
+**Por que NO se arregla aqui, y es lo importante.** `apply_plan` construye un backend **nuevo** y
+solo entonces lo publica, precisamente para que un fallo no deje un log meio reconstruido; los
+comentarios de `:978-982` explican que las dos rutas lenient anteriores se eliminaron para que no
+hubiera una puerta lateral que reconstruyera otra verdad. Un arranque lazy o paginado es un cambio
+de **arquitectura de la recuperacion**, con su propio contrato de integridad, no un arreglo de
+memoria. Ademas hay una razon de por que puede ser necesaria: `open()` deduce el `tail_state` de lo
+que el replay reconstruyo (`:497-499`), o sea que la materializacion no es evidentemente un descuido sino la
+fuente de la que se deriva el estado de cola. Characterizarla exige decidir si el estado de cola
+puede derivarse de los metadatos del manifiesto sin cargar los registros — y esa es la pregunta
+correcta, no "ponerlo lazy".
+
 **Por que la deuda sigue abierta siendo que el read path esta bien.** El coste de arranque escala
 con el tamano de la sesion y ningun contrato lo acota: abrir un servidor contra un log grande
 consume su memoria antes de que nadie pregunte nada, y un operador que dimensiona una caja
