@@ -2194,6 +2194,14 @@ impl McpTestClient {
         Self::start_path(&Self::resolve_mcp_path()).await
     }
 
+    /// The spawned MCP server's OS process id, while it is still running.
+    ///
+    /// See [`McpProcess::pid`] for why a sandbox test needs to attribute
+    /// memory to the server separately from the harness driving it.
+    pub fn server_pid(&self) -> Option<u32> {
+        self.process.as_ref().and_then(McpProcess::pid)
+    }
+
     /// Locate the `chronos-mcp` binary the same way for every client.
     ///
     /// 1. `CHRONOS_MCP_PATH`

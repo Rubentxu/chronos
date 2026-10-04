@@ -33,6 +33,29 @@ impl McpProcess {
         Self::spawn_with_env(mcp_path, std::collections::HashMap::new()).await
     }
 
+    /// The spawned server's OS process id, while it is still running.
+    ///
+    /// Exists for one measurement and the reasoning behind it is worth
+    /// stating, because "measure the server" was previously not expressible
+    /// from a test. The sandbox server is a **separate process**, and the
+    /// harness process that drives it is a different one with its own
+    /// footprint. `SCALE_BUDGETS` §9.5 carries a four-row RSS table whose
+    /// numbers disagree by ~2,5x, and every row was produced by wrapping the
+    /// whole `cargo test` in `/usr/bin/time -v` — which reports the largest
+    /// single process in the tree, so a seeding harness holding a million
+    /// in-memory records and the server reading them are indistinguishable in
+    /// the result, whichever one happened to be bigger.
+    ///
+    /// With the pid, a test can read `/proc/<pid>/statm` and attribute
+    /// resident memory to the process that actually does the reading. That is
+    /// a measurement capability, not a refactor: nothing about the server's
+    /// behaviour changes.
+    ///
+    /// Returns `None` once the child has been reaped.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+
     /// Spawn a new MCP server process from the given path with extra environment variables.
     ///
     /// Used by sandbox tests that need to control the MCP server's DB path (e.g., ce12).
