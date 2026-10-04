@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-browser"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "chronos-capture",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-capture"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-domain",
  "chronos-log",
@@ -325,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-cli"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-domain"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "schemars",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-e2e"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-capture",
  "chronos-domain",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-ebpf"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "aya",
  "aya-log",
@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-go"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-capture",
  "chronos-domain",
@@ -403,14 +403,14 @@ dependencies = [
 
 [[package]]
 name = "chronos-index"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-domain",
 ]
 
 [[package]]
 name = "chronos-java"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-capture",
  "chronos-domain",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-js"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-capture",
  "chronos-domain",
@@ -445,7 +445,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-log"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "blake3",
  "chronos-domain",
@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-mcp"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "chronos-browser",
@@ -488,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-native"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "addr2line",
  "chronos-capture",
@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-python"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-capture",
  "chronos-domain",
@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-query"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-domain",
  "chronos-index",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-sandbox"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "chronos-browser",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-services"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "bincode",
  "chronos-domain",
@@ -577,7 +577,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-store"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "chronos-webhook"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "chronos-domain",
  "http-body-util",
