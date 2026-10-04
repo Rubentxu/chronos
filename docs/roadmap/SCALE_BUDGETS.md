@@ -853,8 +853,14 @@ verde a 1M**; las de `poll` sí se describen como correctas.
 > fila que falta es la del servidor, y se midio el 2026-10-04: **948.596 KB** para el mismo
 > agregado de 1M, contra **442.704 KB** del harness en la misma corrida — el servidor es 2,14x mas
 > grande, no mas pequeno. Ver §10 punto 5 y el lane `the_read_path_not_the_seeder_owns_the_
-> million_event_footprint`. Para dimensionar en produccion, la fila relevante es esa, no las de
-> aqui.
+> million_event_footprint`.
+>
+> **Y un aviso mas, anadido el mismo dia tras sondear por fases: esa cifra del servidor es
+> casi enteramente coste de ARRANQUE.** El servidor esta en **944.608 KB antes de responder un
+> solo agregado**, y el agregado anade ~3 MB. Los ~344 MB de diferencia se ven isolando un
+> arranque con la sesion valida frente a uno sin ella. Para dimensionar el **read path** lo que
+> cuenta es ese ~3 MB por agregado; los ~944 MB son el coste de tener la sesion resident, que es
+> otra pregunta y la que `DEBT-SCALE-MEM-01` acaba de recibir.
 
 | Fuente | Fecha | Host | `summarize` a 1M | RSS |
 |---|---|---|---|---|
@@ -995,10 +1001,29 @@ R2.1 **no** puede declararse cerrada con este documento. Estado al 2026-10-03, s
    > | **Servidor (lee)** | **948.596 KB** |
    > | Harness (siembra) | 442.704 KB |
    >
-   > Ratio **2,14x**, y **replicado**: una primera corrida dio 949.204 KB contra 442.724 KB
-   > (**2,14x** tambien), con sembrados de 171,5 s y 239,4 s. Dos corredores con semillas de coste
-   > muy distinto dando el mismo ratio es lo que distingue una propiedad del codigo de una cifra de
-   > este host — que es justo lo que §0 exige antes de poder afirmar algo.
+   > **LO QUE LA MEDICION PROFUNDA REFUTO, y es la parte que mas pesa: el 949 MB NO es del camino
+   > de lectura.** La atribucion de arriba es correcta —el servidor es el mayor de los dos— pero
+   > la causa que se leeria de ahi es falsa. Se sondeo por fases, midiendo el RSS del servidor:
+   >
+   > | Momento | RSS del servidor |
+   > |---|---|
+   > | Al arrancar, con la sesion cargada, **sin un solo agregado** | **944.608 KB** |
+   > | Tras el agregado #1 (11,3 s, `total_events: 1000000`) | 947.560 KB (**+2.952 KB**) |
+   > | Tras los agregados #2, #3, #4 | 947.712 / 948.840 / 949.896 KB |
+   >
+   > **El agregado cuesta ~3 MB, no 949 MB: el 99,7 % de la cifra es coste de ARRANQUE.** Y no
+   > hay fuga: cuatro agregados seguidos anaden **5.288 KB en total** y la serie se aplana, luego
+   > el coste no escala con el numero de peticiones. El diseno de R2.2 y R2.4 —leer por paginas en
+   > vez de clonar— **funciona en memoria igual que en tiempo**, y eso no estaba medido: C3 (§7.3)
+   > acoto el tiempo y nadie habia acotado la memoria del recorrido.
+   >
+   > **Un dato de control que cierra la atribucion:** con un fixture que el lector rechaza, el
+   > servidor arranca en **~600 MB**; con la sesion de 1M valida, en **~944 MB**. Los ~344 MB de
+   > diferencia son exactamente el coste de tener la sesion resident, y existen antes de que
+   > nadie pregunte nada.
+   >
+   > **Donde vive realmente la memoria: la materializacion de la sesion al arrancar.** Ahi es donde
+   > esta `DEBT-SCALE-MEM-01` tras esta medicion, y no donde se escribio al principio.
    > El 949 MB **coincide exactamente** con el "~949 MB en el proceso servidor" que la cuarta
    > grabacion de §9.5 ya mencionaba de pasada sin saber que significaba. Lo que hacia falta no
    > era repetir la medicion, era **atribuirla**.

@@ -53,30 +53,46 @@ Candidate follow-up cycles:
 - ~~`m1-probe-inject-error-prefix`~~ **NO HACER FALTA — retracted 2026-10-03 (R3.3)**: DEBT-M7-02-01 no tenía la causa que declaraba; los 4 tests pasan con el binario construido y ya pasaban en CI. (texto original: close DEBT-M7-02-01 (4 probe_inject tests with stale prefix).
 - `m1-uat-g0-04-privileged`: close DEBT-G0-04 (requires privileged environment).
 
-## DEBT-SCALE-MEM-01 (2026-10-04): el coste en memoria del read path no esta caracterizado
+## DEBT-SCALE-MEM-01 (2026-10-04): la sesion se materializa al ARROLLAR, no al leer
 
-**Esta si es deuda real, y es la unica que R3.1 anade.** Se registra con la misma disciplina que
-las de arriba: porque sus criterios **siguen vigentes**, verificados hoy y no supuestos.
+**Esta si es deuda real, y es la unica que R3.1/R3.2 anaden. Se corrigio a si misma el mismo
+dia:** la primera version decia que "el camino de lectura carga la sesion en memoria — 949 MB
+para responder un agregado". **Eso era falso**, y lo desmentio una medicion por fases hecha horas
+despues en el mismo bloque. Se conserva el error original porque es justo el tipo de conclusion
+que la regla de verificar antes de actuar existe para cazar, y porque tapaba el dato que si
+importa.
 
 | ID | Source | Description | Repro |
 |---|---|---|---|
-| DEBT-SCALE-MEM-01 | R3.1, al resolver `SCALE_BUDGETS` §10 punto 5 | El camino de lectura **carga la sesion en memoria**: **948.596 KB** de RSS para responder **un** agregado sobre 1M eventos, contra 442.704 KB del harness que la sembro. El tiempo es lineal (C3, §7.3); **la memoria no esta caracterizada en absoluto** — no hay ningun contrato que la acote, ni en `SCALE_BUDGETS` §7 ni en el codigo. Lo que se sabe es la magnitud y nada mas. | `TMPDIR=/var/home/rubentxu/chronos-scratch cargo test -p chronos-sandbox --test scale_execution_log_1m -- --ignored --nocapture --exact the_read_path_not_the_seeder_owns_the_million_event_footprint` |
+| DEBT-SCALE-MEM-01 | R3.2, al sondear por fases lo que R3.1 atribuyo | **El servidor materializa la sesion completa al arrancar: 944.608 KB residentes ANTES de responder un solo agregado.** Aislado: con la sesion de 1M valida el arranque esta en ~944 MB; con un fixture que el lector rechaza, en ~600 MB. Los **~344 MB de diferencia** son el coste de tener la sesion resident. | `TMPDIR=/var/home/rubentxu/chronos-scratch cargo run -p chronos-sandbox --example rss_probe` |
 
-**Por que no se arregla aqui y por que no se inventa un presupuesto.** `SCALE_BUDGETS` §0 prohibe
-fijar una cifra que nadie pueda re-medir, y 949 MB es exactamente eso: una medicion con la huella
-de este host pegada, no un limite del producto. Convertirla en threshold seria el mismo error que
-esta pagina documenta en §7, donde una asercion puesta para que pase es un gate que no puede
-fallar por la razon correcta. Lo que falta es la **caracterizacion** — si la memoria escala con N
-o con el numero de cubos, si hay un techo natural, y cual es — y esa es la pregunta de un ciclo
-propio.
+**LO QUE LA MEDICION REFUTO, que es la parte valuable del bloque.** El agregado de 1M cuesta
+**+2.952 KB**, no 949 MB. Y cuatro agregados seguidos anaden **5.288 KB en total**, con la serie
+aplanandose: **no hay fuga y el coste no escala con el numero de peticiones.** El diseno de R2.2 y
+R2.4 —leer por paginas en vez de clonar la pagina entera— **funciona en memoria igual que en
+tiempo**, y eso no estaba medido en ningun sitio: C3 (§7.3) acoto el tiempo y nadie habia acotado
+la memoria del recorrido. El cociente de 2,14x que R3.1 midio entre harness y servidor es
+**correcto y sigue en pie**; lo que estaba mal era leerlo como "el read path es el que pesa".
 
-**Lo que si se entrega en R3.1**, para que el ciclo que la retome no empiece de cero: el accessor
-`McpProcess::pid` / `McpTestClient::server_pid` (la medicion por proceso era **inexpresable**
-antes), el helper `process_rss_kb` en el lane, y el guard que fija la **atribucion** (el servidor
-es el mayor, con suelo 1,5x) para que un cambio futuro en la forma del read path tenga que pasar
-por ahi.
+**Por que la deuda sigue abierta siendo que el read path esta bien.** El coste de arranque escala
+con el tamano de la sesion y ningun contrato lo acota: abrir un servidor contra un log grande
+consume su memoria antes de que nadie pregunte nada, y un operador que dimensiona una caja
+mirando solo el tiempo de un agregado (11,3 s) no ve ese numero. Falta caracterizar si esa
+resident es **necesaria** o una consecuencia de la replay, y si hay un techo natural. **No se
+inventa un threshold:** `SCALE_BUDGETS` §0 prohibe fijar una cifra que nadie pueda re-medir.
 
-**Ademas, y esto es lo que mas importa: las cuatro filas de la tabla de `SCALE_BUDGETS` §9.5
-describen el RIG, no el producto.** El sandbox liquida al servidor con `kill -9` externo, asi que
-el nieto nunca entra en la contabilidad de `/usr/bin/time -v`. Cualquier dimensionado hecho con
-esas cifras estaba sobrestimando o subestimando sin saber cual.
+**Lo que R3.2 deja para quien la retome:** la medicion por proceso era **inexpresable** antes
+(`McpProcess.child` era privado), y la sonda por fases quedo en
+`chronos-sandbox/examples/rss_probe.rs`. Ademas se registran **cuatro intentos fallidos** de esa
+sonda, porque son la clase de resultado que se repite si no se anota: un nombre de herramienta
+pasado como metodo JSON-RPC (-32601); `params` como objeto de argumentos en vez de sobre
+`{name, arguments}` —que responde `total_events: 0` en 0,0 s **sin ejecutar nada** y se lee como
+un agregado rapido sobre un log vacio—; y un `TraceEvent` inventado campo a campo que el lector
+rechazo con `payload tag "trace_event" could not be decoded`. Los tres se veian como fallos de
+producto. El probe ahora **aserta `total_events == 1.000.000`**, que es lo que convierte "no
+ocurrio" de un resultado silencioso en un fallo ruidoso.
+
+**Ademas, y esto es lo que mas importa para leer cualquier medicion futura: las cuatro filas de la
+tabla de `SCALE_BUDGETS` §9.5 describen el RIG, no el producto.** El sandbox liquida al servidor
+con `kill -9` externo, asi que el nieto nunca entra en la contabilidad de `/usr/bin/time -v`.
+Cualquier dimensionado hecho con esas cifras estaba sobrestimando o subestimando sin saber cual.
