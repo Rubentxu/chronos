@@ -15,6 +15,18 @@
 //! `chronos-log` is a dev-dependency of this crate, so none of this could live
 //! in `src/` even in principle. It is test scaffolding by construction and it
 //! stays here.
+//!
+//! # Scratch space
+//!
+//! These fixtures write tens of megabytes — a 1M-event log is ~27 MB of
+//! segments — and they go wherever [`std::env::temp_dir`] points. On a host
+//! where `/tmp` is a quota'd tmpfs rather than a plain directory, seeding dies
+//! with `Disk quota exceeded (os error 122)` while `df` still reports free
+//! space, because a quota is not a space check. That failure reads as a product
+//! bug and is not one, so the fix is the environment's: point `TMPDIR` at a
+//! filesystem that can hold the fixture.
+//!
+//!     TMPDIR=/path/with/room cargo test -p chronos-sandbox --test <lane> -- --ignored
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -84,6 +96,20 @@ pub fn trace_event(event_id: u64) -> TraceEvent {
     }
 }
 
+/// How many records the current fixture actually wrote.
+///
+/// The budget stop's anchor has to point inside the session, and the session
+/// is whatever the lane seeded — which is not always [`EVENTS`], because one
+/// lane deliberately seeds a session one event *over* the ceiling. A bound
+/// written against the constant would be false for that lane and vacuous for
+/// the rest, so the fixture records what it wrote and the assertion uses it.
+static SEEDED_EVENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Events written by the most recent [`seed_with`] call.
+pub fn seeded_events() -> u64 {
+    SEEDED_EVENTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Seed a real 1M-event log with the production writer, and return the seed
 /// seconds it took.
 ///
@@ -92,6 +118,15 @@ pub fn trace_event(event_id: u64) -> TraceEvent {
 /// dropped before the server starts: the server must be able to open it from
 /// what is on disk alone.
 pub fn seed(root: &Path) -> f64 {
+    seed_with(root, EVENTS)
+}
+
+/// Seed `events` records instead of [`EVENTS`].
+///
+/// The size is a parameter because one lane needs a session that is *one
+/// event over* a ceiling rather than exactly on it, and a fixed constant
+/// cannot express both without lying about one of them.
+pub fn seed_with(root: &Path, events: u64) -> f64 {
     let started = Instant::now();
     let dir = root.join(SESSION);
     std::fs::create_dir_all(&dir).expect("create execution-log dir");
@@ -103,7 +138,7 @@ pub fn seed(root: &Path) -> f64 {
     // Each record is encoded for real, because `event_id` and the timestamp
     // vary per event and the reader decodes them. A reused payload would make
     // this a test of a log where every record claims the same identity.
-    for i in 1..=EVENTS {
+    for i in 1..=events {
         log.append(NewExecutionRecord {
             session_id: session_id.clone(),
             kind: ExecutionKind::Raw,
@@ -135,7 +170,8 @@ pub fn seed(root: &Path) -> f64 {
     );
 
     let secs = started.elapsed().as_secs_f64();
-    eprintln!("seeded {EVENTS} events in {secs:.1}s ({seg_bytes} segment bytes on disk)");
+    SEEDED_EVENTS.store(events, std::sync::atomic::Ordering::Relaxed);
+    eprintln!("seeded {events} events in {secs:.1}s ({seg_bytes} segment bytes on disk)");
     secs
 }
 
@@ -159,7 +195,7 @@ pub async fn start_server(root: &Path) -> McpTestClient {
         })
 }
 
-/// Unwrap a raw `tools/call` envelope into the tool's own payload.
+/// Unwrap a raw `tools/call` envelope into the tool's own JSON payload.
 ///
 /// `McpTestClient::call_tool` does this internally; `call_with_timeout` does
 /// not — it returns the JSON-RPC envelope verbatim, because the point of
@@ -169,12 +205,30 @@ pub async fn start_server(root: &Path) -> McpTestClient {
 /// Indexing that envelope as if it were the payload is a mistake this code
 /// path used to make: `summary["total_events"]` on
 /// `{"id":..,"jsonrpc":..,"result":{..}}` yields `None`, which read as a
-/// missing count rather than as a wrong index. `wire_retention_facts.rs:34`
-/// already does `.get("result")` for the same reason.
+/// missing count rather than as a wrong index.
 ///
-/// A `isError: true` response is not an error here: after D2 a budget stop is
-/// reported as an error envelope *carrying the resume anchor*, so the payload
-/// is returned either way and the caller decides what it means.
+/// # Two content blocks, and which one is which
+///
+/// A **success** envelope carries one content block and it is the JSON.
+///
+/// A **failure** envelope that carries structured facts carries **two**: the
+/// prose first, the JSON second. Both the D2 budget stop and the
+/// `cursor_stale` re-anchor do this, and `wire_retention_facts.rs` pins it
+/// explicitly — `content[0]` is the text, preserved verbatim because other
+/// consumers parse it, and `content[1]` is the JSON.
+///
+/// So the first block is **not** a reliable place to look for the payload.
+/// This helper took `content.first()` and required it to parse as JSON, which
+/// works for every success and breaks on every structured failure — and it
+/// broke the moment a lane actually hit a budget stop, which is exactly the
+/// path the 1M lane documents and had never exercised. Reading the wrong block
+/// does not fail loudly: the prose is not JSON, so the symptom is a parse
+/// error quoting the human-readable message, which reads like a product bug
+/// and is a bug in the reader.
+///
+/// Hence: first block that parses as JSON wins, whatever its position. If none
+/// does, the envelope had no structured payload, and saying so — with the
+/// blocks quoted — is more useful than guessing.
 pub fn unwrap_tool_envelope(raw: &Value) -> Value {
     let result = raw
         .get("result")
@@ -183,13 +237,29 @@ pub fn unwrap_tool_envelope(raw: &Value) -> Value {
         .get("content")
         .and_then(|c| c.as_array())
         .unwrap_or_else(|| panic!("result must carry a content array, got {raw}"));
-    let text = content
-        .first()
-        .and_then(|c| c.get("text"))
-        .and_then(|t| t.as_str())
-        .unwrap_or_else(|| panic!("the first content block must be text, got {raw}"));
-    serde_json::from_str(text)
-        .unwrap_or_else(|e| panic!("the tool payload must be JSON ({e}), got {text}"))
+    assert!(
+        !content.is_empty(),
+        "result must carry at least one content block, got {raw}"
+    );
+
+    for block in content {
+        let Some(text) = block.get("text").and_then(|t| t.as_str()) else {
+            continue;
+        };
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
+            return value;
+        }
+    }
+
+    let blocks: Vec<&str> = content
+        .iter()
+        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+        .collect();
+    panic!(
+        "no content block carried a JSON payload; this envelope is prose-only. Blocks: {blocks:?}. \
+         A structured failure carries the JSON in a later block, so a failure to parse block 0 \
+         is not by itself a product fault."
+    );
 }
 
 /// What one whole-log aggregate call returned.
@@ -239,24 +309,31 @@ impl AggregationOp {
 
     /// Run one whole-log aggregation against the seeded 1M session and
     /// measure it.
-    ///
-    /// Routed through `call_with_timeout` for two reasons, both learned the
-    /// hard way: the client's 30s default is shorter than an aggregate over
-    /// 1M can be expected to take, and `call_tool` turns an `isError` envelope
-    /// into a transport `Err`, which would erase the budget stop's resume
-    /// anchor — the one number a caller needs to continue.
-    ///
-    /// The budget-stop contract is checked here rather than in each caller,
-    /// because it is a property of the read path and not of either lane: a
-    /// stop that does not name a `read_path_*` reason, or that omits its
-    /// anchor, is a bug no lane should have to discover separately.
     pub async fn once(self, client: &mut McpTestClient) -> AggregateOutcome {
+        self.once_from(client, None).await
+    }
+
+    /// The same call, optionally resuming from a cursor.
+    ///
+    /// `cursor` is passed through verbatim, so the caller owns the encoding.
+    /// It exists because a budget stop hands back a `next_seq`, and the only
+    /// way to spend that anchor is a second call carrying a cursor at that
+    /// position — which is a contract the wire does not document, and the lane
+    /// that resumes says so where it does it.
+    pub async fn once_from(
+        self,
+        client: &mut McpTestClient,
+        cursor: Option<&str>,
+    ) -> AggregateOutcome {
         let started = Instant::now();
+        let mut arguments = json!({ "session_id": SESSION, "mode": self.mode() });
+        if let Some(c) = cursor {
+            arguments["cursor"] = json!(c);
+        }
         let raw = client
             .call_with_timeout(
                 "tools/call",
-                json!({ "name": "execution_log_read", "arguments": {
-                    "session_id": SESSION, "mode": self.mode() } }),
+                json!({ "name": "execution_log_read", "arguments": arguments }),
                 Duration::from_secs(AGGREGATE_TIMEOUT_SECS),
             )
             .await
@@ -298,8 +375,10 @@ impl AggregationOp {
                         panic!("a budget stop must carry the resume anchor, got {payload}")
                     });
                 assert!(
-                    next_seq > 0 && next_seq <= EVENTS,
-                    "the resume anchor must point inside the session, got {next_seq}"
+                    next_seq > 0 && next_seq <= seeded_events(),
+                    "the resume anchor must point inside the session ({} events seeded), \
+                     got {next_seq}",
+                    seeded_events()
                 );
                 assert_eq!(
                     payload.get("partial"),

@@ -43,7 +43,9 @@
 
 mod common;
 
-use common::{seed, start_server, temp_root, AggregateOutcome, AggregationOp, EVENTS, SESSION};
+use common::{
+    seed, seed_with, start_server, temp_root, AggregateOutcome, AggregationOp, EVENTS, SESSION,
+};
 use serde_json::json;
 
 const POLL_LIMIT: usize = 100;
@@ -219,6 +221,186 @@ async fn the_read_path_serves_a_million_events() {
     // printed on every run so it is recorded rather than assumed.
     eprintln!(
         "read path served {EVENTS} events: seed {seed_secs:.1}s, summarize {summarize_secs:.1}s"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A session **one event over** the D2 event ceiling stops honestly, and
+/// resuming from its anchor reconstructs the whole thing.
+///
+/// The sibling test above seeds exactly 1.000.000, which is exactly
+/// `ResourceLimits::default().max_events`, so it lands on the *good* side of a
+/// boundary and says nothing about the other one. `SCALE_BUDGETS` §9.3 records
+/// that the default cap sits precisely on R2.1's 1M target with no headroom —
+/// which means "1M events within budget" is true **at** the boundary and not
+/// past it. This is the measurement of the other side, and the thing it has to
+/// establish is not that the walk stops (that is D2's job, proven elsewhere) but
+/// that stopping is **lossless**: the anchor plus a resumed walk accounts for
+/// every seeded event, with nothing double-counted and nothing dropped.
+///
+/// That is the Silent Lie boundary. An aggregate over a prefix that reported
+/// itself as complete is the defect ADR-0004 exists to remove, and a ceiling
+/// that truncates is exactly where it would come back. So the assertions are
+/// arithmetic, not narrative: `stopped_at + resumed == seeded`.
+///
+/// ## The cursor is minted here, and that is a finding
+///
+/// A budget stop returns a bare `next_seq`. Turning it into a resumable call
+/// requires an `EventsCursorV1`, whose wire form is
+/// `ecv1:<schema>:<len>:<session>:<next_seq>` — and that form appears nowhere in
+/// the tool description, the response, or the error. A client can derive it (the
+/// `poll` response shows the shape and the schema version is 1), and that is
+/// what this test does, but "derivable by a determined agent" is not the same as
+/// "documented", and a stop that hands over an anchor the caller cannot spend
+/// without reverse-engineering the format is half a contract. Recorded rather
+/// than papered over: changing the wire format is a contract decision, not
+/// something a characterisation lane decides on its own.
+#[tokio::test]
+#[ignore = "1M+1-event ceiling characterisation: a second 1M seed plus a stop and a resume; not for the hot CI path"]
+async fn one_event_over_the_event_ceiling_stops_honestly_and_resumes_to_the_whole() {
+    /// One past the default `max_events`, which is what makes this the other
+    /// side of the boundary rather than a bigger version of the same case.
+    const OVER: u64 = EVENTS + 1;
+
+    // Cost, measured rather than guessed, because it is the reason this is
+    // `#[ignore]`d: seeding 1.000.001 events took **34 s** onto the tmpfs and
+    // **907 s** onto the NVMe volume this run happened to use, with the walk
+    // itself at 11,3 s. The 26x is the filesystem under load, not the fixture
+    // — which is the honest reason to record it and not to budget it: the
+    // figure nobody can re-measure is the one §0 of SCALE_BUDGETS forbids
+    // pinning. Point TMPDIR somewhere that can hold ~27 MB and can be written
+    // fast; see the scratch-space note in `tests/common/mod.rs`.
+    let root = temp_root("1m-plus-1");
+    let seed_secs = seed_with(&root, OVER);
+    eprintln!("seeded {OVER} events in {seed_secs:.1}s");
+    let mut client = start_server(&root).await;
+
+    // ------------------------------------------------------------ the stop
+    let (stopped_at, stop_secs) = match AggregationOp::Summarize.once(&mut client).await {
+        AggregateOutcome::Stopped { next_seq, secs, .. } => {
+            // The ceiling is charged per page, so it fires on the page that
+            // crosses the line rather than at the exact event — and on this
+            // fixture that page is the LAST one. 976 full pages plus a partial
+            // one cover all 1.000.001, so the walk is refused having already
+            // read the whole session, with the anchor at its very end.
+            //
+            // Measured, not assumed: the stop reported
+            // `events_scanned 1000001 over 977 pages … stopped at
+            // next_seq=1000001`, and the resume below returns an empty
+            // aggregate.
+            //
+            // That is recorded rather than asserted away, because it is the
+            // interesting part. `read_budget`'s doc declares that an operation
+            // "may overshoot by at most one page" as an accepted trade; here the
+            // overshoot is the entire log, so the slack is not benign — it
+            // discards a result the walk had already computed. Whether that
+            // should change is a **D2 contract decision**, not something a
+            // characterisation lane settles by asserting, and the existing
+            // `d2_summarize_stops_at_its_deadline_instead_of_running_on` pins
+            // the stop itself. So this asserts only what must hold either way.
+            assert!(
+                next_seq > EVENTS,
+                "the ceiling must be enforced: it fired at {next_seq}, at or below {EVENTS}"
+            );
+            assert!(
+                next_seq <= OVER,
+                "the anchor must point inside the session, never past its end: {next_seq} > {OVER}"
+            );
+            eprintln!("summarize stopped at seq {next_seq} after {secs:.1}s");
+            (next_seq, secs)
+        }
+        AggregateOutcome::Complete {
+            total_events,
+            payload,
+            ..
+        } => panic!(
+            "a session one event over the ceiling must not be aggregated whole: it reported \
+             {total_events} in {payload}"
+        ),
+    };
+
+    // ---------------------------------------------------------- the resume
+    // `poll` is the only response that hands a client a cursor, so the resume
+    // cursor is built from the server's own encoding rather than a literal
+    // format written out here — which also means this test fails if the shape
+    // ever changes, instead of quietly minting something the server rejects.
+    let first = client
+        .call_tool(
+            "execution_log_read",
+            json!({ "session_id": SESSION, "mode": "poll", "limit": 1 }),
+        )
+        .await
+        .expect("poll must answer against the seeded session");
+    let template = first["next_cursor"]
+        .as_str()
+        .expect("poll must return a next_cursor")
+        .to_string();
+    let parts: Vec<&str> = template.split(':').collect();
+    assert_eq!(
+        parts.len(),
+        5,
+        "the cursor is documented as five colon-separated parts; a different shape means this \
+         test is minting something else: {template}"
+    );
+    let last = parts.len() - 1;
+    let resume_cursor = format!("{}:{stopped_at}", parts[..last].join(":"));
+
+    let resumed = match AggregationOp::Summarize
+        .once_from(&mut client, Some(&resume_cursor))
+        .await
+    {
+        AggregateOutcome::Complete {
+            total_events,
+            payload,
+            secs,
+        } => {
+            eprintln!("resumed summarize answered in {secs:.1}s: {payload}");
+            total_events
+        }
+        AggregateOutcome::Stopped { next_seq, .. } => panic!(
+            "the remainder is far below the ceiling, so the resume must finish; it stopped again \
+             at {next_seq}"
+        ),
+    };
+
+    // ------------------------------------------------------------ the arithmetic
+    // This is the whole point: the stop plus the resume must account for every
+    // seeded event. A ceiling that dropped events, or an anchor that re-read
+    // them, breaks this sum — and either would be a silent lie at the exact size
+    // the roadmap's headline claim is about.
+    //
+    // Measured, not designed: the stop accounts for **all** of it and the
+    // resume accounts for **none**, because the ceiling fires on the last page
+    // and the anchor lands on the last seq. The sum still has to hold — that is
+    // the property that says no events are lost — but neither half may be
+    // assumed to be non-empty, so the assertions bound rather than predict.
+    assert!(
+        stopped_at <= OVER,
+        "the stop cannot claim to have read more than the session holds: {stopped_at} > {OVER}"
+    );
+    assert_eq!(
+        stopped_at + resumed,
+        OVER,
+        "stop ({stopped_at}) plus resume ({resumed}) must reconstruct the seeded {OVER} exactly: \
+         a ceiling that drops events or an anchor that replays them breaks this sum"
+    );
+
+    // The resume covering **nothing** is the finding, and it is pinned on
+    // purpose. Leaving it unasserted would let a later change quietly make this
+    // test weaker; asserting it means that revising D2 — returning the
+    // aggregate once the walk has exhausted the log — has to come through here,
+    // where the first arm's panic already says what the new behaviour would
+    // mean. A characterisation that stops characterising is worse than none.
+    assert_eq!(
+        resumed, 0,
+        "measured: the anchor is the last seq, so the resume aggregates nothing. If D2 is \
+         revised to return an aggregate the walk already completed, this is the assertion that \
+         must change — deliberately."
+    );
+
+    eprintln!(
+        "one event over the ceiling: seed {seed_secs:.1}s, stop at {stopped_at} after \
+         {stop_secs:.1}s, resume covered {resumed}"
     );
     let _ = std::fs::remove_dir_all(&root);
 }
