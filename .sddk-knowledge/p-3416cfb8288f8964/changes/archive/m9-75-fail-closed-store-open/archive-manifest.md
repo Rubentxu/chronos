@@ -134,7 +134,7 @@ One commit:
 | Kind | Path | SHA-256 |
 |---|---|---|
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
-| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `c3a89245ef8a41f1945bad23f6ceb2e4f94931c22f551dd30319cfc5fd4cfe74` |
+| source (mcp server) | `crates/chronos-mcp/src/server.rs` | `04b6455af0cb798903d7a8f171c39a89634cd30f4ce87c43c88544a3a8c605a9` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
 | source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `33e8d03e9299fd8916b9d91a23ffb80d19b0599870b2978e39012e5dd8f47f6b` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
