@@ -208,32 +208,44 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
         // the capture in time". It does NOT prove the cursor contract is
         // violated, and the old code panicked as if it did.
         //
-        // Decide observability from the pipeline's own state, not from the
-        // clock: if the probe session is still running and holding the
-        // fixture but has buffered nothing, the contract is unobservable here
-        // (environment), not broken (regression).
+        // Decide observability by MEASURING this host, not by reading a field
+        // the server fills in unconditionally. R6.4: the old decision read
+        // `probe_drain`'s `status`, which is a hardcoded `"running"` literal
+        // (`crates/chronos-mcp/src/server.rs:2794`) emitted on every `Ok`. It
+        // was therefore always true, the excuse was always available, and a
+        // green run of this test could mean "the product captured nothing for
+        // 300 seconds" (DEBT-PROBE-LIVENESS-01). The independent verifier
+        // reproduced exactly that and still got `ok`.
+        //
+        // So measure instead: run a second, independent capture against the
+        // same fixture on the same host. If the control sees an event, this
+        // host demonstrably can observe a capture, and an empty wait here is a
+        // product failure, not a slow machine. The excuse then requires the
+        // control to have failed too, which is the only evidence that would
+        // actually support it.
         let wire = client
             .probe_drain_wire(&session, None)
             .await
             .expect("diagnostic re-read");
-        let session_live = wire.get("status").and_then(|s| s.as_str()) == Some("running");
         let pipeline_silent = wire
             .get("total_buffered")
             .and_then(|t| t.as_u64())
             .unwrap_or(0)
             == 0;
-        if verdict_is_unobservable(session_live, pipeline_silent, UNDER_TARPAULIN) {
+        let (control_saw_event, control_after) = control_capture_sees_an_event(&mut client).await;
+        if verdict_is_unobservable(control_saw_event, pipeline_silent, UNDER_TARPAULIN) {
             eprintln!(
-                "UAT-C2-01 SKIPPED-EVIDENCE: the probe session is still running and \
-                 has buffered 0 records after {}ms (first_event_after_ms={}). The \
-                 capture pipeline is attached but the fixture produced nothing \
-                 observable on this host under current load, so the cursor-advance \
-                 contract cannot be exercised. This is an environment verdict, not \
-                 a contract verdict: the same revision passes this test on an \
-                 unloaded host and in the non-loaded runs above. Recorded rather \
-                 than passed, and not counted as a contract failure. wire={:?}",
+                "UAT-C2-01 SKIPPED-EVIDENCE: the capture produced no records in \
+                 {}ms (first_event_after_ms={}), AND an independent control capture on \
+                 the same host and the same fixture also saw nothing in {}ms. Two \
+                 independent captures failing is the evidence this host cannot \
+                 observe a capture at all, so the cursor-advance contract cannot be \
+                 exercised here. This is an environment verdict, not a contract \
+                 verdict. If the control HAD seen an event this would be a product \
+                 failure and the test would have panicked instead. wire={:?}",
                 UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
                 first_event_after_ms.as_millis(),
+                control_after.as_millis(),
                 wire
             );
             // Stop the traced children before returning. See `stop_all` for
@@ -262,14 +274,18 @@ async fn uat_c2_01_probe_drain_is_not_an_authority() {
             return;
         }
         panic!(
-            "UAT-C2-01: the fixture's ExecutionLog produced no records within \
-             {}ms (first_event_after_ms={}). The probe did not capture anything \
-             before the deadline; either the fixture's busyloop did not start, \
-             the probe subscription was not wired to the same session, or the \
-             tarpaulin-instrumented busyloop is so slow that the first event \
-             arrives after the 5s window. wire={:?}",
+            "UAT-C2-01: this capture produced no records within {}ms \
+             (first_event_after_ms={}), but an independent control capture on the \
+             same host, the same fixture and the same binary SAW an event in {}ms. \
+             The host is therefore able to observe a capture, so this empty log is a \
+             product failure, not a slow machine: `probe_start` returned a session that \
+             reported itself running and captured nothing. The old code excused this as \
+             an environment verdict using `probe_drain`'s `status` field, which is a \
+             hardcoded literal (crates/chronos-mcp/src/server.rs:2794) and therefore \
+             always said 'running'. That is DEBT-PROBE-LIVENESS-01. wire={:?}",
             UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
             first_event_after_ms.as_millis(),
+            control_after.as_millis(),
             wire
         );
     }
@@ -630,16 +646,49 @@ async fn uat_c2_03_durable_evidence_exceeds_the_ring() {
 /// The distinction must never widen into a false pass:
 ///   - `pipeline_produced` is authoritative. Any buffered record at all means
 ///     the pipeline works, so an empty wait is a real failure and must panic.
-///   - a finished session is not "unobservable": the capture ended without
-///     records, which is a real outcome worth failing on.
-///   - only a still-running session that buffered nothing qualifies, and only
-///     when instrumentation is not in play.
+///   - the excuse is only earned when the host itself is shown to be unable:
+///     `control_saw_event` is measured by running an independent capture right
+///     here. If that control DID see an event, this host can observe captures,
+///     and an empty wait is a product failure wearing an environment label.
+///   - under instrumentation the observable count is zero by construction, so
+///     that branch owns the verdict and must not also claim it here.
+///
+/// R6.4 replaced the old first argument. It used to be `session_live`, read
+/// from `probe_drain`'s `status` field — which is a hardcoded literal at
+/// `crates/chronos-mcp/src/server.rs:2794`, not a worker state. The server
+/// returns it on every `Ok`, so it was constant-true and the test decided its
+/// own verdict from a value the product fabricated. That is DEBT-PROBE-LIVENESS-01,
+/// and it is why a green run of this test proved nothing.
 fn verdict_is_unobservable(
-    session_live: bool,
+    control_saw_event: bool,
     pipeline_silent: bool,
     under_tarpaulin: bool,
 ) -> bool {
-    !under_tarpaulin && session_live && pipeline_silent
+    !under_tarpaulin && !control_saw_event && pipeline_silent
+}
+
+/// R6.4: an independent control capture, used to decide whether an empty wait
+/// is this host's fault or the product's.
+///
+/// The control is a second, unrelated probe against the same fixture on the
+/// same host, with its own session and its own short deadline. It answers one
+/// question: *can this host observe a capture at all, right now?* Nothing about
+/// the session under test feeds into it, which is the whole point — the previous
+/// decision read `probe_drain`'s `status`, a hardcoded literal that the server
+/// emits on every success and that therefore always said "yes".
+///
+/// Returns whether the control saw an event, and how long it took.
+async fn control_capture_sees_an_event(client: &mut McpTestClient) -> (bool, Duration) {
+    const CONTROL_DEADLINE: Duration = Duration::from_secs(30);
+
+    let Some(control_session) = start_probe(client).await else {
+        return (false, CONTROL_DEADLINE);
+    };
+    let (_elapsed, count) = wait_for_first_event(client, &control_session, CONTROL_DEADLINE).await;
+    // Stop it whether or not it saw anything: a control that is left running
+    // would be exactly the leak this work is trying to be honest about.
+    let _ = client.probe_stop(&control_session).await;
+    (count > 0, _elapsed)
 }
 
 const UAT_C2_01_FIRST_EVENT_DEADLINE: Duration = Duration::from_secs(300);
@@ -772,54 +821,57 @@ async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
     );
 
     if count == 0 {
-        // No event within the deadline. Whether that is a broken pipeline or a
-        // host that cannot show one is decidable from the wire, and UAT-C2-01
-        // already carries the argument and the policy for that call
-        // (`verdict_is_unobservable`). Reuse it instead of re-deciding.
+        // R6.4: this test is a MEASUREMENT, not a gate, and it must not
+        // adjudicate. Its entire value is answering "can this host observe a
+        // capture?", and a test that panics on the answer it exists to collect
+        // destroys the signal. Adjudication lives in `uat_c2_01`, which runs
+        // its own independent control capture.
+        //
+        // It used to call `verdict_is_unobservable` here, passing `session_live`
+        // read from `probe_drain`'s `status` — the hardcoded literal at
+        // `crates/chronos-mcp/src/server.rs:2794`. That is why the diagnostic
+        // "passed" on hosts where nothing was captured, and why the excuse was
+        // always available. The call is gone rather than adapted: there is no
+        // honest verdict to compute from the wire alone.
         let wire = client
             .probe_drain_wire(&session, None)
             .await
             .expect("diagnostic re-read");
-        let session_live = wire.get("status").and_then(|s| s.as_str()) == Some("running");
-        let pipeline_silent = wire
-            .get("total_buffered")
-            .and_then(|t| t.as_u64())
-            .unwrap_or(0)
-            == 0;
-
-        if verdict_is_unobservable(session_live, pipeline_silent, UNDER_TARPAULIN) {
-            eprintln!(
-                "CIH-G SKIPPED-EVIDENCE: 0 events in {}ms (session_live={session_live}, \
-                 pipeline_silent={pipeline_silent}). The capture pipeline is attached but \
-                 produced nothing observable on this host, so first-event timing could \
-                 not be measured. Environment verdict, not a timing verdict — it must not \
-                 be read as the deadline being met. wire={:?}",
-                UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
-                wire
-            );
-            client.probe_stop(&session).await.ok();
-            client.shutdown().await.ok();
-            return;
-        }
-
-        // Not excusable: either the session is gone, or the pipeline buffered
-        // something, or we are under instrumentation that owns the verdict.
-        // Every one of those makes an empty wait a real failure.
-        panic!(
-            "CIH-G: no first event within {:?} and the result is not excusable \
-             (session_live={session_live}, pipeline_silent={pipeline_silent}, \
-             under_tarpaulin={UNDER_TARPAULIN}). wire={:?}",
-            UAT_C2_01_FIRST_EVENT_DEADLINE, wire
+        eprintln!(
+            "CIH-G NOT-MEASURED: 0 events in {}ms. First-event latency could not be \
+             measured on this host, so no timing claim is made and nothing is excused \
+             here; `uat_c2_01` runs its own control capture to decide whether that is \
+             the environment's fault or the product's. wire={:?}",
+            UAT_C2_01_FIRST_EVENT_DEADLINE.as_millis(),
+            wire
         );
+        client.probe_stop(&session).await.ok();
+        client.shutdown().await.ok();
+        return;
     }
 
-    // The event arrived, so the timing is a measurement rather than an absence.
-    // Holding it to the deadline is the only thing worth asserting here; the
-    // cursor-advance contract itself belongs to UAT-C2-01.
+    // The event arrived, so this test now has a real latency measurement and
+    // something worth asserting.
+    //
+    // R6.4: the old assertion was `elapsed < UAT_C2_01_FIRST_EVENT_DEADLINE`,
+    // which could not fail. `wait_for_first_event` returns the moment it sees a
+    // record, and if the deadline passes first it returns count == 0, which the
+    // branch above handles. So on the only path that reached this assert, the
+    // inequality held by construction — a guard that cannot fail is decoration.
+    //
+    // The bound below is what the measurement is actually for: the first event
+    // lands in tens of milliseconds (observed 10-47ms on an idle host, ~15.8s
+    // for the whole test in CI). 60s is generous enough not to be flaky and
+    // tight enough to catch a capture whose latency explodes — which is the
+    // failure this diagnostic exists to notice.
+    const FIRST_EVENT_LATENCY_BUDGET: Duration = Duration::from_secs(60);
     assert!(
-        elapsed < UAT_C2_01_FIRST_EVENT_DEADLINE,
-        "CIH-G: the first event arrived after {:?}, past the {:?} deadline",
-        elapsed,
+        elapsed < FIRST_EVENT_LATENCY_BUDGET,
+        "CIH-G: the first event arrived after {elapsed:?}, past the {:?} latency budget \
+         (deadline is {:?}). Capture latency has grown by orders of magnitude; the \
+         cursor-advance contract belongs to uat_c2_01, but this much latency is a \
+         regression in its own right.",
+        FIRST_EVENT_LATENCY_BUDGET,
         UAT_C2_01_FIRST_EVENT_DEADLINE
     );
 
@@ -839,35 +891,42 @@ async fn cih_g_uat_c2_01_diagnostic_first_event_timing() {
 /// would let the two drift apart, and they are required to agree.
 const UNDER_TARPAULIN: bool = cfg!(tarpaulin);
 
-/// An empty capture is only excused when the pipeline is demonstrably attached
-/// yet silent. Any state that means "the pipeline works" or "the capture
-/// finished" must still fail the contract, or this gate becomes a false pass.
+/// An empty capture is excused only when the host is *measured* to be unable to
+/// observe one: a control capture on the same host also saw nothing, the
+/// pipeline buffered nothing, and instrumentation is not in play. Any state
+/// where the control DID see an event must still fail the contract, or this gate
+/// becomes a false pass — which is exactly what it was.
 #[test]
-fn unobservable_verdict_requires_a_live_but_silent_pipeline() {
-    // Excused: running, nothing buffered, not instrumented -> environment.
-    assert!(verdict_is_unobservable(true, true, false));
+fn unobservable_verdict_requires_a_control_that_also_saw_nothing() {
+    // Excused: the control saw nothing either, nothing buffered, not instrumented.
+    assert!(verdict_is_unobservable(false, true, false));
+    // THE case this whole change exists for: the control DID see an event, so
+    // this host demonstrably can observe a capture. An empty wait here is a
+    // product failure wearing an environment label.
+    assert!(!verdict_is_unobservable(true, true, false));
     // A buffer that produced records proves the pipeline works, so an empty
     // wait can only be a real failure.
-    assert!(!verdict_is_unobservable(true, false, false));
-    // A finished session is a real outcome, not an unobservable one.
-    assert!(!verdict_is_unobservable(false, true, false));
     assert!(!verdict_is_unobservable(false, false, false));
+    assert!(!verdict_is_unobservable(true, false, false));
     // Under tarpaulin the dedicated instrumented branch owns the verdict, so
     // this gate must not also claim it.
+    assert!(!verdict_is_unobservable(false, true, true));
     assert!(!verdict_is_unobservable(true, true, true));
 }
 
 #[test]
 fn unobservable_verdict_never_defaults_to_excusing() {
-    // Exhaustive: the ONLY excusing combination is (live, silent, not tarpaulin).
-    for live in [false, true] {
+    // Exhaustive: the ONLY excusing combination is
+    // (control saw nothing, pipeline silent, not tarpaulin).
+    for control_saw_event in [false, true] {
         for silent in [false, true] {
             for tarpaulin in [false, true] {
-                let excused = verdict_is_unobservable(live, silent, tarpaulin);
-                let expected = live && silent && !tarpaulin;
+                let excused = verdict_is_unobservable(control_saw_event, silent, tarpaulin);
+                let expected = !control_saw_event && silent && !tarpaulin;
                 assert_eq!(
                     excused, expected,
-                    "verdict_is_unobservable({live}, {silent}, {tarpaulin}) must be {expected}"
+                    "verdict_is_unobservable({control_saw_event}, {silent}, {tarpaulin}) \
+                     must be {expected}"
                 );
             }
         }
