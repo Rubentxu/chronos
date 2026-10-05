@@ -39,6 +39,7 @@ const REQUIRED_FIXTURES: &[&str] = &[
     "test_divide_by_zero",
     "test_abort",
     "test_infinite_loop",
+    "test_sleep",
     "test_function_frames",
     "test_function_frames_pie",
 ];
