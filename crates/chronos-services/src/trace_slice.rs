@@ -201,6 +201,7 @@ mod tests {
             data: EventData::Signal {
                 signal_number: signum,
                 signal_name: name.to_string(),
+                terminated_tracee: false,
             },
         }
     }

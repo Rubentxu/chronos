@@ -21,6 +21,144 @@ use chronos_domain::trace::{EventData, EventType, TraceEvent};
 use chronos_domain::TraceQuery;
 use chronos_query::QueryEngine;
 
+/// Marker `native_adapter` writes when the tracee returned from `main`.
+const PROCESS_EXIT_MARKER: &str = "process_exit";
+
+/// What the log says about how the tracee ended, kept apart from what it
+/// merely received.
+///
+/// This split is the whole point: a `SignalDelivered` event records the
+/// *delivery* of a signal, and a tracee that installs a `sigaction` handler
+/// and then `raise()`s the signal records a delivery and can still exit 0.
+/// A crash verdict that rests on deliveries cannot tell those two apart, and
+/// so cannot be wrong in only one direction.
+///
+/// Each fact carries the event that proves it, so a verdict can point at the
+/// place the tracee died rather than at the first signal that happened to be
+/// fatal.
+#[derive(Debug, Default)]
+struct TerminationFacts<'a> {
+    /// Signals the tracee actually died from, in the order they appear.
+    deaths: Vec<(&'a TraceEvent, &'a str)>,
+    /// The exit event, when the tracee returned normally.
+    exit: Option<(&'a TraceEvent, i32)>,
+    /// Signals the tracee received and kept running through.
+    survived: Vec<(&'a TraceEvent, &'a str)>,
+}
+
+#[derive(Debug)]
+enum CrashVerdict<'a> {
+    /// The tracee died from a signal the tracer did not send.
+    Crashed {
+        event: &'a TraceEvent,
+        signal: &'a str,
+    },
+    /// The tracee died, and the only signal is the one chronos sends while
+    /// tearing the session down.
+    KilledByTeardown {
+        event: &'a TraceEvent,
+        signal: &'a str,
+    },
+    /// The tracee did not die from a signal.
+    Survived { reason: String },
+}
+
+/// Decide the crash verdict from what the log proves, not from what it merely
+/// contains.
+///
+/// The rules, in order of how much they prove:
+///
+/// 1. A death the tracer did not send is a crash. Nothing overrides it.
+/// 2. A death by the teardown signal is a death, but not attributable: it may
+///    be chronos killing its own tracee at cleanup, or something external such
+///    as the OOM killer. Reported, with the ambiguity declared.
+/// 3. No death, but a normal exit: the tracee finished on its own. Fatal
+///    signals it survived are then evidence *against* a crash, not for one.
+/// 4. No death and no exit: the log carries no termination record, so the
+///    older signal-splitting rule runs as a fallback. That is the only case
+///    where a delivery is treated as evidence, and the verdict says so.
+///
+/// Rule 3 is what removes the false positive. A program that handles SIGSEGV
+/// and returns 0 delivers a SIGSEGV and does not die from it; calling that a
+/// crash is a claim the trace cannot support.
+fn decide_crash<'a>(
+    facts: &TerminationFacts<'a>,
+    teardown_signal: &str,
+    fatal_signals: &[&str],
+) -> CrashVerdict<'a> {
+    if let Some((event, signal)) = facts
+        .deaths
+        .iter()
+        .find(|(_, name)| *name != teardown_signal)
+    {
+        return CrashVerdict::Crashed { event, signal };
+    }
+
+    if let Some((event, signal)) = facts
+        .deaths
+        .iter()
+        .find(|(_, name)| *name == teardown_signal)
+    {
+        return CrashVerdict::KilledByTeardown { event, signal };
+    }
+
+    if let Some((_, code)) = facts.exit {
+        let survived_fatal = facts
+            .survived
+            .iter()
+            .map(|(_, name)| *name)
+            .filter(|name| fatal_signals.contains(name))
+            .collect::<Vec<_>>();
+
+        let reason = if survived_fatal.is_empty() {
+            format!("The tracee returned normally with exit code {code}: no signal killed it")
+        } else {
+            format!(
+                "The tracee received {} and still returned with exit code {}: \
+                 it handled the signal and did not die from it",
+                survived_fatal.join(", "),
+                code
+            )
+        };
+        return CrashVerdict::Survived { reason };
+    }
+
+    // No termination record at all. Keep the old behaviour so that traces
+    // captured before the tracer recorded terminations still resolve, but say
+    // out loud that the verdict rests on deliveries.
+    if let Some((event, signal)) = facts
+        .survived
+        .iter()
+        .find(|(_, name)| *name != teardown_signal && fatal_signals.contains(name))
+    {
+        return CrashVerdict::Crashed { event, signal };
+    }
+    if let Some((event, name)) = facts
+        .survived
+        .iter()
+        .find(|(_, name)| *name == teardown_signal)
+    {
+        return CrashVerdict::KilledByTeardown {
+            event,
+            signal: name,
+        };
+    }
+
+    CrashVerdict::Survived {
+        reason: "No fatal signal found in the trace".to_string(),
+    }
+}
+
+/// Read the exit code out of the `process_exit` marker.
+///
+/// `native_adapter` writes it as `{"exit_code": N}`. A marker that does not
+/// parse is not a termination record: returning `None` keeps a malformed
+/// marker from silently becoming proof of a clean exit.
+fn parse_exit_code(data_json: &str) -> Option<i32> {
+    let value: serde_json::Value = serde_json::from_str(data_json).ok()?;
+    value.get("exit_code")?.as_i64().map(|code| code as i32)
+}
+
 /// A zero-sized service struct. All state is passed in as arguments.
 #[derive(Debug, Default)]
 pub struct DebugTraceSpecializedService;
@@ -75,17 +213,25 @@ impl DebugTraceSpecializedService {
         }
     }
 
-    /// Identify the crash point in a trace: find the fatal signal that ended
-    /// the tracee and reconstruct the call stack at that point.
+    /// Identify the crash point in a trace and reconstruct the call stack
+    /// where the tracee actually died.
     ///
-    /// Returns `Ok(CrashPoint)` with `crash_found = false` when no fatal
-    /// signal is present.
+    /// The verdict rests on the tracee's **termination**, not on the signals
+    /// it received. The tracer records a `SignalDelivered` both when a signal
+    /// is delivered and when the signal kills the tracee, and the two look
+    /// identical in the log unless you ask for the difference; a tracee that
+    /// handles `SIGSEGV` and returns 0 is the case that a delivery-based
+    /// verdict gets wrong. `native_adapter` therefore marks the death, and
+    /// this method prefers that marker over any signal it can see.
     ///
-    /// The verdict prefers a fatal signal the tracer could not have sent and
-    /// only falls back to `SIGKILL` when none exists, because chronos
-    /// `SIGKILL`s its own tracee during session teardown. A `SIGKILL` verdict
-    /// therefore carries a `note`: it may be that teardown kill rather than a
-    /// crash of the program, and the trace alone cannot tell them apart.
+    /// Returns `crash_found = false` when the tracee is shown to have ended
+    /// without dying from a signal, which now includes the case where it
+    /// received a fatal signal and survived it.
+    ///
+    /// A `SIGKILL` verdict carries a `note` declaring the ambiguity: chronos
+    /// `SIGKILL`s its own tracee during session teardown, so that death may be
+    /// the tracer's own doing rather than a crash of the program, and the
+    /// trace alone cannot tell the two apart.
     pub async fn find_crash(
         session_id: &str,
         engines: &Mutex<HashMap<String, QueryEngine>>,
@@ -100,109 +246,107 @@ impl DebugTraceSpecializedService {
         // clone reaping) and in `capture_runner.rs` call `kill`/`waitpid` on
         // the traced pid, and the frame-capture helper failure path does the
         // same, so the tracer SIGKILLs its own tracee at the end of a normal
-        // session. That kill is recorded as a plain `SignalDelivered`, which
-        // is what made the previous "first fatal signal wins" rule report
-        // `crash_found = true, signal = "SIGKILL"` for programs that never
-        // crashed: the verdict blamed the program for a kill chronos sent.
+        // session.
         const TRACER_TEARDOWN_SIGNAL: &str = "SIGKILL";
 
-        // Fatal signals the tracer does not send on its own.
+        // Signals that end a process, whether or not the tracer sent them.
         //
-        // These are NOT proof that the tracee died on them, and an earlier
-        // version of this comment claimed they were. They are not: a tracee
-        // that installs a `sigaction` handler for SIGSEGV or SIGABRT and then
-        // `raise()`s it records a `SignalDelivered` for each and can still exit
-        // 0. The log records the *delivery*, not the death. What the list does
-        // establish is narrower and sufficient: the tracer does not manufacture
-        // these, so a SIGKILL is the only signal here that can be chronos
-        // blaming the program for something it did itself.
-        let fatal_signals = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
+        // Membership says nothing about death on its own — a tracee with a
+        // `sigaction` handler can survive any of these. What makes them worth
+        // reporting is that the tracer does not manufacture them, so a death
+        // from one of them is the program's own doing.
+        const FATAL_SIGNALS: [&str; 5] = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
 
-        let is_fatal = |name: &str| name == TRACER_TEARDOWN_SIGNAL || fatal_signals.contains(&name);
-
+        // Two event kinds, because the two facts live in different ones: a
+        // signal that ended the tracee is a `SignalDelivered` carrying
+        // `terminated_tracee`, and a normal return is a `process_exit` marker.
+        // Querying only signals would miss a program that lived long enough to
+        // be exonerated, which is the case the verdict most needs to catch.
         let query = TraceQuery::new(session_id)
-            .event_types(vec![EventType::SignalDelivered])
+            .event_types(vec![EventType::SignalDelivered, EventType::Custom])
             .pagination(usize::MAX, 0);
         let result = engine.execute(&query);
 
-        let fatal_events: Vec<(&TraceEvent, &str)> = result
-            .events
-            .iter()
-            .filter_map(|e| match &e.data {
-                EventData::Signal { signal_name, .. } if is_fatal(signal_name) => {
-                    Some((e, signal_name.as_str()))
+        let mut facts = TerminationFacts::default();
+
+        for event in &result.events {
+            match &event.data {
+                EventData::Signal {
+                    signal_name,
+                    terminated_tracee,
+                    ..
+                } => {
+                    if *terminated_tracee {
+                        facts.deaths.push((event, signal_name.as_str()));
+                    } else {
+                        facts.survived.push((event, signal_name.as_str()));
+                    }
                 }
-                _ => None,
-            })
-            .collect();
+                // First readable exit wins: a later marker cannot un-end the
+                // process. A marker that does not parse leaves the slot open,
+                // so one unreadable marker does not hide a readable one.
+                EventData::Custom { name, data_json }
+                    if name == PROCESS_EXIT_MARKER && facts.exit.is_none() =>
+                {
+                    facts.exit = parse_exit_code(data_json).map(|code| (event, code));
+                }
+                _ => {}
+            }
+        }
 
-        // Classification rule: prefer the first fatal signal the tracer did
-        // not send, and fall back to the first SIGKILL only when there is none.
-        //
-        // Why this beats the old "first fatal signal wins": chronos SIGKILLs its
-        // own tracee while tearing the session down, and that kill is
-        // indistinguishable in the log from one that arrived from outside, so
-        // the old rule reported `crash_found = true, signal = "SIGKILL"` for
-        // programs that never crashed — the verdict blamed the program for a
-        // kill the tracer sent itself. Demoting SIGKILL fixes exactly that
-        // case, and the rule is deliberately order-independent: the teardown
-        // kill is normally last, but `probe_backend` kills clone children
-        // before the main pid and `stop_probe` is a separate kill path, so
-        // "always the last event" would be a claim about behaviour rather than
-        // about the code, and it would be false some of the time. The rule does
-        // not need the ordering, so it does not assert it.
-        //
-        // What the rule still cannot tell: a SIGKILL that is the only fatal
-        // signal. The OOM killer killing a user's process is a real debugging
-        // scenario that must not be dropped, so the verdict is still reported
-        // — with a `note` saying it may be the tracer's own teardown kill.
-        // Honesty instead of classification, because the trace does not carry
-        // the information to classify.
-        let crash_event = fatal_events
-            .iter()
-            .find(|(_, name)| *name != TRACER_TEARDOWN_SIGNAL)
-            .or_else(|| fatal_events.first())
-            .map(|(ev, name)| (*ev, *name));
-
-        match crash_event {
-            Some((ev, signal_name)) => {
-                let stack = engine.reconstruct_call_stack(ev.event_id);
-
-                let note = if signal_name == TRACER_TEARDOWN_SIGNAL {
-                    Some(
-                        "SIGKILL is the only fatal signal in the trace: the crash may be the \
-                         tracer's own teardown kill (chronos SIGKILLs its tracee during session \
-                         cleanup) or a genuine external kill such as the OOM killer, and the \
-                         trace alone cannot tell them apart"
-                            .to_string(),
-                    )
-                } else {
-                    None
-                };
-
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::Crashed { event, signal } => {
+                let stack = engine.reconstruct_call_stack(event.event_id);
                 Ok(CrashPoint {
                     session_id: session_id.to_string(),
                     crash_found: true,
-                    signal: signal_name.to_string(),
-                    event_id: ev.event_id,
-                    timestamp_ns: ev.timestamp_ns.get(),
-                    thread_id: ev.thread_id,
+                    signal: signal.to_string(),
+                    event_id: event.event_id,
+                    timestamp_ns: event.timestamp_ns.get(),
+                    thread_id: event.thread_id,
                     call_stack_depth: stack.len(),
                     call_stack: stack.into_iter().map(CrashStackFrame::from).collect(),
-                    note,
+                    // A signal the tracer cannot fabricate needs no hedging.
+                    note: None,
                 })
             }
-            None => Ok(CrashPoint {
-                session_id: session_id.to_string(),
-                crash_found: false,
-                signal: String::new(),
-                event_id: 0,
-                timestamp_ns: 0,
-                thread_id: 0,
-                call_stack_depth: 0,
-                call_stack: vec![],
-                note: Some("No fatal signal found in the trace".to_string()),
-            }),
+            CrashVerdict::KilledByTeardown { event, signal } => {
+                let stack = engine.reconstruct_call_stack(event.event_id);
+                Ok(CrashPoint {
+                    session_id: session_id.to_string(),
+                    crash_found: true,
+                    signal: signal.to_string(),
+                    event_id: event.event_id,
+                    timestamp_ns: event.timestamp_ns.get(),
+                    thread_id: event.thread_id,
+                    call_stack_depth: stack.len(),
+                    call_stack: stack.into_iter().map(CrashStackFrame::from).collect(),
+                    note: Some(
+                        "The tracee died by the only signal chronos sends on its own, and the \
+                         trace cannot say whether that was the tracer's teardown kill (chronos \
+                         SIGKILLs its tracee during session cleanup) or something external such \
+                         as the OOM killer."
+                            .to_string(),
+                    ),
+                })
+            }
+            CrashVerdict::Survived { reason } => {
+                // Event coordinates stay at zero, as they have for every
+                // no-crash answer: there is no crash point to point at, and
+                // inventing one from the exit marker would claim a call site
+                // the trace never captured.
+                Ok(CrashPoint {
+                    session_id: session_id.to_string(),
+                    crash_found: false,
+                    signal: String::new(),
+                    event_id: 0,
+                    timestamp_ns: 0,
+                    thread_id: 0,
+                    call_stack_depth: 0,
+                    call_stack: vec![],
+                    note: Some(reason),
+                })
+            }
         }
     }
 
@@ -524,6 +668,51 @@ mod tests {
             data: EventData::Signal {
                 signal_number,
                 signal_name: signal_name.to_string(),
+                terminated_tracee: false,
+            },
+        }
+    }
+
+    /// A signal that actually ended the tracee, which is a different fact from
+    /// a signal the tracee received and survived.
+    fn signal_termination_event(
+        event_id: u64,
+        timestamp_ns: u64,
+        thread_id: u64,
+        signal_number: i32,
+        signal_name: &str,
+    ) -> TraceEvent {
+        TraceEvent {
+            event_id,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
+            thread_id,
+            event_type: EventType::SignalDelivered,
+            location: SourceLocation::default(),
+            data: EventData::Signal {
+                signal_number,
+                signal_name: signal_name.to_string(),
+                terminated_tracee: true,
+            },
+        }
+    }
+
+    /// The tracee running to completion and returning `code`, which
+    /// `native_adapter` records as a `process_exit` marker.
+    fn process_exit_event(
+        event_id: u64,
+        timestamp_ns: u64,
+        thread_id: u64,
+        code: i32,
+    ) -> TraceEvent {
+        TraceEvent {
+            event_id,
+            timestamp_ns: MonotonicNs::from(timestamp_ns),
+            thread_id,
+            event_type: EventType::Custom,
+            location: SourceLocation::default(),
+            data: EventData::Custom {
+                name: "process_exit".to_string(),
+                data_json: format!(r#"{{"exit_code": {}}}"#, code),
             },
         }
     }
@@ -578,19 +767,99 @@ mod tests {
 
     // --- find_crash ---
 
+    /// The shape a real abort produces today: the program dies from `SIGABRT`
+    /// and the tracer's teardown `SIGKILL` lands afterwards. The verdict must
+    /// name the signal that actually killed the tracee.
     #[tokio::test]
-    async fn find_crash_ok() {
+    async fn find_crash_reports_the_signal_that_killed_the_tracee() {
         let events = vec![
             trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
-            signal_event(2, 200, 1, 11, "SIGSEGV"),
+            signal_termination_event(2, 200, 1, 6, "SIGABRT"),
+            // Tracer teardown kill, strictly after the abort.
+            signal_termination_event(3, 300, 1, 9, "SIGKILL"),
         ];
         let engines = engines_with_session("s1", events);
         let result = DebugTraceSpecializedService::find_crash("s1", &engines)
             .await
             .unwrap();
         assert!(result.crash_found);
-        assert_eq!(result.signal, "SIGSEGV");
+        assert_eq!(result.signal, "SIGABRT");
         assert_eq!(result.event_id, 2);
+        assert_eq!(result.thread_id, 1);
+        // A signal the tracer cannot fabricate needs no hedging note.
+        assert_eq!(result.note, None);
+    }
+
+    /// The false positive this change exists to remove.
+    ///
+    /// A program that installs a `sigaction` handler and then `raise()`s a
+    /// fatal signal delivers that signal and returns 0. The trace records the
+    /// delivery *and* the normal exit, and the verdict has to say there was no
+    /// crash: it has the proof. A rule that treats any fatal delivery as a
+    /// crash reports a crash that never happened, and there is no way for a
+    /// reader to tell that from a real one.
+    ///
+    /// Under the delivery-based rule this fixture came back
+    /// `crash_found = true, signal = "SIGSEGV"`.
+    #[tokio::test]
+    async fn find_crash_a_handled_fatal_signal_is_not_a_crash() {
+        let events = vec![
+            trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
+            // The tracee handles the signal, keeps running, and returns 0.
+            signal_event(2, 200, 1, 11, "SIGSEGV"),
+            process_exit_event(3, 300, 1, 0),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(
+            !result.crash_found,
+            "a delivered signal the tracee survived is not a crash"
+        );
+        assert_eq!(result.signal, "");
+        let note = result.note.expect("an exoneration must say why");
+        assert!(
+            note.contains("SIGSEGV") && note.contains("handled"),
+            "the note must name the signal and the fact it was handled: {note}"
+        );
+    }
+
+    /// A normal exit with no signal at all: the ordinary "no crash" answer,
+    /// now with the exit code to back it instead of an absence of evidence.
+    #[tokio::test]
+    async fn find_crash_normal_exit_without_signals_is_not_a_crash() {
+        let events = vec![
+            trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
+            process_exit_event(2, 200, 1, 0),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(!result.crash_found);
+        assert_eq!(result.signal, "");
+        assert!(result.note.unwrap().contains("exit code 0"));
+    }
+
+    /// A death outranks a later exit marker, and a teardown kill recorded
+    /// first must not hide the real cause. The ordering is the point: the
+    /// log order alone must not decide which signal the verdict names.
+    #[tokio::test]
+    async fn find_crash_a_death_outranks_a_later_normal_exit() {
+        let events = vec![
+            signal_termination_event(1, 100, 1, 9, "SIGKILL"),
+            signal_termination_event(2, 200, 1, 8, "SIGFPE"),
+            process_exit_event(3, 300, 1, 0),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(result.crash_found);
+        assert_eq!(result.signal, "SIGFPE");
+        assert_eq!(result.event_id, 2);
+        assert_eq!(result.note, None);
     }
 
     #[tokio::test]
@@ -639,59 +908,35 @@ mod tests {
         );
     }
 
-    /// The real-world shape measured on the `test_abort` fixture: the program
-    /// really aborts, and the tracer's teardown SIGKILL lands afterwards as a
-    /// plain `SignalDelivered`. The verdict must name the program's own signal,
-    /// not the teardown kill.
+    /// Traces captured before the tracer recorded terminations carry neither a
+    /// death nor an exit. They still have to resolve, so the old
+    /// delivery-splitting rule runs as a fallback — and the verdict rests on
+    /// deliveries alone, which is exactly the weakness this change removes
+    /// everywhere else. Pinned so the fallback cannot rot into a different
+    /// answer by accident.
     #[tokio::test]
-    async fn find_crash_prefers_real_fatal_signal_over_teardown_sigkill() {
+    async fn find_crash_without_termination_records_falls_back_to_deliveries() {
         let events = vec![
             trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
-            signal_event(2, 200, 1, 6, "SIGABRT"),
-            // Tracer teardown kill, strictly after the abort.
-            signal_event(3, 300, 1, 9, "SIGKILL"),
+            signal_event(2, 200, 1, 11, "SIGSEGV"),
         ];
         let engines = engines_with_session("s1", events);
         let result = DebugTraceSpecializedService::find_crash("s1", &engines)
             .await
             .unwrap();
         assert!(result.crash_found);
-        assert_eq!(result.signal, "SIGABRT");
+        assert_eq!(result.signal, "SIGSEGV");
         assert_eq!(result.event_id, 2);
-        assert_eq!(result.thread_id, 1);
-        // A signal the tracer cannot fabricate needs no hedging note.
-        assert_eq!(result.note, None);
     }
 
-    /// The rule is stated on the signal, not on the position: a non-SIGKILL
-    /// fatal signal outranks a SIGKILL even when the SIGKILL is logged first.
-    /// This is the only ordering where the previous "first fatal signal wins"
-    /// rule and the current rule disagree, so it is what pins the fix: the
-    /// log order alone must not decide which signal the verdict names.
-    #[tokio::test]
-    async fn find_crash_prefers_real_fatal_signal_when_sigkill_is_earlier() {
-        let events = vec![
-            signal_event(1, 100, 1, 9, "SIGKILL"),
-            signal_event(2, 200, 1, 8, "SIGFPE"),
-        ];
-        let engines = engines_with_session("s1", events);
-        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
-            .await
-            .unwrap();
-        assert!(result.crash_found);
-        assert_eq!(result.signal, "SIGFPE");
-        assert_eq!(result.event_id, 2);
-        assert_eq!(result.note, None);
-    }
-
-    /// The one case the rule cannot settle: a lone SIGKILL. It is still
-    /// reported as a crash because the OOM killer killing a user's process is
-    /// real, but the note must not let a reader take it as proof.
+    /// The one case the rule cannot settle: a lone teardown `SIGKILL`. It is
+    /// still reported as a crash because the OOM killer killing a user's
+    /// process is real, but the note must not let a reader take it as proof.
     #[tokio::test]
     async fn find_crash_only_sigkill_still_detected_with_teardown_note() {
         let events = vec![
             trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
-            signal_event(2, 200, 1, 9, "SIGKILL"),
+            signal_termination_event(2, 200, 1, 9, "SIGKILL"),
         ];
         let engines = engines_with_session("s1", events);
         let result = DebugTraceSpecializedService::find_crash("s1", &engines)
@@ -709,6 +954,145 @@ mod tests {
             note.contains("SIGKILL"),
             "note must name the signal: {note}"
         );
+    }
+
+    // --- decide_crash: the rule on its own, with no engine behind it ---
+
+    const TEARDOWN: &str = "SIGKILL";
+    const FATALS: [&str; 5] = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
+
+    fn facts_from(events: &[TraceEvent]) -> TerminationFacts<'_> {
+        let mut facts = TerminationFacts::default();
+        for event in events {
+            match &event.data {
+                EventData::Signal {
+                    signal_name,
+                    terminated_tracee,
+                    ..
+                } => {
+                    if *terminated_tracee {
+                        facts.deaths.push((event, signal_name.as_str()));
+                    } else {
+                        facts.survived.push((event, signal_name.as_str()));
+                    }
+                }
+                EventData::Custom { name, data_json }
+                    if name == PROCESS_EXIT_MARKER && facts.exit.is_none() =>
+                {
+                    facts.exit = parse_exit_code(data_json).map(|code| (event, code));
+                }
+                _ => {}
+            }
+        }
+        facts
+    }
+
+    #[test]
+    fn decide_crash_an_empty_trace_is_not_a_crash() {
+        let events: Vec<TraceEvent> = vec![];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Survived { reason } => {
+                assert_eq!(reason, "No fatal signal found in the trace")
+            }
+            other => panic!("an empty trace is not a crash: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_a_handled_fatal_signal_with_a_normal_exit_is_not_a_crash() {
+        let events = vec![
+            signal_event(1, 100, 1, 11, "SIGSEGV"),
+            process_exit_event(2, 200, 1, 0),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Survived { reason } => {
+                assert!(reason.contains("SIGSEGV"), "{reason}");
+                assert!(reason.contains("handled"), "{reason}");
+            }
+            other => panic!("a survived signal is not a crash: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_a_death_wins_even_with_a_normal_exit_recorded() {
+        let events = vec![
+            signal_termination_event(1, 100, 1, 11, "SIGSEGV"),
+            process_exit_event(2, 200, 1, 0),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGSEGV"),
+            other => panic!("a death is a death: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_a_non_teardown_death_wins_over_a_teardown_death() {
+        let events = vec![
+            signal_termination_event(1, 100, 1, 9, "SIGKILL"),
+            signal_termination_event(2, 200, 1, 6, "SIGABRT"),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGABRT"),
+            other => panic!("the program's own death wins: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_a_lone_teardown_death_is_hedged() {
+        let events = vec![signal_termination_event(1, 100, 1, 9, "SIGKILL")];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::KilledByTeardown { signal, .. } => assert_eq!(signal, "SIGKILL"),
+            other => panic!("a teardown death is still a death: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_without_a_termination_record_treats_a_delivery_as_a_crash() {
+        // The fallback, pinned: no death and no exit, so the old rule runs and
+        // a delivered fatal signal is reported as a crash again.
+        let events = vec![signal_event(1, 100, 1, 11, "SIGSEGV")];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGSEGV"),
+            other => panic!("the fallback must keep the old answer: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decide_crash_a_normal_exit_overrides_a_delivered_teardown_kill() {
+        // The teardown kill is a delivery here, not a death, so a normal exit
+        // already settles it: the program finished before anything killed it.
+        let events = vec![
+            signal_event(1, 100, 1, 9, "SIGKILL"),
+            process_exit_event(2, 200, 1, 0),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TEARDOWN, &FATALS) {
+            CrashVerdict::Survived { .. } => {}
+            other => panic!("a normal exit beats an undelivered-death claim: {other:?}"),
+        }
+    }
+
+    // --- parse_exit_code ---
+
+    #[test]
+    fn parse_exit_code_reads_the_code() {
+        assert_eq!(parse_exit_code(r#"{"exit_code": 0}"#), Some(0));
+        assert_eq!(parse_exit_code(r#"{"exit_code": -6}"#), Some(-6));
+    }
+
+    #[test]
+    fn parse_exit_code_rejects_anything_it_cannot_read() {
+        // A marker that does not parse must not become proof of a clean exit.
+        assert_eq!(parse_exit_code("not json"), None);
+        assert_eq!(parse_exit_code(r#"{"other": 1}"#), None);
+        assert_eq!(parse_exit_code(r#"{"exit_code": "zero"}"#), None);
+        assert_eq!(parse_exit_code(""), None);
     }
 
     // --- detect_races ---

@@ -440,6 +440,7 @@ mod tests {
                 EventData::Signal {
                     signal_number: 11,
                     signal_name: sig.to_string(),
+                    terminated_tracee: false,
                 },
             ));
         }

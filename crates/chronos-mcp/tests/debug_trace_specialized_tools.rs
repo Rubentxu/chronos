@@ -57,6 +57,7 @@ fn signal_event(
         data: EventData::Signal {
             signal_number,
             signal_name: signal_name.to_string(),
+            terminated_tracee: false,
         },
     }
 }

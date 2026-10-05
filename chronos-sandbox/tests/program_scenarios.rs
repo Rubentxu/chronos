@@ -166,7 +166,15 @@ async fn test_many_threads_count() {
 }
 
 /// PS4: test_divide_by_zero_crash_detected
-/// Probe test_divide_by_zero, debug_find_crash, assert crash_found or valid error.
+/// Probe test_divide_by_zero, debug_find_crash, assert the crash is detected.
+///
+/// The assertion is exact, not a substring test. This test used to accept
+/// `None` as a pass on the reasoning that "the program may have exited too
+/// fast", which is a guess dressed as a test result: `debug_find_crash`
+/// returns `None` precisely when `crash_found` is false, so the old assertion
+/// passed on a session in which the crash was not detected at all. A test
+/// that accepts "I could not tell" as "it worked" cannot notice the thing it
+/// exists to notice.
 #[tokio::test]
 async fn test_divide_by_zero_crash_detected() {
     let fixture = McpSession::fixture_path("test_divide_by_zero")
@@ -199,28 +207,33 @@ async fn test_divide_by_zero_crash_detected() {
         .await
         .expect("debug_find_crash failed");
 
-    match crash {
-        Some(info) => {
-            println!("✓ debug_find_crash found crash:");
-            println!("  signal: {:?}", info.signal);
-            if let Some(sig) = &info.signal {
-                assert!(
-                    sig.contains("FPE") || sig.contains("8"),
-                    "Signal should be FPE or contain 8 (SIGFPE=8)"
-                );
-            }
-        }
-        None => {
-            // Crash may not be found if program exited too fast
-            println!("✓ debug_find_crash returned None (crash may have been too fast)");
-        }
-    }
+    let info = crash.expect(
+        "test_divide_by_zero divides by zero, so the crash must be detected; \
+         `None` here means the verdict said crash_found = false",
+    );
+    println!("✓ debug_find_crash found crash:");
+    println!("  signal: {:?}", info.signal);
+    assert!(
+        info.crash_found,
+        "a Some answer is only returned when crash_found is true"
+    );
+    assert_eq!(
+        info.signal.as_deref(),
+        Some("SIGFPE"),
+        "the verdict must name the signal the tracee died from, exactly"
+    );
+    assert!(
+        info.event_id.unwrap_or(0) > 0,
+        "a detected crash must point at the event where the tracee died"
+    );
 
     client.shutdown().await.ok();
 }
 
 /// PS5: test_abort_crash_detected_sigabrt
-/// Probe test_abort, debug_find_crash, assert crash_found or valid response.
+/// Probe test_abort, debug_find_crash, assert the crash is detected.
+///
+/// Same non-vacuity rule as PS4: `None` is a failed assertion, not a pass.
 #[tokio::test]
 async fn test_abort_crash_detected_sigabrt() {
     let fixture = McpSession::fixture_path("test_abort")
@@ -253,22 +266,77 @@ async fn test_abort_crash_detected_sigabrt() {
         .await
         .expect("debug_find_crash failed");
 
-    match crash {
-        Some(info) => {
-            println!("✓ debug_find_crash found crash:");
-            println!("  signal: {:?}", info.signal);
-            if let Some(sig) = &info.signal {
-                assert!(
-                    sig.contains("ABRT") || sig.contains("6"),
-                    "Signal should be ABRT or contain 6 (SIGABRT=6)"
-                );
-            }
-        }
-        None => {
-            // Crash may not be found if program exited too fast
-            println!("✓ debug_find_crash returned None (crash may have been too fast)");
-        }
-    }
+    let info = crash.expect(
+        "test_abort calls abort(), so the crash must be detected; \
+         `None` here means the verdict said crash_found = false",
+    );
+    println!("✓ debug_find_crash found crash:");
+    println!("  signal: {:?}", info.signal);
+    assert!(
+        info.crash_found,
+        "a Some answer is only returned when crash_found is true"
+    );
+    assert_eq!(
+        info.signal.as_deref(),
+        Some("SIGABRT"),
+        "the verdict must name the signal the tracee died from, exactly"
+    );
+    assert!(
+        info.event_id.unwrap_or(0) > 0,
+        "a detected crash must point at the event where the tracee died"
+    );
+
+    client.shutdown().await.ok();
+}
+
+/// A fatal signal that the program handles is not a crash.
+///
+/// `test_handled_signal` installs a `sigaction` handler, `raise()`s SIGSEGV
+/// and SIGABRT, and returns 0. The trace records both deliveries *and* the
+/// normal exit, so the log contains a fatal signal exactly as it does for a
+/// program that really crashed.
+///
+/// This is the only test here that can tell a working detector from a
+/// credulous one. The other two prove it fires; this one proves it does not
+/// fire on a signal that arrived and was survived. Before the verdict rested
+/// on the tracee's termination, this fixture came back
+/// `crash_found = true, signal = "SIGSEGV"` for a program that logged,
+/// continued, and exited 0.
+#[tokio::test]
+async fn test_handled_fatal_signal_is_not_reported_as_a_crash() {
+    let fixture = McpSession::fixture_path("test_handled_signal")
+        .expect("test_handled_signal fixture not found - run cargo build first");
+
+    let mut client = McpTestClient::start()
+        .await
+        .expect("Failed to start MCP server");
+
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .expect("probe_start failed");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let _drained = client.probe_drain(&session_id).await;
+
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop failed");
+    println!("Probe stopped: {} total events", stop.total_events);
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let crash = client
+        .debug_find_crash(&session_id)
+        .await
+        .expect("debug_find_crash failed");
+
+    assert!(
+        crash.is_none(),
+        "the program handled SIGSEGV and SIGABRT and returned 0; reporting a \
+         crash means the verdict is reading a delivery as a death. Got: {crash:?}"
+    );
 
     client.shutdown().await.ok();
 }
