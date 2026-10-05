@@ -1,0 +1,43 @@
+{
+  "base_tag": "v0.10.0",
+  "base_commit": "57c36040f29ffea2df11335324037a35d393641c",
+  "head_commit": "d0b146dba44489d39eb643478e99a783d0dcdd52",
+  "head_tree": "44f524c103e8bbd24ea73bf43bfcd2c7e0c66780",
+  "commits_in_range": 11,
+  "files_changed": 33,
+  "cycle_id": "p-3416cfb8288f8964/release-v0-10-1",
+  "path": "B-direct",
+  "phase": "build",
+  "status": "success",
+  "argv": "git log --format=%s v0.10.0..HEAD | sed -E 's/^([a-z]+)(\\(.*\\))?!?:.*/\\1/' | sort | uniq -c | sort -rn",
+  "exit_code": 0,
+  "commit_mix": {
+    "fix": 7,
+    "chore": 3,
+    "test": 1,
+    "docs": 2
+  },
+  "headline_capabilities": [
+    "DEBT-WAIT-EVENT-UNBOUNDED-01 cerrada con su limitacion residual declarada, y el coste de sondeo MEDIDO y no supuesto: 16 sesiones en reposo cuestan 0,11 CPU-s por 10 s, el 1,1 % de un nucleo, lineal en N.",
+    "56139384 el live probe entrega las senales al tracee en vez de tragarselas, en los dos bucles. DEBT-SIGNAL-SUPPRESSED-01.",
+    "015cd72e find_crash no atribuye al programa el SIGKILL que chronos envia en su propio teardown. DEBT-CRASH-TEARDOWN-SIGKILL-01.",
+    "7a8660eb el numero de syscall sale de orig_rax y el valor de retorno es real. DEBT-SYSCALL-NR-FROM-RAX-01.",
+    "1f935900 el tick de sondeo pasa de fijo a backoff 100 us..10 ms. DEBT-POLL-TICK-CAP-01, encontrado por el propio ciclo contra si mismo.",
+    "53548731 fija el cableado del backoff con un test de tasa con tracee real y corrige cuatro comentarios falsos que una auditoria independiente refuto.",
+    "53fcbffc fixture test_sleep, la primera que puede mantener un tracer vivo y sin producir eventos."
+  ],
+  "evidence": {
+    "unit": "chronos-native 132/132; chronos-services 613/613",
+    "integration_local": "6 suites, 48/48: boundary_conditions, data_rich, multi_session, probe_lifecycle, probe_lifecycle_edge_cases, program_scenarios",
+    "end_to_end": "program_scenarios 11/11 con los dos tests de crash en verde",
+    "static": "cargo fmt --all --check limpio; cargo clippy --workspace --all-targets -- -D warnings sin salida",
+    "gates": "vault-drift-sweep PASS (50 python CCs, 7 bash CCs); validate_cycle_artifacts PASSED",
+    "non_vacuity": "mutacion de TRACER_POLL_MIN a 10 ms -> poll_tick_does_not_throttle cae a ROJO con 99/s frente a un suelo de 400/s, que son los 100/s teoricos de un tick de 10 ms",
+    "t4_remote": "6/6 workflows en verde sobre d0b146dba44489d39eb643478e99a783d0dcdd52, Skip args vacio, 0 fallos en todo el log; test_abort_crash_detected_sigabrt y test_divide_by_zero_crash_detected en ok"
+  },
+  "method_notes": [
+    "El A/B inicial exoneraba al cambio pero no detecto que lo empeoraba: un A/B que demuestra no lo introduje no dice no lo empeore.",
+    "Una auditoria independiente de 15 mutaciones encontro que el backoff no estaba fijado en ninguna parte: restaurar el tick fijo dejaba 131/131 en verde. Corregido con un test de tasa con tracee real.",
+    "La unica forma de saber si un arreglo funciona es el test end-to-end con un proceso de verdad delante."
+  ]
+}
