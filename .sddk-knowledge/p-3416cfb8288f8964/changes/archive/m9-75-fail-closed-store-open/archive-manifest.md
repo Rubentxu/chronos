@@ -136,7 +136,7 @@ One commit:
 | archive-manifest (this file) | `.sddk-knowledge/p-3416cfb8288f8964/changes/archive/m9-75-fail-closed-store-open/archive-manifest.md` | `0000000000000000000000000000000000000000000000000000000000000000` |
 | source (mcp server) | `crates/chronos-mcp/src/server.rs` | `ba68219c70b5bfb00d54c57d927387b8c21ae9b496680f0a11dbdbf4b6a9904f` |
 | source (mcp binary) | `crates/chronos-mcp/src/bin/chronos-mcp.rs` | `3797defa83c8218db6610047fece4b6ed67aa9b183e5c1f5193f2f10eeda1492` |
-| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `33e8d03e9299fd8916b9d91a23ffb80d19b0599870b2978e39012e5dd8f47f6b` |
+| source (sandbox client tools) | `chronos-sandbox/src/client/tools.rs` | `1ed4cb81d6cbab8daa3bc070550a4df6ee647d9d3718d4bd11cc45f0af7301b8` |
 | test (store open failure) | `chronos-sandbox/tests/store_open_failure.rs` | `5f0461f8db78b9de6d27d9ba92c3c06e0ebbe3cf62eb990e69f7c9e1e4c7bec9` |
 | docs (agents manual) | `AGENTS.md` | `be6e04c4a536028cbf7e0527400638022b79435034ca74c34878318923ca85d3` |
 | docs (session management, en) | `docs/manual-ai/en/08-session-management.md` | `c35df64b6b6d0b373c09a40d1e0364eb403fb25cd78644c0e4e35a1c289cbce2` |
