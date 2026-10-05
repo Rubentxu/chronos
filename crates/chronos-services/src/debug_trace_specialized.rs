@@ -24,6 +24,22 @@ use chronos_query::QueryEngine;
 /// Marker `native_adapter` writes when the tracee returned from `main`.
 const PROCESS_EXIT_MARKER: &str = "process_exit";
 
+/// The signal the tracer sends its own tracee on the way out, and so the one
+/// death that is not the program's own doing. The live-probe loop cleanup,
+/// the clone reaping and the frame-capture failure path in
+/// `probe_backend.rs` and `capture_runner.rs` all `kill`/`waitpid` the traced
+/// pid, so a normal session ends in a SIGKILL that means nothing about the
+/// tracee.
+pub(crate) const TRACER_TEARDOWN_SIGNAL: &str = "SIGKILL";
+
+/// Signals that end a process, whether or not the tracer sent them.
+///
+/// Membership says nothing about death on its own — a tracee with a
+/// `sigaction` handler can survive any of these. What makes them worth
+/// reporting is that the tracer does not manufacture them, so a death from
+/// one of them is the program's own doing.
+pub(crate) const FATAL_SIGNALS: [&str; 5] = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
+
 /// What the log says about how the tracee ended, kept apart from what it
 /// merely received.
 ///
@@ -37,7 +53,7 @@ const PROCESS_EXIT_MARKER: &str = "process_exit";
 /// place the tracee died rather than at the first signal that happened to be
 /// fatal.
 #[derive(Debug, Default)]
-struct TerminationFacts<'a> {
+pub(crate) struct TerminationFacts<'a> {
     /// Signals the tracee actually died from, in the order they appear.
     deaths: Vec<(&'a TraceEvent, &'a str)>,
     /// The exit event, when the tracee returned normally.
@@ -46,8 +62,24 @@ struct TerminationFacts<'a> {
     survived: Vec<(&'a TraceEvent, &'a str)>,
 }
 
+impl TerminationFacts<'_> {
+    /// The first signal from `fatal_signals` the tracee received and lived
+    /// through, in log order.
+    ///
+    /// A fact about delivery, not about death: it answers "what did this
+    /// tracee see and shrug off", which is a question worth asking on its own
+    /// and is not the crash verdict. Kept here so a consumer that wants the
+    /// delivery does not have to read `survived` and re-apply the fatal set.
+    pub(crate) fn first_survived_fatal(&self, fatal_signals: &[&str]) -> Option<&str> {
+        self.survived
+            .iter()
+            .map(|(_, name)| *name)
+            .find(|name| fatal_signals.contains(name))
+    }
+}
+
 #[derive(Debug)]
-enum CrashVerdict<'a> {
+pub(crate) enum CrashVerdict<'a> {
     /// The tracee died from a signal the tracer did not send.
     Crashed {
         event: &'a TraceEvent,
@@ -81,7 +113,7 @@ enum CrashVerdict<'a> {
 /// Rule 3 is what removes the false positive. A program that handles SIGSEGV
 /// and returns 0 delivers a SIGSEGV and does not die from it; calling that a
 /// crash is a claim the trace cannot support.
-fn decide_crash<'a>(
+pub(crate) fn decide_crash<'a>(
     facts: &TerminationFacts<'a>,
     teardown_signal: &str,
     fatal_signals: &[&str],
@@ -147,6 +179,38 @@ fn decide_crash<'a>(
     CrashVerdict::Survived {
         reason: "No fatal signal found in the trace".to_string(),
     }
+}
+
+/// Split a trace into what it proves about the tracee's end: the signals it
+/// died from, the exit it returned with, and the signals it walked away from.
+///
+/// The single reader of both facts. Every consumer of a crash verdict in this
+/// crate builds its `TerminationFacts` here, so a session cannot be scored
+/// one way by `find_crash` and another by `session_explain`.
+pub(crate) fn facts_from(events: &[TraceEvent]) -> TerminationFacts<'_> {
+    let mut facts = TerminationFacts::default();
+    for event in events {
+        match &event.data {
+            EventData::Signal {
+                signal_name,
+                terminated_tracee,
+                ..
+            } => {
+                if *terminated_tracee {
+                    facts.deaths.push((event, signal_name.as_str()));
+                } else {
+                    facts.survived.push((event, signal_name.as_str()));
+                }
+            }
+            EventData::Custom { name, data_json }
+                if name == PROCESS_EXIT_MARKER && facts.exit.is_none() =>
+            {
+                facts.exit = parse_exit_code(data_json).map(|code| (event, code));
+            }
+            _ => {}
+        }
+    }
+    facts
 }
 
 /// Read the exit code out of the `process_exit` marker.
@@ -247,15 +311,10 @@ impl DebugTraceSpecializedService {
         // the traced pid, and the frame-capture helper failure path does the
         // same, so the tracer SIGKILLs its own tracee at the end of a normal
         // session.
-        const TRACER_TEARDOWN_SIGNAL: &str = "SIGKILL";
-
-        // Signals that end a process, whether or not the tracer sent them.
         //
-        // Membership says nothing about death on its own — a tracee with a
-        // `sigaction` handler can survive any of these. What makes them worth
-        // reporting is that the tracer does not manufacture them, so a death
-        // from one of them is the program's own doing.
-        const FATAL_SIGNALS: [&str; 5] = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
+        // `TRACER_TEARDOWN_SIGNAL` and `FATAL_SIGNALS` are declared at module
+        // scope: `session_explain` asks the same question of the same traces,
+        // and a second copy of the signal set is how the two answers drift.
 
         // Two event kinds, because the two facts live in different ones: a
         // signal that ended the tracee is a `SignalDelivered` carrying
@@ -958,40 +1017,11 @@ mod tests {
 
     // --- decide_crash: the rule on its own, with no engine behind it ---
 
-    const TEARDOWN: &str = "SIGKILL";
-    const FATALS: [&str; 5] = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
-
-    fn facts_from(events: &[TraceEvent]) -> TerminationFacts<'_> {
-        let mut facts = TerminationFacts::default();
-        for event in events {
-            match &event.data {
-                EventData::Signal {
-                    signal_name,
-                    terminated_tracee,
-                    ..
-                } => {
-                    if *terminated_tracee {
-                        facts.deaths.push((event, signal_name.as_str()));
-                    } else {
-                        facts.survived.push((event, signal_name.as_str()));
-                    }
-                }
-                EventData::Custom { name, data_json }
-                    if name == PROCESS_EXIT_MARKER && facts.exit.is_none() =>
-                {
-                    facts.exit = parse_exit_code(data_json).map(|code| (event, code));
-                }
-                _ => {}
-            }
-        }
-        facts
-    }
-
     #[test]
     fn decide_crash_an_empty_trace_is_not_a_crash() {
         let events: Vec<TraceEvent> = vec![];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Survived { reason } => {
                 assert_eq!(reason, "No fatal signal found in the trace")
             }
@@ -1006,7 +1036,7 @@ mod tests {
             process_exit_event(2, 200, 1, 0),
         ];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Survived { reason } => {
                 assert!(reason.contains("SIGSEGV"), "{reason}");
                 assert!(reason.contains("handled"), "{reason}");
@@ -1022,7 +1052,7 @@ mod tests {
             process_exit_event(2, 200, 1, 0),
         ];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGSEGV"),
             other => panic!("a death is a death: {other:?}"),
         }
@@ -1035,7 +1065,7 @@ mod tests {
             signal_termination_event(2, 200, 1, 6, "SIGABRT"),
         ];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGABRT"),
             other => panic!("the program's own death wins: {other:?}"),
         }
@@ -1045,7 +1075,7 @@ mod tests {
     fn decide_crash_a_lone_teardown_death_is_hedged() {
         let events = vec![signal_termination_event(1, 100, 1, 9, "SIGKILL")];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::KilledByTeardown { signal, .. } => assert_eq!(signal, "SIGKILL"),
             other => panic!("a teardown death is still a death: {other:?}"),
         }
@@ -1057,7 +1087,7 @@ mod tests {
         // a delivered fatal signal is reported as a crash again.
         let events = vec![signal_event(1, 100, 1, 11, "SIGSEGV")];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGSEGV"),
             other => panic!("the fallback must keep the old answer: {other:?}"),
         }
@@ -1072,7 +1102,7 @@ mod tests {
             process_exit_event(2, 200, 1, 0),
         ];
         let facts = facts_from(&events);
-        match decide_crash(&facts, TEARDOWN, &FATALS) {
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
             CrashVerdict::Survived { .. } => {}
             other => panic!("a normal exit beats an undelivered-death claim: {other:?}"),
         }

@@ -22,6 +22,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::debug_trace_specialized::{
+    decide_crash, facts_from, CrashVerdict, TerminationFacts, FATAL_SIGNALS as CRASH_SIGNALS,
+    TRACER_TEARDOWN_SIGNAL,
+};
 use crate::error::ServiceError;
 use crate::output::{
     CallGraphSummary, DerivedBundle, FactsBundle, FunctionHotspot, HypothesisBundle,
@@ -57,8 +61,9 @@ const IO_SYSCALLS: &[&str] = &[
     "read", "write", "recv", "send", "recvfrom", "sendto", "accept", "accept4", "connect", "close",
 ];
 
-/// Signal names considered crash indicators.
-const CRASH_SIGNALS: &[&str] = &["SIGSEGV", "SIGABRT", "SIGBUS", "SIGFPE", "SIGILL"];
+// `CRASH_SIGNALS` is `debug_trace_specialized::FATAL_SIGNALS`, aliased at the
+// import above rather than repeated: two copies of "what counts as fatal" is
+// how two callers end up disagreeing about the same trace.
 
 /// Stateless holder for the v2 `session_explain` dispatcher.
 pub struct ChronosSessionExplainService;
@@ -93,7 +98,7 @@ impl ChronosSessionExplainService {
                 provenance,
             }),
             SessionExplainKind::Inferred => Ok(SessionExplainOutput::Inferred {
-                bundle: build_inferred(&input.session_id, &summary),
+                bundle: build_inferred(&input.session_id, &summary, &events),
                 provenance,
             }),
             SessionExplainKind::Hypothesis => {
@@ -143,6 +148,42 @@ fn map_load_error(e: SessionReaderError) -> ServiceError {
     }
 }
 
+/// Did this session end in a crash?
+///
+/// Decided from the tracee's TERMINATION, not from the signals it received.
+/// This used to be true for any `SignalDelivered` whose name was in
+/// `CRASH_SIGNALS`, which is a statement about delivery: a tracee that
+/// installs a `sigaction` handler and raises SIGSEGV receives SIGSEGV and
+/// exits 0, and this reported a crash for it.
+///
+/// The verdict is `decide_crash`'s, not a second opinion written here.
+/// `find_crash` already answers "did this trace end in a crash" from the same
+/// facts, and two answers to one question is how one tool tells a user the
+/// session crashed while the other says it did not.
+///
+/// `summary` contributes one channel the events cannot: a producer that
+/// reports a crash directly, with `issue_type == "crash"` and no signal
+/// behind it. What is deliberately NOT counted is `issue_type == "signal"` —
+/// the engine raises it for every signal it sees, handled or not, so counting
+/// it reinstates the very claim this replaces. The engine's own "Signal
+/// killed the tracee: X" description does count, because that string only
+/// exists for a death.
+fn crash_detected_for(
+    facts: &TerminationFacts<'_>,
+    summary: &chronos_domain::query::ExecutionSummary,
+) -> bool {
+    let from_trace = match decide_crash(facts, TRACER_TEARDOWN_SIGNAL, &CRASH_SIGNALS) {
+        CrashVerdict::Crashed { .. } | CrashVerdict::KilledByTeardown { .. } => true,
+        CrashVerdict::Survived { .. } => false,
+    };
+    let from_engine = summary
+        .potential_issues
+        .iter()
+        .any(|issue| issue.issue_type == "crash" || issue.description.starts_with("Signal killed"));
+
+    from_trace || from_engine
+}
+
 fn build_facts(
     meta: &chronos_domain::SessionMetadata,
     summary: &chronos_domain::query::ExecutionSummary,
@@ -156,37 +197,19 @@ fn build_facts(
             distinct_functions.insert(name.clone());
         }
     }
-    // Look for any signal-delivered event matching CRASH_SIGNALS.
-    let mut signal_delivered: Option<String> = None;
-    let mut crash_detected = false;
-    for issue in &summary.potential_issues {
-        if issue.issue_type == "crash" || issue.issue_type == "signal" {
-            crash_detected = true;
-        }
-        if let Some(sig) = &signal_delivered {
-            let _ = sig; // keep borrow happy
-        }
-        if issue.description.starts_with("signal=") {
-            let sig = issue
-                .description
-                .strip_prefix("signal=")
-                .unwrap_or("")
-                .to_string();
-            if CRASH_SIGNALS.iter().any(|c| sig == *c) {
-                crash_detected = true;
-                signal_delivered = Some(sig);
-            }
-        }
-    }
-    // Also scan events directly for signals delivered.
-    for ev in events {
-        if let chronos_domain::EventData::Signal { signal_name, .. } = &ev.data {
-            if CRASH_SIGNALS.iter().any(|c| signal_name == *c) {
-                crash_detected = true;
-                signal_delivered = Some(signal_name.clone());
-            }
-        }
-    }
+    // `crash_detected` and `CrashDetected` are one question asked twice, by two
+    // output kinds. They must not be able to answer differently, so both go
+    // through `crash_detected_for`.
+    let facts = facts_from(events);
+    let crash_detected = crash_detected_for(&facts, summary);
+
+    // The last fatal signal the tracee received and lived through. Reported
+    // as a fact about delivery, separate from the verdict above: a tracee can
+    // handle SIGSEGV and still be worth telling the user it saw one.
+    let signal_delivered = facts
+        .first_survived_fatal(&CRASH_SIGNALS)
+        .map(|name| name.to_string());
+
     let _ = meta; // metadata fields could be threaded in m7+
     FactsBundle {
         session_id: summary.session_id.clone(),
@@ -253,16 +276,16 @@ fn build_derived(
 fn build_inferred(
     session_id: &str,
     summary: &chronos_domain::query::ExecutionSummary,
+    events: &[chronos_domain::TraceEvent],
 ) -> InferredBundle {
     let mut inferences: Vec<InferredTag> = Vec::new();
 
-    // 1. CrashDetected: any potential_issue with type "crash" or "signal"
-    //    flagged in the execution summary.
-    let crash_detected = summary
-        .potential_issues
-        .iter()
-        .any(|i| i.issue_type == "crash" || i.issue_type == "signal");
-    if crash_detected {
+    // 1. CrashDetected: the same question `build_facts` answers in
+    //    `FactsBundle::crash_detected`, asked for the `inferred` output kind.
+    //    It used to be its own rule — "any potential_issue of type crash or
+    //    signal" — which read every signal as a crash and could contradict
+    //    the `facts` bundle about the same session. One function, one answer.
+    if crash_detected_for(&facts_from(events), summary) {
         inferences.push(InferredTag::CrashDetected);
     }
 
@@ -423,27 +446,49 @@ mod tests {
         SessionExplainContext { reader: adapter }
     }
 
-    fn build_session_with_potential_issue(
-        issue_type: &str,
-        signal: Option<&str>,
-    ) -> (std::sync::Arc<SessionStore>, String) {
+    /// A `SignalDelivered` event, the way the native tracer writes one.
+    ///
+    /// `terminated` is the R6.10 field: false is a signal the tracee received
+    /// and lived through, true is the signal that ended it.
+    fn signal_event(sig: &str, terminated: bool) -> TraceEvent {
+        TraceEvent::new(
+            1,
+            MonotonicNs::from(100),
+            1,
+            EventType::SignalDelivered,
+            SourceLocation::new("test.rs", 1, "main", 0x2000),
+            EventData::Signal {
+                signal_number: 11,
+                signal_name: sig.to_string(),
+                terminated_tracee: terminated,
+            },
+        )
+    }
+
+    /// The `process_exit` marker `native_adapter` writes when the tracee
+    /// returns from `main`.
+    fn process_exit_event(code: i32) -> TraceEvent {
+        TraceEvent::new(
+            2,
+            MonotonicNs::from(200),
+            1,
+            EventType::Custom,
+            SourceLocation::from_address(0),
+            EventData::Custom {
+                name: "process_exit".to_string(),
+                data_json: format!("{{\"exit_code\": {}}}", code),
+            },
+        )
+    }
+
+    /// A session whose ending is spelled out by `ending`.
+    ///
+    /// The three shapes are the three states a crash verdict can be in: the
+    /// tracee died, the tracee exited on its own terms, or the log never says.
+    fn session_ending(ending: &[TraceEvent]) -> (std::sync::Arc<SessionStore>, String) {
         let store = empty_arc_store();
         let mut events = vec![make_event(0, "main")];
-        if let Some(sig) = signal {
-            let loc = SourceLocation::new("test.rs", 1, "main", 0x2000);
-            events.push(TraceEvent::new(
-                1,
-                MonotonicNs::from(100),
-                1,
-                EventType::SignalDelivered,
-                loc,
-                EventData::Signal {
-                    signal_number: 11,
-                    signal_name: sig.to_string(),
-                    terminated_tracee: false,
-                },
-            ));
-        }
+        events.extend_from_slice(ending);
         let meta = SessionMetadata {
             session_id: "sess".to_string(),
             created_at: 0,
@@ -455,8 +500,25 @@ mod tests {
             sealed_at: None,
         };
         store.save_session(meta, &events).unwrap();
-        let _ = issue_type;
         (store, "sess".to_string())
+    }
+
+    /// Run one `session_explain` kind against a store, panicking on the wrong
+    /// output variant.
+    fn explain_one(
+        store: &std::sync::Arc<SessionStore>,
+        kind: SessionExplainKind,
+    ) -> SessionExplainOutput {
+        let ctx = make_ctx(std::sync::Arc::clone(store));
+        ChronosSessionExplainService::explain(
+            &ctx,
+            SessionExplainInput {
+                kind,
+                session_id: "sess".to_string(),
+                hypothesis_kind: None,
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -503,24 +565,116 @@ mod tests {
         }
     }
 
+    /// The tracee died on SIGSEGV: a crash, on both output kinds.
     #[test]
-    fn explain_inferred_crash_detected_when_signal_delivered() {
-        let (store, sid) = build_session_with_potential_issue("signal", Some("SIGSEGV"));
-        let ctx = make_ctx(std::sync::Arc::clone(&store));
-        let input = SessionExplainInput {
-            kind: SessionExplainKind::Inferred,
-            session_id: sid,
-            hypothesis_kind: None,
-        };
-        let out = ChronosSessionExplainService::explain(&ctx, input).unwrap();
-        match out {
-            SessionExplainOutput::Inferred { bundle, .. } => {
+    fn crash_detected_when_the_tracee_died_from_a_fatal_signal() {
+        let (store, _) = session_ending(&[signal_event("SIGSEGV", true)]);
+
+        match explain_one(&store, SessionExplainKind::Facts) {
+            SessionExplainOutput::Facts { bundle, .. } => {
+                assert!(bundle.crash_detected, "a death is a crash")
+            }
+            other => panic!("expected Facts, got {:?}", other),
+        }
+        match explain_one(&store, SessionExplainKind::Inferred) {
+            SessionExplainOutput::Inferred { bundle, .. } => assert!(
+                bundle.inferences.contains(&InferredTag::CrashDetected),
+                "expected CrashDetected in {:?}",
+                bundle.inferences
+            ),
+            other => panic!("expected Inferred, got {:?}", other),
+        }
+    }
+
+    /// The tracee handled SIGSEGV and returned 0: NOT a crash.
+    ///
+    /// This is the case the delivery-based rule could not express. Both
+    /// events are present and both are real — a SIGSEGV was delivered, and
+    /// the process exited normally — so the only thing separating them from a
+    /// crash is which of the two the tracee survived.
+    #[test]
+    fn no_crash_when_the_tracee_handled_a_fatal_signal_and_exited_zero() {
+        let (store, _) = session_ending(&[signal_event("SIGSEGV", false), process_exit_event(0)]);
+
+        match explain_one(&store, SessionExplainKind::Facts) {
+            SessionExplainOutput::Facts { bundle, .. } => {
                 assert!(
-                    bundle.inferences.contains(&InferredTag::CrashDetected),
-                    "expected CrashDetected in {:?}",
-                    bundle.inferences
+                    !bundle.crash_detected,
+                    "a tracee that handled SIGSEGV and exited 0 did not crash"
+                );
+                // The delivery is still reported: it is a fact about the
+                // session, kept apart from the verdict about its ending.
+                assert_eq!(
+                    bundle.signal_delivered.as_deref(),
+                    Some("SIGSEGV"),
+                    "the handled signal is still reported as delivered"
                 );
             }
+            other => panic!("expected Facts, got {:?}", other),
+        }
+        match explain_one(&store, SessionExplainKind::Inferred) {
+            SessionExplainOutput::Inferred { bundle, .. } => assert!(
+                !bundle.inferences.contains(&InferredTag::CrashDetected),
+                "a handled SIGSEGV must not infer a crash, got {:?}",
+                bundle.inferences
+            ),
+            other => panic!("expected Inferred, got {:?}", other),
+        }
+    }
+
+    /// `facts` and `inferred` are one question; they must not answer
+    /// differently about the same session.
+    #[test]
+    fn facts_and_inferred_agree_on_every_way_a_session_can_end() {
+        for (label, ending, expect_crash) in [
+            ("died on SIGSEGV", vec![signal_event("SIGSEGV", true)], true),
+            (
+                "handled SIGSEGV, exited 0",
+                vec![signal_event("SIGSEGV", false), process_exit_event(0)],
+                false,
+            ),
+            (
+                "handled SIGSEGV, exited 3",
+                vec![signal_event("SIGABRT", false), process_exit_event(3)],
+                false,
+            ),
+            ("no signals at all", vec![], false),
+        ] {
+            let (store, _) = session_ending(&ending);
+
+            let facts = match explain_one(&store, SessionExplainKind::Facts) {
+                SessionExplainOutput::Facts { bundle, .. } => bundle.crash_detected,
+                other => panic!("expected Facts for {}, got {:?}", label, other),
+            };
+            let inferred = match explain_one(&store, SessionExplainKind::Inferred) {
+                SessionExplainOutput::Inferred { bundle, .. } => {
+                    bundle.inferences.contains(&InferredTag::CrashDetected)
+                }
+                other => panic!("expected Inferred for {}, got {:?}", label, other),
+            };
+
+            assert_eq!(facts, expect_crash, "facts verdict wrong for {label}");
+            assert_eq!(inferred, expect_crash, "inferred verdict wrong for {label}");
+            assert_eq!(facts, inferred, "the two kinds disagree for {label}");
+        }
+    }
+
+    /// A log that never says how the tracee ended falls back to the old rule.
+    ///
+    /// Declared, not endorsed: the fallback is what keeps a session truncated
+    /// mid-trace from resolving to "no crash" by default, and the tracee in
+    /// that state cannot be shown to have survived anything. The three tests
+    /// above are what make the fallback narrow — it only runs when the log
+    /// offers no termination record at all.
+    #[test]
+    fn a_log_without_a_termination_record_falls_back_to_delivery() {
+        let (store, _) = session_ending(&[signal_event("SIGSEGV", false)]);
+        match explain_one(&store, SessionExplainKind::Inferred) {
+            SessionExplainOutput::Inferred { bundle, .. } => assert!(
+                bundle.inferences.contains(&InferredTag::CrashDetected),
+                "the fallback treats a lone fatal delivery as a crash, got {:?}",
+                bundle.inferences
+            ),
             other => panic!("expected Inferred, got {:?}", other),
         }
     }
