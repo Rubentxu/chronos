@@ -753,7 +753,12 @@ pub struct CrashPoint {
     pub thread_id: u64,
     pub call_stack_depth: usize,
     pub call_stack: Vec<CrashStackFrame>,
-    /// Present only when crash_found is false.
+    /// Why the verdict above may need a caveat. Present when no fatal signal
+    /// was found at all, and also when the reported crash is a `SIGKILL` that
+    /// is the only fatal signal in the trace: chronos `SIGKILL`s its own tracee
+    /// during session teardown, and the trace cannot distinguish that from a
+    /// genuine external kill such as the OOM killer. Absent when a fatal signal
+    /// the tracer could not have sent is the verdict.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }

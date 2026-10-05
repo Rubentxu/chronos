@@ -11,16 +11,13 @@ use std::collections::HashMap;
 
 use tokio::sync::Mutex;
 
-#[cfg(test)]
-use chronos_domain::trace::TraceEvent;
-
 use crate::error::ServiceError;
 use crate::output::{
     CausalityReport, CrashPoint, CrashStackFrame, HotspotEntry, HotspotReport, LineageEntry,
     RaceReport, SaliencyScore, SaliencyScoreResult, VariableOriginResult,
 };
 use chronos_domain::query::{CausalityQuery, PerfQuery, PerfSortBy, RaceDetectionQuery};
-use chronos_domain::trace::{EventData, EventType};
+use chronos_domain::trace::{EventData, EventType, TraceEvent};
 use chronos_domain::TraceQuery;
 use chronos_query::QueryEngine;
 
@@ -78,11 +75,17 @@ impl DebugTraceSpecializedService {
         }
     }
 
-    /// Identify the crash point in a trace: find the last event before a fatal
-    /// signal and reconstruct the call stack.
+    /// Identify the crash point in a trace: find the fatal signal that ended
+    /// the tracee and reconstruct the call stack at that point.
     ///
     /// Returns `Ok(CrashPoint)` with `crash_found = false` when no fatal
     /// signal is present.
+    ///
+    /// The verdict prefers a fatal signal the tracer could not have sent and
+    /// only falls back to `SIGKILL` when none exists, because chronos
+    /// `SIGKILL`s its own tracee during session teardown. A `SIGKILL` verdict
+    /// therefore carries a `note`: it may be that teardown kill rather than a
+    /// crash of the program, and the trace alone cannot tell them apart.
     pub async fn find_crash(
         session_id: &str,
         engines: &Mutex<HashMap<String, QueryEngine>>,
@@ -92,42 +95,87 @@ impl DebugTraceSpecializedService {
             .get(session_id)
             .ok_or_else(|| ServiceError::SessionNotFound(session_id.to_string()))?;
 
-        let fatal_signals = [
-            "SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE", "SIGKILL",
-        ];
+        // The one signal chronos itself delivers to its own tracee. The
+        // teardown paths in `probe_backend.rs` (live-probe loop cleanup,
+        // clone reaping) and in `capture_runner.rs` call `kill`/`waitpid` on
+        // the traced pid, and the frame-capture helper failure path does the
+        // same, so the tracer SIGKILLs its own tracee at the end of a normal
+        // session. That kill is recorded as a plain `SignalDelivered`, which
+        // is what made the previous "first fatal signal wins" rule report
+        // `crash_found = true, signal = "SIGKILL"` for programs that never
+        // crashed: the verdict blamed the program for a kill chronos sent.
+        const TRACER_TEARDOWN_SIGNAL: &str = "SIGKILL";
+
+        // Fatal signals the tracer cannot fabricate. Every one of them is
+        // delivered by the tracee itself, so its presence in the log is proof
+        // that the tracee died on it.
+        let fatal_signals = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
+
+        let is_fatal = |name: &str| name == TRACER_TEARDOWN_SIGNAL || fatal_signals.contains(&name);
 
         let query = TraceQuery::new(session_id)
             .event_types(vec![EventType::SignalDelivered])
             .pagination(usize::MAX, 0);
         let result = engine.execute(&query);
 
-        let crash_event = result.events.iter().find(|e| {
-            if let EventData::Signal { signal_name, .. } = &e.data {
-                fatal_signals.contains(&signal_name.as_str())
-            } else {
-                false
-            }
-        });
+        let fatal_events: Vec<(&TraceEvent, &str)> = result
+            .events
+            .iter()
+            .filter_map(|e| match &e.data {
+                EventData::Signal { signal_name, .. } if is_fatal(signal_name) => {
+                    Some((e, signal_name.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        // Classification rule: prefer the first fatal signal the tracer could
+        // not have sent, and fall back to the first SIGKILL only when there is
+        // none.
+        //
+        // The ordering property of the teardown kill is what makes this
+        // decidable rather than heuristic: chronos SIGKILLs its tracee while
+        // tearing the session down, so that event is always the last one in
+        // the log and always comes after whatever actually happened to the
+        // tracee. Therefore any non-SIGKILL fatal signal in the log, whether
+        // it precedes or follows the teardown kill, describes the real death
+        // and outranks every SIGKILL. A SIGKILL is only the verdict when it
+        // is the sole fatal signal, and that case stays genuinely ambiguous:
+        // the OOM killer killing a user's process is a real debugging
+        // scenario that must not be dropped, so the verdict is reported with
+        // a `note` stating that it may be the tracer's own teardown kill.
+        let crash_event = fatal_events
+            .iter()
+            .find(|(_, name)| *name != TRACER_TEARDOWN_SIGNAL)
+            .or_else(|| fatal_events.first())
+            .map(|(ev, name)| (*ev, *name));
 
         match crash_event {
-            Some(ev) => {
+            Some((ev, signal_name)) => {
                 let stack = engine.reconstruct_call_stack(ev.event_id);
-                let signal_name = if let EventData::Signal { signal_name, .. } = &ev.data {
-                    signal_name.clone()
+
+                let note = if signal_name == TRACER_TEARDOWN_SIGNAL {
+                    Some(
+                        "SIGKILL is the only fatal signal in the trace: the crash may be the \
+                         tracer's own teardown kill (chronos SIGKILLs its tracee during session \
+                         cleanup) or a genuine external kill such as the OOM killer, and the \
+                         trace alone cannot tell them apart"
+                            .to_string(),
+                    )
                 } else {
-                    "unknown".to_string()
+                    None
                 };
 
                 Ok(CrashPoint {
                     session_id: session_id.to_string(),
                     crash_found: true,
-                    signal: signal_name,
+                    signal: signal_name.to_string(),
                     event_id: ev.event_id,
                     timestamp_ns: ev.timestamp_ns.get(),
                     thread_id: ev.thread_id,
                     call_stack_depth: stack.len(),
                     call_stack: stack.into_iter().map(CrashStackFrame::from).collect(),
-                    note: None,
+                    note,
                 })
             }
             None => Ok(CrashPoint {
@@ -550,6 +598,103 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.crash_found);
+        assert_eq!(
+            result.note.as_deref(),
+            Some("No fatal signal found in the trace")
+        );
+    }
+
+    /// A delivered signal that is not fatal must not become a crash verdict.
+    /// Pins the "no fatal signal at all" branch, whose `note` is a published
+    /// value of the tool contract.
+    #[tokio::test]
+    async fn find_crash_only_non_fatal_signal_is_not_a_crash() {
+        let events = vec![
+            trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
+            signal_event(2, 200, 1, 10, "SIGUSR1"),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(!result.crash_found);
+        assert_eq!(result.signal, "");
+        assert_eq!(
+            result.note.as_deref(),
+            Some("No fatal signal found in the trace")
+        );
+    }
+
+    /// The real-world shape measured on the `test_abort` fixture: the program
+    /// really aborts, and the tracer's teardown SIGKILL lands afterwards as a
+    /// plain `SignalDelivered`. The verdict must name the program's own signal,
+    /// not the teardown kill.
+    #[tokio::test]
+    async fn find_crash_prefers_real_fatal_signal_over_teardown_sigkill() {
+        let events = vec![
+            trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
+            signal_event(2, 200, 1, 6, "SIGABRT"),
+            // Tracer teardown kill, strictly after the abort.
+            signal_event(3, 300, 1, 9, "SIGKILL"),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(result.crash_found);
+        assert_eq!(result.signal, "SIGABRT");
+        assert_eq!(result.event_id, 2);
+        assert_eq!(result.thread_id, 1);
+        // A signal the tracer cannot fabricate needs no hedging note.
+        assert_eq!(result.note, None);
+    }
+
+    /// The rule is stated on the signal, not on the position: a non-SIGKILL
+    /// fatal signal outranks a SIGKILL even when the SIGKILL is logged first.
+    /// This is the only ordering where the previous "first fatal signal wins"
+    /// rule and the current rule disagree, so it is what pins the fix: the
+    /// log order alone must not decide which signal the verdict names.
+    #[tokio::test]
+    async fn find_crash_prefers_real_fatal_signal_when_sigkill_is_earlier() {
+        let events = vec![
+            signal_event(1, 100, 1, 9, "SIGKILL"),
+            signal_event(2, 200, 1, 8, "SIGFPE"),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(result.crash_found);
+        assert_eq!(result.signal, "SIGFPE");
+        assert_eq!(result.event_id, 2);
+        assert_eq!(result.note, None);
+    }
+
+    /// The one case the rule cannot settle: a lone SIGKILL. It is still
+    /// reported as a crash because the OOM killer killing a user's process is
+    /// real, but the note must not let a reader take it as proof.
+    #[tokio::test]
+    async fn find_crash_only_sigkill_still_detected_with_teardown_note() {
+        let events = vec![
+            trace_event(1, 100, 1, EventType::FunctionEntry, "main"),
+            signal_event(2, 200, 1, 9, "SIGKILL"),
+        ];
+        let engines = engines_with_session("s1", events);
+        let result = DebugTraceSpecializedService::find_crash("s1", &engines)
+            .await
+            .unwrap();
+        assert!(result.crash_found);
+        assert_eq!(result.signal, "SIGKILL");
+        assert_eq!(result.event_id, 2);
+        let note = result.note.expect("a lone SIGKILL must be hedged");
+        assert!(
+            note.contains("teardown"),
+            "note must name the teardown kill: {note}"
+        );
+        assert!(
+            note.contains("SIGKILL"),
+            "note must name the signal: {note}"
+        );
     }
 
     // --- detect_races ---
