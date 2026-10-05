@@ -964,3 +964,46 @@ por dos causas". Solo el volcado del log con los nombres de syscall reales revel
 avanzando a 10 ms por parada. La leccion operativa: cuando un test end-to-end sigue rojo despues de un
 arreglo, el arreglo no esta terminado, y la pregunta util no es "de quien es el fallo" sino "que sigue
 pasando en el log".
+
+---
+
+## DEBT-CRASH-VERDICT-SOURCE-01 (2026-10-05) - el veredicto de crash se apoya en la entrega de la señal, no en la muerte del tracee
+
+**Estado:** `OPEN`, registrada en R6.9 como consecuencia de la auditoria · **Severidad:** media, porque
+no hace que el producto mienta todavia, pero le quita el pelo.
+
+**Como se encontro.** Una auditoria independiente de los cuatro arreglos de R6.9 restauro el defecto de
+entrega de señales (`resume_action` volviendo a suprimir con `None`) y ejecuto la suite end-to-end de
+`program_scenarios` con el binario reconstruido: **los 11 tests pasaron**. Es decir, `test_abort_crash_detected_sigabrt` y `test_divide_by_zero_crash_detected` **no distinguen el arreglo de su ausencia**.
+
+**Por que.** Son dos huecos encadenados, y ninguno es de los tests:
+
+1. `program_scenarios.rs` acepta `debug_find_crash == None` como aprobado, y acepta cualquier senal
+   cuyo texto contenga `"6"` o `"8"`. Un `None` es un veredicto de "no lo se", y trata "no lo se" como
+   "bien".
+2. Mas profundo y con el arreglo ya puesto: `find_crash` decide sobre eventos `SignalDelivered`, que
+   son la **entrega** de la señal, no la **muerte** por ella. Con la entrega rota, la parada por SIGABRT
+   se registra igual, el veredicto sale SIGABRT, y el test pasa, aunque el tracee siga vivo. Las dos
+   reglas de R6.9 se tapan la una a la otra: la entrega de señales arregla la muerte, y el veredicto
+   basado en la entrega tapa que la muerte no ocurrio.
+
+**Por que no lo arreglo aqui.** La reparacion de raiz no es en el test: es que el veredicto se apoye en
+el evento de terminacion. `wait_event` **si** ve el final real del tracee, como `PtraceEvent::Exited` o
+`PtraceEvent::Signaled`, y ese evento es la unica prueba de que murio por lo que dijo. El camino seria
+indexar tambien la senal de terminacion en el `ExecutionLog` y que `find_crash` la prefiera a cualquier
+`SignalDelivered`, cayendo al reparto de senales solo cuando no haya terminacion registrada. Eso toca
+la forma del evento en `chronos-domain`, el modo en que `native_adapter` lo indexa y las pruebas que
+afirman el vocabulario actual de `find_crash` en cuatro suites de sandbox. Es un trabajo de otro tamaño,
+del mismo orden que el que justifico abrir la entrada de `DEBT-CRASH-TEARDOWN-SIGKILL-01` y no abrirlo
+a medias, asi que **se registra y no se abre otro frente en R6.9**.
+
+**Lo que si se ha hecho, y es poco:** el doc-comment de la regla de `find_crash` y el doc de
+`TRACER_POLL_MIN` dejan escrito que el log registra la entrega y no la muerte, y que el suelo sigue
+siendo un techo de rendimiento con las cifras medidas. Quien lea las pruebas end-to-end ahora lo tiene
+dicho en el codigo, no solo en el informe de la auditoria.
+
+**Como se cerraria, y como se comprobaria.** El cierre natural es el test: que
+`test_abort_crash_detected_sigabrt` falle cuando la entrega de senales se revierte, aunque `find_crash`
+siga devolviendo SIGABRT. Eso exige que el producto pueda decir "el tracee termino con SIGABRT" y no
+"recibio SIGABRT", que es exactamente el trabajo de raiz de arriba. La mutacion de la auditoria queda
+como la prueba de no-vacuidad que ese test debera tener y hoy no tiene.
