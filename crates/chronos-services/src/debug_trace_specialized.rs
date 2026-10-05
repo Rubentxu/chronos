@@ -106,9 +106,16 @@ impl DebugTraceSpecializedService {
         // crashed: the verdict blamed the program for a kill chronos sent.
         const TRACER_TEARDOWN_SIGNAL: &str = "SIGKILL";
 
-        // Fatal signals the tracer cannot fabricate. Every one of them is
-        // delivered by the tracee itself, so its presence in the log is proof
-        // that the tracee died on it.
+        // Fatal signals the tracer does not send on its own.
+        //
+        // These are NOT proof that the tracee died on them, and an earlier
+        // version of this comment claimed they were. They are not: a tracee
+        // that installs a `sigaction` handler for SIGSEGV or SIGABRT and then
+        // `raise()`s it records a `SignalDelivered` for each and can still exit
+        // 0. The log records the *delivery*, not the death. What the list does
+        // establish is narrower and sufficient: the tracer does not manufacture
+        // these, so a SIGKILL is the only signal here that can be chronos
+        // blaming the program for something it did itself.
         let fatal_signals = ["SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE"];
 
         let is_fatal = |name: &str| name == TRACER_TEARDOWN_SIGNAL || fatal_signals.contains(&name);
@@ -129,21 +136,28 @@ impl DebugTraceSpecializedService {
             })
             .collect();
 
-        // Classification rule: prefer the first fatal signal the tracer could
-        // not have sent, and fall back to the first SIGKILL only when there is
-        // none.
+        // Classification rule: prefer the first fatal signal the tracer did
+        // not send, and fall back to the first SIGKILL only when there is none.
         //
-        // The ordering property of the teardown kill is what makes this
-        // decidable rather than heuristic: chronos SIGKILLs its tracee while
-        // tearing the session down, so that event is always the last one in
-        // the log and always comes after whatever actually happened to the
-        // tracee. Therefore any non-SIGKILL fatal signal in the log, whether
-        // it precedes or follows the teardown kill, describes the real death
-        // and outranks every SIGKILL. A SIGKILL is only the verdict when it
-        // is the sole fatal signal, and that case stays genuinely ambiguous:
-        // the OOM killer killing a user's process is a real debugging
-        // scenario that must not be dropped, so the verdict is reported with
-        // a `note` stating that it may be the tracer's own teardown kill.
+        // Why this beats the old "first fatal signal wins": chronos SIGKILLs its
+        // own tracee while tearing the session down, and that kill is
+        // indistinguishable in the log from one that arrived from outside, so
+        // the old rule reported `crash_found = true, signal = "SIGKILL"` for
+        // programs that never crashed — the verdict blamed the program for a
+        // kill the tracer sent itself. Demoting SIGKILL fixes exactly that
+        // case, and the rule is deliberately order-independent: the teardown
+        // kill is normally last, but `probe_backend` kills clone children
+        // before the main pid and `stop_probe` is a separate kill path, so
+        // "always the last event" would be a claim about behaviour rather than
+        // about the code, and it would be false some of the time. The rule does
+        // not need the ordering, so it does not assert it.
+        //
+        // What the rule still cannot tell: a SIGKILL that is the only fatal
+        // signal. The OOM killer killing a user's process is a real debugging
+        // scenario that must not be dropped, so the verdict is still reported
+        // — with a `note` saying it may be the tracer's own teardown kill.
+        // Honesty instead of classification, because the trace does not carry
+        // the information to classify.
         let crash_event = fatal_events
             .iter()
             .find(|(_, name)| *name != TRACER_TEARDOWN_SIGNAL)

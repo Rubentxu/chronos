@@ -121,18 +121,28 @@ mod imp {
     /// (`DEBT-WAIT-EVENT-UNBOUNDED-01`).
     ///
     /// This is the cost floor, paid only by a tracee that is producing events
-    /// *right now*, and it exists so that a busy tracee is not throttled: see
-    /// the throughput argument in `wait_event`. 100 us caps the tracer at
-    /// roughly 10k ptrace stops per second, which is above anything a real
-    /// program reaches, so this is a latency floor and not a throughput one.
+    /// *right now*, and it exists so that a busy tracee is not throttled. See
+    /// the throughput argument in `wait_event`.
+    ///
+    /// **It is still a throughput ceiling, and calling it anything else would
+    /// be a lie.** Measured on this machine with a 20k-`getpid` tracee: a
+    /// tracer that never sleeps sustains roughly 150k ptrace stops per second,
+    /// and with this 100 us floor it sustains roughly 6.4k — about 23x below
+    /// the hardware ceiling, the rest being `waitpid` plus sleep plus
+    /// scheduling overhead per round. A syscall-heavy program is therefore
+    /// still slowed by the tracer, just not by the 100x that a fixed 10 ms tick
+    /// cost. The number to reason with is the ratio, not the floor: 100 us is
+    /// two orders of magnitude better than 10 ms and one order short of free.
     pub const TRACER_POLL_MIN: std::time::Duration = std::time::Duration::from_micros(100);
 
     /// Largest tick of the `follow_children` wait loop, reached only after the
     /// tracee has been quiet for several rounds.
     ///
-    /// 10 ms, the interval the non-`follow_children` branch of `wait_event`
-    /// has always paid, so the settled idle cost of an idle tracer thread is
-    /// the one this repository already has rather than a new profile.
+    /// 10 ms, which is the interval the non-`follow_children` branch of
+    /// `wait_event` has paid since `8481734d`. It did **not** always pay it:
+    /// before that commit the same branch slept 100 ms. The number is kept
+    /// because it is the settled idle cost this repository already has, not
+    /// because the history supports the word "always".
     pub const TRACER_POLL_MAX: std::time::Duration = std::time::Duration::from_millis(10);
 
     /// Next tick after `current`: doubled, clamped to [`TRACER_POLL_MAX`].
@@ -620,12 +630,24 @@ mod imp {
                 //
                 // So the tick starts at `TRACER_POLL_MIN` and doubles up to
                 // `TRACER_POLL_MAX`, and **any** event resets it to the
-                // minimum. A tracee that is producing gets polled at 100 us and
-                // is not throttled; a tracee that is quiet settles at 10 ms,
-                // which is the same idle cost the non-`follow_children` branch
-                // of this function has always paid. `tick` is local to this
+                // minimum. A tracee that is producing is polled at 100 us
+                // instead of 10 ms — 100x less throttling, though still a
+                // ceiling rather than zero cost, and `TRACER_POLL_MIN` says so
+                // with the measured numbers. A tracee that is quiet settles at
+                // 10 ms, the idle cost the non-`follow_children` branch of this
+                // function has paid since `8481734d` (it was 100 ms before
+                // that, so "always" would be false). `tick` is local to this
                 // call, so returning any event resets it for free — that is why
                 // there is no reset to forget here.
+                //
+                // What pins this wiring, and what did not: `next_poll_tick` has
+                // its own unit tests, but those only prove the curve. Restoring
+                // a fixed 10 ms in *these loops* left all 131 unit tests green,
+                // so the loops are now covered by a real-tracee timing test
+                // (`poll_tick_does_not_throttle_a_syscall_bound_tracee`). The
+                // point is worth stating: a pure helper with thorough tests can
+                // still be called from nowhere, and that is invisible until
+                // something mutates the call site.
                 //
                 // The stall is reported, not fatal. A tracee running a long
                 // computation legitimately produces no events for minutes, so
@@ -1576,6 +1598,99 @@ mod imp {
                 syscall_count > 0,
                 "/bin/true should make at least one syscall"
             );
+        }
+
+        /// The poll tick must not throttle the tracee, in the loops and not
+        /// just in the pure helper.
+        ///
+        /// `next_poll_tick` has its own tests, and they are worthless for this
+        /// property: restoring a fixed 10 ms in both `wait_event` branches left
+        /// all 131 unit tests green, because a correct curve that nothing calls
+        /// still passes its own tests. This is the test that closes that hole,
+        /// so it measures the thing that actually broke — how fast a tracee can
+        /// be traced — rather than what the arithmetic returns.
+        ///
+        /// Method: trace a shell that forks 200 children, which is a few
+        /// thousand ptrace stops, for a fixed 3 s window, and count the stops.
+        /// The window is the time box, not a completion criterion: under the old
+        /// fixed tick this reaches ~100 stops/s and under the backoff ~6.4k/s,
+        /// so it settles in 3 s either way and separates the two by 60x. The
+        /// 400/s floor sits 4x above the defect and 16x below the real rate, so
+        /// a loaded CI runner does not trip it.
+        ///
+        /// Both branches are covered because the original defect was in the
+        /// `follow_children` one and the verifier found the other equally
+        /// unpinned.
+        #[test]
+        fn poll_tick_does_not_throttle_a_syscall_bound_tracee() {
+            use std::time::{Duration, Instant};
+
+            const WINDOW: Duration = Duration::from_secs(3);
+            const MIN_STOPS_PER_SEC: f64 = 400.0;
+
+            for follow_children in [true, false] {
+                let _trace_guard = crate::test_support::lock_trace_test();
+                let mut tracer = PtraceTracer::new(PtraceConfig {
+                    trace_syscalls: true,
+                    capture_registers: true,
+                    follow_children,
+                    track_function_frames: false,
+                });
+
+                // 200 forks of a trivial program: a few thousand syscalls, and
+                // the shell does the work so the test needs no fixture.
+                let main_pid = tracer
+                    .launch(
+                        Path::new("/bin/sh"),
+                        &[
+                            "-c".to_string(),
+                            "i=0; while [ $i -lt 200 ]; do /bin/true; i=$((i+1)); done".to_string(),
+                        ],
+                    )
+                    .expect("launch should work");
+
+                let started = Instant::now();
+                let mut stops = 0u64;
+                while started.elapsed() < WINDOW {
+                    match tracer.wait_event() {
+                        Ok(Some(PtraceEvent::Exited { .. })) | Ok(None) => break,
+                        Ok(Some(ev)) => {
+                            stops += 1;
+                            // Resume the pid the event is *about*. Resuming
+                            // the main pid unconditionally deadlocks the
+                            // `follow_children` case: a stopped clone child
+                            // then never reports anything, and `wait_event`
+                            // waits on any child, so the loop never advances.
+                            // Delivery of signals is not what this test is
+                            // about, so the suppressed resume is fine here.
+                            let resume = match &ev {
+                                PtraceEvent::Syscall { pid, .. }
+                                | PtraceEvent::Stopped { pid, .. }
+                                | PtraceEvent::Registers { pid, .. }
+                                | PtraceEvent::Signaled { pid, .. } => *pid,
+                                _ => main_pid,
+                            };
+                            let _ = tracer.continue_execution(resume);
+                        }
+                        Err(e) => panic!("wait_event error: {}", e),
+                    }
+                }
+                let elapsed = started.elapsed().as_secs_f64();
+                let rate = stops as f64 / elapsed;
+                let _ = tracer.continue_execution(main_pid);
+
+                assert!(
+                    stops > 0,
+                    "follow_children={follow_children}: the tracee produced no ptrace stops in \
+                     {WINDOW:?}, so this test cannot judge the poll tick"
+                );
+                assert!(
+                    rate > MIN_STOPS_PER_SEC,
+                    "follow_children={follow_children}: only {stops} ptrace stops in {elapsed:.2} s \
+                     ({rate:.0}/s, floor {MIN_STOPS_PER_SEC:.0}/s). A fixed 10 ms tick yields \
+                     about 100/s, so the wait loop is throttling the tracee again"
+                );
+            }
         }
     }
 }
