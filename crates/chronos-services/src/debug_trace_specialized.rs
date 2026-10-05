@@ -1290,12 +1290,137 @@ mod tests {
     /// separates them. Before this fix the ranking was flat at 0.0 for both,
     /// and `total_cycles` said `Some(0)` — a measurement of zero cycles for
     /// functions nobody ever watched run.
+    #[tokio::test]
+    async fn saliency_without_counters_ranks_by_calls_and_says_cycles_were_not_measured() {
+        let mut engines: HashMap<String, QueryEngine> = HashMap::new();
+        engines.insert("s".to_string(), engine_with_function_events());
+
+        let out = DebugTraceSpecializedService::get_saliency_scores("s", 10, &Mutex::new(engines))
+            .await
+            .expect("saliency fallo");
+
+        assert_eq!(
+            out.scores.len(),
+            2,
+            "both functions should be listed: {out:?}"
+        );
+
+        let hot = out
+            .scores
+            .iter()
+            .find(|s| s.function == "hot_fn")
+            .expect("hot_fn missing");
+        let cold = out
+            .scores
+            .iter()
+            .find(|s| s.function == "cold_fn")
+            .expect("cold_fn missing");
+
+        assert!(
+            hot.saliency_score > cold.saliency_score,
+            "a call-count ranking has to separate twice-called from once-called: \
+             hot={} cold={}",
+            hot.saliency_score,
+            cold.saliency_score
+        );
+        assert_eq!(hot.call_count, 2);
+        assert!(
+            out.scores.iter().all(|s| s.total_cycles.is_none()),
+            "no cycles were measured, so none may be reported: {:?}",
+            out.scores
+        );
+        assert!(
+            out.scores.iter().all(|s| s.cycles.is_some()),
+            "the disclosure field must be present exactly when counters are absent: {:?}",
+            out.scores
+        );
+
+        let hint = out.hint.clone().unwrap_or_default();
+        assert!(
+            hint.contains("CALL COUNT") && hint.contains("No cycles were measured"),
+            "the hint names the unit, because the unit is the claim: {hint}"
+        );
+        assert!(
+            !hint.contains("dominated CPU time"),
+            "the hint must not promise CPU time it does not have: {hint}"
+        );
+    }
 
     /// The case that is easy to break while fixing the one above: a session
     /// that *did* read counters still gets a cycle ranking.
+    #[tokio::test]
+    async fn saliency_with_counters_still_ranks_by_cycles() {
+        use chronos_domain::{PerfCounters, PerformanceIndex};
+
+        let mut perf = PerformanceIndex::new();
+        perf.record_call(0x1000, Some("hot_fn".to_string()), Some(9000));
+        perf.record_call(0x1000, Some("hot_fn".to_string()), Some(1000));
+        perf.record_call(0x2000, Some("cold_fn".to_string()), Some(200));
+        perf.set_counters(PerfCounters {
+            cycles: Some(10200),
+            instructions: Some(40000),
+            cache_misses: None,
+            cache_references: None,
+        });
+
+        let mut engines: HashMap<String, QueryEngine> = HashMap::new();
+        engines.insert(
+            "s".to_string(),
+            engine_with_function_events().with_performance(perf),
+        );
+
+        let out = DebugTraceSpecializedService::get_saliency_scores("s", 10, &Mutex::new(engines))
+            .await
+            .expect("saliency fallo");
+
+        let hot = out.scores.iter().find(|s| s.function == "hot_fn").unwrap();
+        let cold = out.scores.iter().find(|s| s.function == "cold_fn").unwrap();
+        assert_eq!(hot.total_cycles, Some(10000));
+        assert_eq!(cold.total_cycles, Some(200));
+        assert!(
+            hot.saliency_score > cold.saliency_score,
+            "a cycle ranking has to separate them too"
+        );
+        assert!(
+            out.scores.iter().all(|s| s.cycles.is_none()),
+            "the disclosure field is for the absence of counters only"
+        );
+        assert!(
+            out.hint.unwrap_or_default().contains("dominated CPU time"),
+            "with counters, the original hint is the correct one"
+        );
+    }
 
     /// `expand_hotspot` carried the same claim in a field with no disclosure
     /// at all: `Some(0)` for every function, every session.
+    #[tokio::test]
+    async fn hotspot_report_leaves_cycles_null_when_none_were_measured() {
+        let mut engines: HashMap<String, QueryEngine> = HashMap::new();
+        engines.insert("s".to_string(), engine_with_function_events());
+
+        let out = DebugTraceSpecializedService::expand_hotspot("s", 10, &Mutex::new(engines))
+            .await
+            .expect("expand_hotspot fallo");
+
+        assert!(!out.hotspot_functions.is_empty());
+        for entry in &out.hotspot_functions {
+            assert_eq!(
+                entry.total_cycles, None,
+                "cycles were never measured for {}",
+                entry.function
+            );
+            assert_eq!(
+                entry.avg_cycles_per_call, None,
+                "an average over an unmeasured total is not zero, it is unknown: {}",
+                entry.function
+            );
+        }
+        let hint = out.hint.clone().unwrap_or_default();
+        assert!(
+            hint.contains("no hardware performance counters"),
+            "the report says why the cycle columns are null: {hint}"
+        );
+    }
 
     #[test]
     fn decide_crash_an_empty_trace_is_not_a_crash() {
