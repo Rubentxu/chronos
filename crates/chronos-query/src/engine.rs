@@ -416,18 +416,59 @@ impl QueryEngine {
             min_ts = Some(min_ts.map_or(event.timestamp_ns, |m| m.min(event.timestamp_ns)));
             max_ts = Some(max_ts.map_or(event.timestamp_ns, |m| m.max(event.timestamp_ns)));
 
-            // Detect signals as potential issues
+            // Detect signals as potential issues.
+            //
+            // The confidence here used to be a property of the signal's NAME:
+            // 0.95 for SIGSEGV and SIGABRT, 0.6 for anything else. That is a
+            // number about the delivery, presented as a number about the
+            // crash. A tracee with a `sigaction` handler that raises SIGSEGV
+            // receives SIGSEGV and exits 0, and this used to report 0.95
+            // confidence that it crashed.
+            //
+            // `terminated_tracee` is the distinction the tracer already had and
+            // that R6.10 put in the log: it says whether the signal is the one
+            // that ended the tracee. Confidence now tracks that instead of the
+            // name, and the description says which of the two happened, so the
+            // number is not the only thing carrying the claim.
             if event.event_type == EventType::SignalDelivered {
-                if let EventData::Signal { signal_name, .. } = &event.data {
+                if let EventData::Signal {
+                    signal_name,
+                    terminated_tracee,
+                    ..
+                } = &event.data
+                {
                     if signal_name != "SIGSTOP" && signal_name != "SIGCHLD" {
-                        issues.push(PotentialIssue {
-                            issue_type: "signal".into(),
-                            confidence: if signal_name == "SIGSEGV" || signal_name == "SIGABRT" {
+                        let is_fatal_signal = matches!(
+                            signal_name.as_str(),
+                            "SIGSEGV" | "SIGABRT" | "SIGBUS" | "SIGFPE" | "SIGILL"
+                        );
+                        let confidence = if *terminated_tracee {
+                            // The tracee died on this signal. A name that is not
+                            // in the fatal set still ends a process when the
+                            // tracer delivers it, but the tracer does not
+                            // manufacture the fatal ones, so those stay higher.
+                            if is_fatal_signal {
                                 0.95
                             } else {
-                                0.6
-                            },
-                            description: format!("Signal received: {}", signal_name),
+                                0.85
+                            }
+                        } else if is_fatal_signal {
+                            // Delivered, not fatal to the tracee: it handled
+                            // the signal and carried on. Worth surfacing, but
+                            // nowhere near a crash.
+                            0.2
+                        } else {
+                            0.4
+                        };
+                        let description = if *terminated_tracee {
+                            format!("Signal killed the tracee: {}", signal_name)
+                        } else {
+                            format!("Signal received: {}", signal_name)
+                        };
+                        issues.push(PotentialIssue {
+                            issue_type: "signal".into(),
+                            confidence,
+                            description,
                         });
                     }
                 }
@@ -1079,6 +1120,18 @@ mod tests {
         TraceEvent::signal(id, MonotonicNs::from(ts), tid, sig_num, sig_name, 0)
     }
 
+    /// The same signal, in the two states the log can record: delivered to a
+    /// tracee that walked away from it, and the one that ended it.
+    fn make_terminating_signal_event(
+        id: u64,
+        ts: u64,
+        tid: u64,
+        sig_num: i32,
+        sig_name: &str,
+    ) -> TraceEvent {
+        TraceEvent::signal_termination(id, MonotonicNs::from(ts), tid, sig_num, sig_name, 0)
+    }
+
     fn make_register_event(id: u64, ts: u64, regs: RegisterState) -> TraceEvent {
         TraceEvent::new(
             id,
@@ -1268,6 +1321,94 @@ mod tests {
             .iter()
             .find(|i| i.issue_type == "signal");
         assert!(signal_issue.is_some());
+    }
+
+    /// The confidence on a `signal` issue is about the tracee dying, not about
+    /// the signal's name.
+    ///
+    /// Both rows are real traces. The tracee that handled SIGSEGV received
+    /// the same bytes as the one that did not, and reporting it with the same
+    /// 0.95 is a claim the log cannot support: the difference between them is
+    /// only visible in `terminated_tracee`.
+    #[test]
+    fn signal_confidence_tracks_termination_not_the_signal_name() {
+        for (label, event, expected_confidence, expected_text) in [
+            (
+                "SIGSEGV that killed the tracee",
+                make_terminating_signal_event(1, 100, 1, 11, "SIGSEGV"),
+                0.95,
+                "Signal killed the tracee: SIGSEGV",
+            ),
+            (
+                "SIGABRT that killed the tracee",
+                make_terminating_signal_event(1, 100, 1, 6, "SIGABRT"),
+                0.95,
+                "Signal killed the tracee: SIGABRT",
+            ),
+            (
+                "SIGSEGV the tracee handled",
+                make_signal_event(1, 100, 1, 11, "SIGSEGV"),
+                0.2,
+                "Signal received: SIGSEGV",
+            ),
+            (
+                "SIGTERM the tracee handled",
+                make_signal_event(1, 100, 1, 15, "SIGTERM"),
+                0.4,
+                "Signal received: SIGTERM",
+            ),
+            (
+                "SIGTERM that killed the tracee",
+                make_terminating_signal_event(1, 100, 1, 15, "SIGTERM"),
+                0.85,
+                "Signal killed the tracee: SIGTERM",
+            ),
+        ] {
+            let engine = QueryEngine::new(vec![event]);
+            let summary = engine.execution_summary("s");
+            let issue = summary
+                .potential_issues
+                .iter()
+                .find(|i| i.issue_type == "signal")
+                .unwrap_or_else(|| panic!("no signal issue for {label}"));
+
+            assert_eq!(
+                issue.confidence, expected_confidence,
+                "wrong confidence for {label}"
+            );
+            assert_eq!(
+                issue.description, expected_text,
+                "wrong description for {label}"
+            );
+        }
+    }
+
+    /// The two states must not collapse into the same number, or the field
+    /// says nothing.
+    #[test]
+    fn a_handled_fatal_signal_is_confidently_less_certain_than_a_fatal_death() {
+        let delivered = QueryEngine::new(vec![make_signal_event(1, 100, 1, 11, "SIGSEGV")])
+            .execution_summary("s");
+        let death = QueryEngine::new(vec![make_terminating_signal_event(
+            1, 100, 1, 11, "SIGSEGV",
+        )])
+        .execution_summary("s");
+
+        let confidence_of = |summary: &chronos_domain::query::ExecutionSummary| {
+            summary
+                .potential_issues
+                .iter()
+                .find(|i| i.issue_type == "signal")
+                .map(|i| i.confidence)
+                .expect("a signal issue")
+        };
+
+        assert!(
+            confidence_of(&delivered) < confidence_of(&death),
+            "a handled SIGSEGV ({}) must score below a fatal one ({})",
+            confidence_of(&delivered),
+            confidence_of(&death)
+        );
     }
 
     #[test]
