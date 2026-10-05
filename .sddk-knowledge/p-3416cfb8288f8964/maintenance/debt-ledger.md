@@ -469,6 +469,44 @@ reportar `worker_stopped` y solo despasar a `tracee_gone`. Sin probar.
 
 ---
 
+## DEBT-WAIT-EVENT-UNBOUNDED-01 (2026-10-05) - `wait_event` bloquea sin limite en el camino `follow_children`
+
+**Estado:** `OPEN`, analizada y con diseno propuesto · **Severidad:** media · **Origen:** la limitacion
+que R6.6 dejo escrita arriba.
+
+**Donde esta exactamente el bloqueo.** `PtraceTracer::wait_event` tiene dos caminos y solo uno se
+aparca:
+
+| camino | condicion | estrategia |
+|---|---|---|
+| `follow_children` (o sin `main_pid`) | `ptrace_tracer.rs:511` | `waitpid(-1, __WALL \| __WNOTHREAD)` **bloqueante**, sin limite |
+| resto | `ptrace_tracer.rs:536` | `waitpid(pid, WNOHANG)` en bucle con `sleep(10ms)` y `ptrace::cont` cada 5s |
+
+O sea: el camino que ya sondea no tiene el problema, y el que se aparca no tiene salida. Un tracee vivo
+que deja de emitir eventos deja al hilo tracer en un `waitpid` que no vuelve nunca, y ninguna senal del
+producto lo refleja.
+
+**Diseno propuesto, con su coste.** Reutilizar la estructura de sondeo del segundo camino, pero con
+`waitpid(-1, WNOHANG | __WALL | __WNOTHREAD)`: se conservan `__WALL` (syscalls) y `__WNOTHREAD` (el
+arreglo de R6.5), y se elimina el bloqueo infinito. `ECHILD` sigue significando "no queda ningun hijo" y
+devuelve `Ok(None)` como hoy.
+
+El coste es CPU: 100 despertar por segundo y por hilo tracer en reposo, frente a un bloqueo que no
+consume nada. Ese coste **ya se paga hoy** en el segundo camino, con el mismo `sleep(10ms)`, asi que el
+perfil esta probado en este repositorio y no es una apuesta nueva. Aun asi, con muchas sesiones
+simultaneas conviene medirlo en vez de suponerlo.
+
+**Por que NO se hizo en R6.6.** No es que el cambio sea dificil: es que altera la semantica de
+temporizacion de una ruta caliente, y hacerlo dentro de un commit que ya era un cambio de contrato
+publico habria mezclado dos cosas que hay que poder revertir por separado. Un arreglo de concurrencia y
+un cambio de contrato de API en el mismo commit no se deshacen por separado.
+
+**Condicion de cierre:** el camino `follow_children` deja de bloquear de forma infinita, la senal de
+"el tracee esta vivo pero no produce" resulta observable, y el coste de sondeo queda medido con el
+numero de sesiones concurrentes que el producto sostiene de verdad.
+
+---
+
 ## R6.5 - causa raiz encontrada: dos hilos tracer se robaban el tracee del otro
 
 **Estado:** la causa de producto esta **encontrada y corregida**; la honestidad de la API sigue abierta.

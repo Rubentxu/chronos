@@ -168,12 +168,19 @@ Append-only index of all completed cycles in this vault.
 | r6 | release-v0-2-0 | A-full | — | — | CLOSED (superseded: created in error, A-full instead of the B-direct the release path uses) |
 | r6 | release-v020 | B-direct | — | — | CLOSED (superseded by `release-v0-9-0`: bound to `feat/release-v020` while the work landed on `main`; no CLI can retarget a cycle branch) |
 | r6 | release-v0-9-0 | B-direct | v0.9.0 | `aac0965909935cfa0294fd3fcf389ea33a371f6a` | CLOSED |
+| r6 | release-v0-10-0 | B-direct | v0.10.0 | `57c36040f29ffea2df11335324037a35d393641c` | CLOSED |
 
 `v0.9.0` rather than `0.1.5`: three commits carry a breaking marker, so under
 this repository's 0.x convention the bump is MINOR, and `0.2.0` turned out to be
 already published in origin at `3bee3ad3`. The headline change is the
 `__WNOTHREAD` fix that stops two tracer threads stealing each other's tracee,
 which had wedged concurrent capture sessions silently.
+
+`v0.10.0` carries the other half of that story: `probe_drain` stops answering a
+hardcoded `"running"` and reports the session's real liveness, derived from
+whether the tracee still exists rather than from a control flag the product sets
+itself. It also adds `CC#57` and `CC#58`, both born of gates that had been
+green for the wrong reason.
 
 See `changes/archive/` for full archive manifests of closed cycles.
 
@@ -184,7 +191,7 @@ See `changes/archive/` for full archive manifests of closed cycles.
 | Project | chronos |
 | Vault | `.sddk-knowledge/p-3416cfb8288f8964/` |
 | Last updated | 2026-09-21T11:48Z |
-| Total cycles | 151 |
+| Total cycles | 152 |
 | Tracked canonical cycles (G0.3 CC#39) | 137 (built from `git ls-files cycle-artifacts/p-3416cfb8288f8964/*/**` minus bookkeeping dirs `handoffs/`, `retire-stale-bus-doc-mentions/`; no `_suspended-*` survive in git history as tracked files) |
 | Historical refs (no on-disk artifacts, real in git history) | 11 (m0-01-live-pagination, m0-truth-first-foundation, m1-execution-log-vertical-slice, m2-function-level-capture, m2-native-live-probe-frame-capture, m2-native-live-probe-frame-capture-v2, m8-07-hypothesis-reconstruction-fidelity, m10-ms-cap-discovery, m10-ms-cap-discovery-followup, rec-c2.5-formal-closure [dotted-name legacy duplicate row preserved per §0.4; canonical machine form is `rec-c2-5-formal-closure`], rec-c3-hexagonal-closure — each has verified tag or commit SHA in git) |
 | m10 cycles | 13 (rows above) |

@@ -1,0 +1,50 @@
+{
+  "cycle_id": "release-v0-10-0",
+  "workspace_id": "p-3416cfb8288f8964",
+  "created_at": "2026-10-05T01:26:00Z",
+  "path": "B-direct",
+  "route": "B-direct",
+  "phase": "release",
+  "status": "CLOSED",
+  "status_note": "The cycle is closed by the archive.complete transition applied in the same operation as this commit. scripts/validate_cycle_artifacts.py runs in CI after the commit lands, by which point the cycle is genuinely CLOSED.",
+  "title": "Release v0.10.0: probe_drain reports the session's real liveness instead of a hardcoded literal",
+  "summary": "Published v0.10.0 at 57c36040. probe_drain no longer answers a fabricated 'running': it reports seven liveness states derived from whether the tracee process still exists, asked of the kernel with kill(pid, 0) rather than of a control flag the product sets itself. Two new vault checks (CC#57, CC#58) close the ways a green result could previously have covered less ground than it claimed.",
+  "head_sha": "57c36040f29ffea2df11335324037a35d393641c",
+  "main_sha": "57c36040f29ffea2df11335324037a35d393641c",
+  "base_sha": "aac0965909935cfa0294fd3fcf389ea33a371f6a",
+  "base_tag": "v0.9.0",
+  "archived_at": "2026-10-05T01:26:00Z",
+  "peel_match": true,
+  "peel_match_evidence": "refs/tags/v0.10.0^{} = 57c36040f29ffea2df11335324037a35d393641c = origin/main",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "version": "0.10.0",
+  "tag": "v0.10.0",
+  "remote_tag": "v0.10.0",
+  "remote_tag_object": "b9fe0c4fa116504fb89e448e183f289b65793fa7",
+  "remote_tag_peel": "57c36040f29ffea2df11335324037a35d393641c",
+  "commits_in_range": 10,
+  "files_changed_in_range": 40,
+  "release_apply": {
+    "converged": true,
+    "applied": 1,
+    "capability_receipt": "cap-git-tag-37884a637e7e",
+    "skipped": [
+      "push-main (origin/main already at 57c36040f29ffea2df11335324037a35d393641c)"
+    ]
+  },
+  "ci_authority": "6/6 workflows success on 57c36040. The Test job runs the TIER 2 integration command byte-identically with an empty Skip args list: 174 suites, 4125 tests, 0 failed, 0 deferred.",
+  "findings_introduced": {
+    "no_action": [],
+    "note": "This release introduced no finding requiring no-action. The two guards it adds exist to prevent future regressions.",
+    "closed": [
+      "DEBT-PROBE-LIVENESS-01 (product half): probe_drain exposes real liveness",
+      "DEBT-GATE-UNTRACKED-01: CC#57 makes an uncommitted cycle visible to the vault sweep",
+      "DEBT-UAT-TEARDOWN-01: the three panic! paths tear down, with CC#58 as guard"
+    ],
+    "left_open": [
+      "DEBT-WAIT-EVENT-UNBOUNDED-01: the follow_children path of wait_event still blocks without a bound"
+    ]
+  }
+}

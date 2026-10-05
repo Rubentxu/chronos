@@ -1,0 +1,36 @@
+{
+  "base_tag": "v0.9.0",
+  "base_commit": "aac0965909935cfa0294fd3fcf389ea33a371f6a",
+  "head_commit": "57c36040f29ffea2df11335324037a35d393641c",
+  "head_tree": "ea7be308e3db41db8544d2a3f1a54865fd0011b6",
+  "commits_in_range": 10,
+  "files_changed": 40,
+  "diff_digest": "sha256:74ff7f53f42597aa5a3030e43dcb08a4ee1bc0b289fb88dace16e49859af310a",
+  "ci_log_path": "/var/home/rubentxu/chronos-scratch/ci-57c36040.log",
+  "ci_log_sha256": "e98a8cfcc2b13ec518d926db8a3d18cda3570ac33d5ccb9afb0822a7966560f6",
+  "argv": "git log --format=%s v0.9.0..HEAD | sed -E 's/^([a-z]+)(\\(.*\\))?!?:.*/\\1/' | sort | uniq -c | sort -rn",
+  "exit_code": 0,
+  "output_digest": "sha256:7df49f0c4161b798920d33b22b3b5f702ee30265a9c2ef1c55e492df4b624eb4",
+  "cycle_id": "p-3416cfb8288f8964/release-v0-10-0",
+  "path": "B-direct",
+  "phase": "build",
+  "status": "success",
+  "version": "0.10.0",
+  "version_derivation": "Un feat! con footer BREAKING CHANGE en v0.9.0..HEAD: R6.6 (0fb807e9) cambia el contrato de salida de la herramienta MCP probe_drain. Bajo la convencion 0.x del repo un breaking es MINOR. En el namespace remoto solo v0.9.0 estaba ocupado de la linea 0.9.x/0.10.x, asi que v0.10.0 es el siguiente MINOR libre. sddk release plan --tag v0.10.0 devolvio version_authority: cross_checked con 0.10.0 declarado en Cargo.toml.",
+  "headline_capabilities": [
+    "Rango de la release: v0.9.0..57c3604 = 10 commits, 40 ficheros.",
+    "10 commits: 1 feat, 2 test, 2 fix, 3 docs, 2 chore.",
+    "R6.6 (0fb807e9) es el feat! con footer BREAKING CHANGE: probe_drain deja de devolver 'running' fijo y pasa a la vivacidad real de la sesion.",
+    "R6.7 (c21be9c3): CC#57, un ciclo sin commitear ya no puede dejar el vault sweep en PASS.",
+    "R6.8 (666e2026): las 3 rutas de panic! de uat_c2_01 limpian la sesion antes de propagar, con CC#58 de guard.",
+    "015c3d86 corrige cuatro comentarios de uat_c2_01 que seguian afirmando que el status era un literal.",
+    "Bump a 0.10.0 con sddk release plan: version_authority=cross_checked. Durante el bump un regex cambio tambien rand_chacha y untrusted, dos crates de terceros que estaban en 0.9.0; restaurados y verificado que las 19 entradas 0.10.0 son todas chronos-*."
+  ],
+  "commit_mix": {
+    "feat": 1,
+    "test": 2,
+    "fix": 2,
+    "docs": 3,
+    "chore": 2
+  }
+}

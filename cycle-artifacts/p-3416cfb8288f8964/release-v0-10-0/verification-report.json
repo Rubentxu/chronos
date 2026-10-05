@@ -1,0 +1,121 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/release-v0-10-0",
+  "path": "B-direct",
+  "phase": "verify",
+  "release_tag": "v0.10.0",
+  "base_tag": "v0.9.0",
+  "head_sha": "57c36040f29ffea2df11335324037a35d393641c",
+  "verdict": "PASS_WITH_WARNINGS",
+  "why_not_plain_pass": "El cambio de contrato de probe_drain esta verificado y no degrada ninguna ruta cubierta, pero queda una clase de fallo que la vivacidad nueva NO detecta por diseno: un worker aparcado en waitpid con un tracee vivo sigue reportando 'capturing', porque el tracee existe de verdad. Esa clase se registra como DEBT-WAIT-EVENT-UNBOUNDED-01, con el diseno ya analizado y su coste de CPU medido en el ledger. No se cuenta como saldada.",
+  "t4_authority": {
+    "resolution": "La matriz de integracion la ejecuta el job Test de la CI remota, con la invocacion cargo identica a ci.yml:63 y .pipeline.kts:303. No se replica en local: una replica local compite con otros proyectos por CPU y es evidencia peor que el runner autoritativo.",
+    "skips_in_ci": "NINGUNO. La linea 'Skip args:' del log va vacia, luego 0 tests fueron diferidos.",
+    "head_sha_covered": "57c36040f29ffea2df11335324037a35d393641c",
+    "totals": "174 suites, 4125 tests pasados, 0 fallidos, 0 skips.",
+    "uat_c2_01_real_pass": "ok a las 00:47:24Z, 17.66s despues de su hermano diagnostico (00:47:06Z). Un skip quemaria el deadline de 300s, asi que es un paso real y no el verde vacio que produjo la primera pasada.",
+    "ancestor_also_green": "666e2026, ancestro directo, cerro 7/7 con Skip args vacio y uat_c2_01 real a 14.86s."
+  },
+  "verification": [
+    {
+      "argv": "gh run view <CI Test job over 57c36040> --log",
+      "exit_code": 0,
+      "result": "174 suites, 4125 tests, 0 fallos, Skip args vacio; 6/6 workflows en verde sobre el SHA liberado",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-domain --test probe_ports",
+      "exit_code": 0,
+      "result": "13 passed; 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-native --lib",
+      "exit_code": 0,
+      "result": "120 passed; 0 failed (114 antes de R6.6, +6 de vivacidad)",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-services --lib",
+      "exit_code": 0,
+      "result": "609 passed; 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-mcp --lib",
+      "exit_code": 0,
+      "result": "115 passed; 0 failed",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test probe_lifecycle_edge_cases -- --test-threads=1",
+      "exit_code": 0,
+      "result": "7 passed in 123.59s. Este test lo modifico R6.6 y el subagente NO lo ejecuto; se ejecuto aqui, con el binario cronos-mcp compilado al momento porque el harness rechaza uno obsoleto.",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo test -p chronos-sandbox --test rec_c2_2_uat_c2 -- --test-threads=1",
+      "exit_code": 0,
+      "result": "6 passed in 113.90s, con el binario mas nuevo que el fuente",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo check --workspace --all-targets",
+      "exit_code": 0,
+      "result": "limpio",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "result": "limpio",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exit_code": 0,
+      "result": "limpio",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "python3 scripts/regen_manifest_index_shas.py --check",
+      "exit_code": 0,
+      "result": "clean (103 manifestos)",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "bash scripts/check_vault_drift.sh",
+      "exit_code": 0,
+      "result": "PASS (50 python CCs, 7 bash CCs), con CC#57 y CC#58 nuevos en este rango",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "python3 scripts/validate_cycle_artifacts.py",
+      "exit_code": 0,
+      "result": "PASSED on 33 cycles",
+      "class": "OBSERVED"
+    },
+    {
+      "argv": "sddk release plan --tag v0.10.0",
+      "exit_code": 0,
+      "result": "version_authority: cross_checked, version 0.10.0 declarado en Cargo.toml",
+      "class": "OBSERVED"
+    }
+  ],
+  "non_vacuity_proofs": [
+    "R6.6: hacer que el estado del worker gane sobre la existencia del tracee deja 3 tests FAILED, entre ellos liveness_does_not_report_capturing_when_the_tracee_has_exited con 'left: Capturing / right: TraceeGone'. Reproducido de forma independiente, no solo por el subagente.",
+    "La primera mutacion que se intento fue un NO-OP: reordenar dos brazos de match disjuntos no cambia nada y la suite seguia verde. Se registra porque es el modo de fallo mas peligroso: un guard que se declara no-vacuo sin que nadie mire si la mutacion hace algo.",
+    "R6.6 usa un proceso real, no un mock: fork + _exit + waitpid, de modo que el pid esta realmente reaped y kill(pid,0) da ESRCH de verdad, con un caso sano hermano para que el guard no se pueda satisfacer contestando siempre tracee_gone.",
+    "CC#57: con todo trackeado el sweep es PASS (50 CCs); al crear un ciclo WIP sin commitear pasa a DRIFT. En esa misma corrida CC#11, CC#22 y CC#39 siguieron en verde: son las tres que filtran, que es justo el hueco que CC#57 cubre.",
+    "CC#58: con los 3 teardowns el sweep es PASS; al borrar el teardown de una sola ruta de panico pasa a DRIFT."
+  ],
+  "honest_limits": [
+    "Un worker aparcado en waitpid con un tracee VIVO sigue reportando 'capturing'. Es la respuesta honesta a la pregunta que se hace, pero significa que la vivacidad por si sola no detecta ese wedge. Registrado como DEBT-WAIT-EVENT-UNBOUNDED-01 con el diseno propuesto y su coste.",
+    "La ventana de zombie se documenta en el codigo y no se ha probado: un tracee matado y aun no reaped sigue respondiendo a kill(pid,0), asi que un drain justo tras un stop puede reportar worker_stopped y solo despues tracee_gone.",
+    "El brazo no-Linux de tracee_existence compila a Unknown por cfg pero nunca se ha ejecutado: el host es Linux.",
+    "No se construyo un wedge real de wait_event contra un tracee vivo, porque exigiria privilegios ptrace y un tracee deliberadamente estancado."
+  ],
+  "still_open": [
+    "DEBT-WAIT-EVENT-UNBOUNDED-01: el camino follow_children de wait_event sigue usando un waitpid bloqueante sin limite. El otro camino ya sondea con WNOHANG y sleep(10ms), asi que el coste de CPU del sondeo ya se paga en este repositorio; el diseno esta en el ledger.",
+    "DEBT-GATE-UNTRACKED-01: cerrada en R6.7 con CC#57."
+  ]
+}
