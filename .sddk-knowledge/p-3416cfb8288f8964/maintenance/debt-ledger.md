@@ -1091,3 +1091,72 @@ checked)` con `scripts/regen_manifest_index_shas.py --check`, y el drift sweep r
 `m9-93-trace-event-json-schema` con el esquema JSON, y **no se abre aqui**: R6.9 ya tiene su propio
 frente, y mezclar nineteen cambios de ids con la reparacion de raiz de
 `DEBT-CRASH-VERDICT-SOURCE-01` haria que ninguno de los dos se pudiera atribuir con claridad.
+
+---
+
+## DEBT-CRASH-VERDICT-SOURCE-01 — CERRADA (2026-10-05, ciclo r6-10-crash-verdict-on-termination)
+
+**Estado:** `CERRADA`. Commits `edb4962a` + `212082aa`. La primera condicion de cierre
+de la entrada se cumple, y se cumple **por su via original**: el test de crash cae a ROJO
+cuando se revierte la entrega de señales, aunque `find_crash` siga devolviendo la señal
+correcta.
+
+**Como se cerro.** Un campo `terminated_tracee` en `EventData::Signal` distingue la muerte
+del tracee de la entrega de la señal, y `decide_crash` —funcion pura, sin motor detras—
+ordena las reglas por cuanto prueban. La tercera, "sin muerte pero con salida normal, el
+tracee termino por su cuenta", es la que quita el falso positivo. La cuarta mantiene la
+regla anterior como fallback para las trazas capturadas antes del cambio, y su comentario
+dice en voz alta que ahi el veredicto se apoya en entregas.
+
+**La no-vacuidad, medida y no supuesta.** Se revirtio `crates/` al commit previo dejando
+intactos la fixture y los tests nuevos, se reconstruyo el binario y se ejecuto
+`program_scenarios`: **11 passed, 1 FAILED**. Cayo `test_handled_fatal_signal_is_not_reported_as_a_crash`,
+con `crash_found: true, signal: Some("SIGSEGV")` para un proceso real de 143 eventos que
+recibe SIGSEGV y SIGABRT, los maneja, imprime y sale con codigo 0. Restaurado: 12/12.
+
+Los otros 11 tests, incluidos los dos de crash, pasan con el producto viejo. Es lo que
+debe pasar: `test_abort` y `test_divide_by_zero` matan de verdad, asi que el veredicto
+equivocado tambien los detecta. **Solo la fixture que sobrevive separa un detector que
+funciona de uno credulo**, y por eso anadirla era parte del arreglo y no un extra.
+
+**Lo que apareció por el camino y no estaba en la entrada.** `skip_serializing_if` en un
+campo de variante de enum produce un stream que no se puede releer: 23 bytes escritos que
+fallan con `unexpected end of file`, contra 24 correctos sin el atributo. `SessionStore`
+persiste con bincode, asi que el primer sintoma fue
+`session_explain::tests::explain_inferred_crash_detected_when_signal_delivered` dejando de
+cargar. Un A/B con `git stash` confirmo que lo causaba este cambio. Se midio tambien que
+`Option<bool>` con `skip_serializing_if` falla igual, asi que no era una cuestion de `bool`
+frente a `Option`. El campo queda con `#[serde(default)]` y nada mas.
+
+**Lo que NO se hizo, y por que.** No se anadio ninguna variante a `EventType`. La entrada
+de esta deuda decia que habia que hacerlo; era incorrecto y la medicion esta en el informe
+de exploracion del ciclo. No se toco `CrashPoint`: su `note` ya dice el codigo de salida y
+que señales sobrevivio, y `CrashPoint` se aplana con `#[serde(flatten)]` en la respuesta
+MCP, asi que anadir campos amplia el contrato sin ganar precision que el lector no tuviera.
+
+## DEBT-CRASH-VERDICT-DERIVATIVOS-01 (2026-10-05) - dos servicios siguen leyendo el veredicto de la entrega
+
+**Estado:** `OPEN`, registrada al cerrar `DEBT-CRASH-VERDICT-SOURCE-01` · **Severidad:** media.
+
+**Que es.** `find_crash` ya se apoya en la muerte del tracee, pero **no es el unico que
+publica un veredicto de crash**, y los otros dos leen todavia la entrega:
+
+- `crates/chronos-services/src/session_explain.rs:160-186` deriva `crash_detected` y
+  `signal_delivered` de `EventData::Signal`.
+- `crates/chronos-query/src/engine.rs:420-434` genera `potential_issues` con "Signal
+  received" y confianza 0,95 para SIGSEGV y SIGABRT.
+
+Los dos tienen ahora el campo `terminated_tracee` disponible en el mismo evento que ya
+leen, asi que el arreglo es pequeno. **No se hace aqui** porque R6.10 verifica una sola
+propiedad: mezclar el arreglo de estos dos con el de `find_crash` haria que un fallo en
+cualquiera de los tres se atribuyera al mismo commit, y la no-vacuidad que se midio es
+precisamente la que se pierde al compartir un cambio entre verificaciones distintas.
+
+**Como se cerraria.** Que ambos consulten `terminated_tracee` y, cuando haya una salida
+normal registrada, no affirmen el crash. Con su propia fixture `test_handled_signal`, que
+ya existe y hoy solo ejercita `find_crash`.
+
+**Que NO es.** No es una regresion de R6.10: ninguno de los dos se rompio. Antes tambien
+leian la entrega, y despues leen lo mismo. Lo que cambia es que ahora existe el dato para
+hacerlo bien, y no hacerlo deja dos veredictos con la misma debilidad que acabamos de
+corregir en el tercero.
