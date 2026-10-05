@@ -1264,4 +1264,53 @@ did not crash"), no un simbolo. Restaurado en ambos: 16/16 y 92/92.
 estan cubiertas por `facts_and_inferred_agree_on_every_way_a_session_can_end`, que es el
 test que impide que las dos rutas vuelvan a separarse.
 
+### R6.12 — la saliencia publica ceros de ciclo como si fueran una medida (2026-10-05)
+
+**Estado:** `OPEN`, registrada al cerrar R6.11 · **Severidad:** alta · **Prioridad:** 1.
+
+**Que es.** `debug_get_saliency_scores` emite un ranking donde todas las funciones tienen
+`saliency_score: 0.0` y `total_cycles: Some(0)`, y su `hint` afirma que "saliency_score
+near 1.0 means this function dominated CPU time". Los ciclos no se han medido nunca.
+
+La cadena, verificada leyendo el codigo y no los mensajes:
+
+| Tramo | Fichero | Hecho |
+|---|---|---|
+| 1 | `chronos-index/src/builder.rs:64` | unica llamada de produccion a `record_call`, pasa `cycles: None` con el comentario "Cycle counts not available from trace events directly" |
+| 2 | `chronos-domain/src/index/performance.rs:62,111` | `FunctionPerf::new` arranca `total_cycles: 0` y `record_call` solo lo incrementa `if let Some(c)` |
+| 3 | `chronos-query/src/engine.rs:802` | `query_perf` devuelve `Some` en cuanto hay indice, sin mirar si hay contadores; calcula `counters_available` y lo publica |
+| 4 | `debug_trace_specialized.rs:622-645` | lee solo `perf.functions`; el unico campo que diria "no se midio" se descarta |
+| 5 | `debug_trace_specialized.rs:646-677` | la rama que emite `cycles: Some(())` — la divulgacion que el tipo ya tiene — es inalcanzable |
+
+`grep record_call(` sobre `crates/` devuelve 4 llamadas en produccion y **una** real, la
+de `builder.rs:64`. Las otras cinco estan en tests.
+
+**Por que es alta y no media.** El manual de orientacion al agente anuncia la tool con la
+pregunta que invita a la conclusion equivocada
+(`docs/manual-ai/en/03-orientation.md:80`): *"Which functions consumed disproportionately
+more CPU cycles than expected?"*, y dice literalmente *"Use results to decide whether to
+run `debug_expand_hotspot` or `performance_regression_audit`"*. Un agente que siga el
+manual recibe un ranking plano, concluye que nada domina la CPU y **no investiga el
+hotspot**. No es una afirmacion adornada de forma incorrecta: es una instruccion que
+conduce al agente a no hacer su trabajo.
+
+**El segundo, mismo origen.** `debug_expand_hotspot` publica `total_cycles: 0` y
+`avg_cycles_per_call: 0.0` en cada `FunctionPerf`, con la descripcion *"top-N hottest
+functions by call count **and CPU cycles**"* (`debug_trace_specialized.rs:548,576-577`),
+y a diferencia de `SaliencyScore` no lleva ningun campo que declare la ausencia.
+
+**Como se cerraria.** Usar `PerfResult::counters_available`, que ya se calcula y hoy se
+tira. Con contadores, el comportamiento actual. Sin contadores, un ranking por
+**llamadas** —que si es una medida del log— con `total_cycles: None` y `cycles: Some(())`,
+usando la divulgacion que el tipo ya define. Y un `hint` que diga en que unidad esta el
+ranking, porque hoy dice siempre "CPU time", que es justo la unidad que no existe.
+
+**Lo que NO es el arreglo.** Anadir `perf_event_open` a la captura. Es trabajo de captura,
+no de lectura, y el arreglo correcto es no afirmar lo que no se ha medido.
+
+**Por que no se ejecuta en el mismo ciclo.** Toca `debug_trace_specialized.rs`, el mismo
+fichero que R6.11. R6.11 estaba esperando su T4; mezclar los dos en una sola revision es
+la no-vacuidad que R6.10 y R6.11 gastaron energia en preservar. Se ejecuta como ciclo
+propio.
+
 ---
