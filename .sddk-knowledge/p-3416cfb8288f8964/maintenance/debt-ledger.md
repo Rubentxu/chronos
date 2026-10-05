@@ -471,8 +471,51 @@ reportar `worker_stopped` y solo despasar a `tracee_gone`. Sin probar.
 
 ## DEBT-WAIT-EVENT-UNBOUNDED-01 (2026-10-05) - `wait_event` bloquea sin limite en el camino `follow_children`
 
-**Estado:** `OPEN`, analizada y con diseno propuesto · **Severidad:** media · **Origen:** la limitacion
-que R6.6 dejo escrita arriba.
+**Estado:** `CERRADA` en R6.9 (2026-10-05) en `f04efc00` + `1f935900` · **Severidad:** media · **Origen:**
+la limitacion que R6.6 dejo escrita arriba.
+
+**Cerrada en R6.9, y con una correccion de por medio.** El cierre no es el que se preveia al escribir la
+condicion, y conviene decir por que. La condicion pedia tres cosas: que el camino `follow_children`
+dejara de bloquear de forma infinita, que "el tracee esta vivo pero no produce" fuera observable, y que
+el coste quedara medido con el numero de sesiones concurrentes real. **La primera no se cumple y no se
+puede cumplir sin romper capturas que hoy funcionan.** `wait_event` mantiene su contrato de "bloquear
+hasta el proximo evento": ahora sondea, pero sigue esperando hasta que llegue un status. Lo que cambio
+es que **el silencio se explica**: al cruzar 30 s sin ningun status emite un `warn!` unico. Abandonar la
+captura cuando el tracee se calla mataria una computacion larga legitima, y matar un tracee que
+computa sin emitir es justo lo que el operador quiere poder hacer a mano, no que chronos lo haga por su
+cuenta. Asi que la parte cumplible de la condicion es la segunda, y la primera queda como limitacion
+residual declarada, no como deuda por cerrar.
+
+**El tick fijo que publique al principio estrangulaba la captura.** Detallado en
+`DEBT-POLL-TICK-CAP-01` mas abajo, y es el hallazgo mas importante del ciclo: `f04efc00` paso el gate
+entero en verde mientras el producto no podia trazar un programa de 36 syscalls en menos de 720 ms.
+
+**La medicion que pedia la condicion, hecha y no supuesta.** Con `test_sleep` (fixture nueva en este
+ciclo, porque ninguna existente podia mantener un tracer en reposo), arrancando N sesiones y muestreando
+`/proc/<server_pid>/stat` en una ventana de 10 s:
+
+| N | CPU-s en 10 s | por sesion |
+|---|---|---|
+| 0 | 0,00 | — |
+| 1 | 0,02 | 0,0200 |
+| 2 | 0,01 | 0,0050 |
+| 4 | 0,04 | 0,0100 |
+| 8 | 0,07 | 0,0088 |
+| 16 | 0,11 | 0,0069 |
+
+**16 sesiones en reposo cuestan 0,11 CPU-s por 10 s, o sea el 1,1 % de un nucleo**, y el coste crece de
+forma lineal en N, sin nada superlineal. El producto no impone tope de sesiones concurrentes, asi que
+la cifra que importa es la pendiente: **unos 0,005-0,007 CPU-s por segundo y sesion** con el tick
+estabilizado en 10 ms. Los puntos N=1 y N=2 son ruido, y se dice porque la resolucion de `getrusage` es
+de 10 ms: en una ventana de 10 s un jiffie es 0,01 CPU-s, asi que ±0,01 es el error de una sola lectura.
+La tendencia de N=4 a N=16 si es monotona y por eso es la que se lee.
+
+**Lo que la condicion de cierre sigue esperando, y no se cierra aqui.** Nada de lo anterior depende de
+que el umbral de 30 s se haya probado end-to-end contra un tracee real: esta verificado por test unitario
+sobre la funcion pura `stall_is_reportable`, con sus dos direcciones, y no con una sesion de 30 s. La
+fixture `test_sleep` deja esa prueba de extremo a extremo a mano, pero exigiria un test de 30 s en cada ejecucion, que
+no es un precio razonable para una suite. Queda anotado como la razon por la que esa parte de la
+evidencia es mas fina que la del coste.
 
 **Donde esta exactamente el bloqueo.** `PtraceTracer::wait_event` tiene dos caminos y solo uno se
 aparca:
@@ -705,3 +748,219 @@ directorio, PASS otra vez.
 
 Un directorio sin `apply-checkpoint.json` no se marca: ese es el caso de residuo genuino para el que el
 filtro original existia.
+
+---
+
+## DEBT-SIGNAL-SUPPRESSED-01 (2026-10-05) - el live probe se tragaba las señales del tracee
+
+**Estado:** `CERRADA` en R6.9 · **Severidad:** alta, porque hacía que el producto mintiera sobre lo que
+le pasó al programa observado.
+
+**Como se encontró.** Un A/B de `chronos-sandbox/tests/program_scenarios.rs` dio 2 fallos
+(`test_abort_crash_detected_sigabrt` y `test_divide_by_zero_crash_detected`) recibiendo `SIGKILL` en
+lugar de `SIGABRT`/`SIGFPE`. El A/B con `ptrace_tracer.rs` revertido a HEAD **reprodujo los mismos dos
+fallos**, así que el cambio de `DEBT-WAIT-EVENT-UNBOUNDED-01` quedaba exonerado y la causa era
+preexistente. Volcando el ExecutionLog real de la fixture `test_abort` (un programa de 6 líneas que
+solo hace `abort()`) se obtuvo:
+
+```
+id=0..50  pid=4064389  type=syscall_enter/syscall_exit   (51 paradas en 517 ms)
+id=51     pid=4064389  type=signal_delivered name=SIGKILL
+### find_crash = CrashInfo { crash_found: true, signal: Some("SIGKILL"), event_id: Some(51) }
+```
+
+**No hay ningun SIGABRT en el log, y el programa deberia morir en los primeros ~5 ms.** Ese SIGKILL es
+el que envia chronos en su propio teardown.
+
+**Causa raiz.** El bucle del live probe reanuda el tracee con
+`syscall_continue`/`continue_execution`, que son `ptrace::syscall(pid, None)` y `ptrace::cont(pid,
+None)`. Pasar `None` **suprime** la señal pendiente. El tracer registraba la parada por SIGABRT y
+nunca se la entregaba: el programa ejecutaba `abort()`, chronos se lo tragaba y el proceso seguia vivo.
+Ademas la rama de syscall se elegia solo por `trace_syscalls`, sin comprobar que el evento fuese un
+`Syscall`, asi que con tracing activo una parada de señal caia en la rama equivocada.
+
+La convencion correcta ya existia y estaba probada en **la otra ruta de captura del mismo crate**,
+`capture_runner.rs:701-716`, que entrega toda senal que no sea SIGTRAP mediante `continue_with_signal`
+(que ya existia, en `ptrace_tracer.rs:816`). El bucle del live probe simplemente no la aplicaba.
+
+**El arreglo.** `resume_action(trace_syscalls, &event) -> ResumeAction` como funcion pura, aplicada en
+**los dos** bucles de `probe_backend.rs` (spawn y attach; el de attach tenia el defecto identico dos
+funciones mas abajo). Regla: **se consumen todas las senales de parada y se entregan todas las demas.**
+
+La unica divergencia con `capture_runner` es que aqui tambien se consumen las senales de parada, y es
+deliberada: la accion por defecto de SIGSTOP, SIGTSTP, SIGTTIN y SIGTTOU es *parar*, asi que
+reinyectarlas con `PTRACE_CONT` garantiza cero progreso (el tracee se reanuda, se vuelve a parar, el
+kernel nos lo reporta otra vez, y el bucle entrega la misma senal para siempre sin ejecutar una sola
+instruccion). Enumerar solo SIGSTOP y dejar fuera las otras tres habria sido un patron accidental con
+la misma causa bajo otros tres numeros.
+
+**No-vacuidad probada en tres direcciones**, no dos: desactivando la entrega (el defecto original);
+reinyectando las senales de parada que no son SIGSTOP; y ensanchando la supresion para tragarse
+tambien SIGABRT. Las tres dan ROJO con mensaje explicito, y restaurado queda VERDE. Hay caso sano
+hermano en las dos mitades de la regla: si el tracee recibe SIGABRT/SIGSEGV/SIGFPE/SIGCHLD se
+entrega igual, que es lo que impide que "consumir de mas" pase el test.
+
+**Lo que este arreglo NO arregla.** Un tracee parado legitimamente por SIGSTOP seguira ejecutandose.
+Coste asumido y documentado en el doc-comment de `is_stop_signal`: para un probe de fallos, un livelock
+es peor que un tracee que no se detiene.
+
+---
+
+## DEBT-CRASH-TEARDOWN-SIGKILL-01 (2026-10-05) - find_crash culpaba al programa de un kill que envoyo chronos
+
+**Estado:** `CERRADA` en R6.9 · **Severidad:** alta, por la misma razon que la anterior: evidencia que
+miente.
+
+`find_crash` contaba `SIGKILL` entre las senales fatales y se quedaba con la primera. Pero **chronos
+manda SIGKILL a su propio tracee en el teardown**: `probe_backend.rs:1225` (limpieza del bucle del live
+probe), `probe_backend.rs:1214-1217` (hijos clonados) y `probe_backend.rs:1084` (fallo del helper de
+frames), mas `capture_runner.rs:764, 857, 1036`. Ese kill aterriza en el log como un `SignalDelivered`
+normal e indistinguible de uno recibido desde fuera. Resultado: `find_crash` **fabricaba un veredicto de
+crash blames al programa por un kill que mando el propio chronos** — el `crash_found: true,
+signal: "SIGKILL"` del volcado de arriba, con `call_stack_depth: 0` y ninguna senal real que lo
+sostenga.
+
+**El arreglo y por que es decidible, no heuristico.** Prioriza la primera senal fatal que el tracer
+**no pudo fabricar** y solo cae al primer SIGKILL cuando no hay ninguna. La propiedad que lo hace
+decidible es que el kill de teardown es siempre el **ultimo** evento del log: cualquier senal fatal que
+no sea SIGKILL laEntrego el propio tracee, asi que su presencia **prueba** que murio por ella, llegue
+antes o despues.
+
+No se opto por quitar el SIGKILL del conjunto fatal porque eso perderia el OOM killer matando el proceso
+del usuario, que es un caso real de depuracion. El caso genuinamente ambiguo —SIGKILL como unica senal
+fatal— se conserva y se **dice**: el veredicto lleva un `note` que declara que puede ser el kill de
+teardown y que el traza no puede distinguirlos. Honestidad en vez de clasificacion, porque el producto
+no tiene hoy la informacion para clasificar.
+
+La propiedad que lo hace decidible y no heuristico: el kill de teardown es siempre el **ultimo** evento
+del log, y cualquier senal fatal que no sea SIGKILL la recibio el propio tracee, asi que su presencia
+**prueba** que murio por ella, llegue antes o despues. Por eso el orden de los dos casos que parecen
+simetricos no lo son: `SIGKILL -> SIGSEGV` y `SIGSEGV -> SIGKILL` dan el mismo veredicto, y solo uno
+de los dos distingue la regla nueva de la vieja. El test que prueba el arreglo es el del orden
+`SIGKILL -> senal real`.
+
+**No-vacuidad probada en tres direcciones**: volviendo a "la primera senal fatal gana"; descartando el
+SIGKILL del conjunto fatal (la sobrecorreccion en sentido contrario, que es la que rompe el caso del OOM
+killer); y priorizando el SIGKILL por encima de todo. Las tres dan ROJO.
+
+**Correccion durante el trabajo.** El primer caso de test que escribi no discriminaba: con el orden
+`SIGABRT -> SIGKILL` la regla vieja ya devuelta SIGABRT, asi que mutarla a la regla vieja lo dejaba
+VERDE. El orden que si discrimina es el inverso. Se rehizo el test y el caso mal etiquetado quedo como
+guarda de regresion, no como evidencia. Se deja escrito porque un test que no puede fallar no es
+evidencia, y porque el error fue mio, no del arreglo.
+
+**Limitacion residual, registrada y no cerrada.** Con un unico SIGKILL en el log, `find_crash` sigue
+devolviendo `crash_found: true` con ese SIGKILL. La solucion de raiz seria que el tracer marcara el
+kill como propio en el evento; eso no se hizo porque el enum de eventos es un contrato compartido y
+habria que propagar la marca por `PtraceEvent::Signaled` hasta `EventData::Signal`, que es tipo de
+dominio. Es trabajo de otro tamano y no lo ha justificado un incidente.
+
+---
+
+## DEBT-SYSCALL-NR-FROM-RAX-01 (2026-10-05) - los eventos de salida de syscall publicaban el valor de retorno como numero de syscall
+
+**Estado:** `CERRADA` en R6.9 · **Severidad:** media, pero afectaba a **toda** la traza de syscalls.
+
+`process_wait_status_impl` hacia `syscall_nr = regs.rax`. En x86-64 el numero de syscall vive en
+`orig_rax`; `rax` en la salida de syscall contiene el **valor de retorno**. `RegisterState` no tiene
+campo `orig_rax`, asi que el numero era correcto solo por casualidad en la entrada y **siempre era el
+retorno en la salida**. Evidencia del volcado real:
+
+```
+id=1   name=syscall_585826304              number=585826304
+id=3   name=syscall_139675268489216        number=139675268489216        <-- un puntero
+id=5   name=syscall_18446744073709551614   number=18446744073709551614   <-- 2^64-2, retorno -2
+id=17  name=read                           number=0                      <-- coincidencia: read devolvio 0
+```
+
+x86-64 tiene 334 syscalls. Ninguno de esos valores puede ser un numero de syscall; `resolve_syscall` los
+convertia en nombres inventados y los publicaba como syscalls reales. En el mismo sitio,
+`EventData::Syscall.return_value` era un `0` constante, asi que el otro campo de la tupla "que syscall /
+que devolvio" tampoco llevaba nada.
+
+**El arreglo.** Helper puro `syscall_number_and_return(orig_rax, rax, is_entry) -> (u64, u64)`, leyendo
+el `user_regs_struct` crudo de `ptrace::getregs`. **`orig_rax` no entra en `RegisterState`**: ese es un
+tipo de `chronos-domain` y anadirle un campo es un cambio de contrato que obliga a serializacion y a
+todo consumidor de `EventData::Registers`; el defecto cabe entero en `chronos-native`. Efecto
+colateral: la rama de syscall deja de construir un `RegisterState` de 18 campos para descartar todo
+menos un `u64`. El retorno se castea a `i64` en la frontera del dominio, porque un `-ENOENT` sin castear
+se publicaria como 18446744073709551614. Ademas, un fallo de `PTRACE_GETREGS` ahora avisa con `warn!` en
+lugar de degradar a 0 en silencio.
+
+**No-vacuidad probada en tres direcciones**: volviendo a leer `rax` como numero; anulando el retorno a
+0; y tomando `rax` como retorno tambien en la entrada. Las tres dan ROJO.
+
+### Defecto adyacente que se registra y NO se abre
+
+Con `capture_registers: false` y `trace_syscalls: true`, la lectura de registros sigue tras esa puerta y
+el numero de syscall continua siendo 0. Es preexistente, ajeno a los tres arreglos de R6.9 y no se ha
+tocado. Se anota aqui para que no se pierda, y **no se abre otro frente** en este ciclo: no hay
+incidente que lo disprove, y el arreglo correcto (leer `orig_rax` sin depender de
+`capture_registers`) mereceria su propio analisis de impacto.
+
+---
+
+## DEBT-POLL-TICK-CAP-01 (2026-10-05) - el tick fijo de sondeo impedia un techo de eventos al tracee
+
+**Estado:** `CERRADA` en R6.9 · **Severidad:** alta, porque la encontro mi propio cambio de R6.9 y
+ningun test de unidad la podia ver.
+
+**Lo que hice.** `f04efc00` sustituyo el `waitpid` bloqueante del camino `follow_children` por un bucle
+de sondeo con `sleep(10ms)`, y anadio un test que fijaba ese intervalo a 10 ms. El razonamiento del test
+era que 10 ms era "el intervalo que la otra rama ya pagaba", asi que la afirmacion de coste era
+estructural. Todo verde: `fmt`, `clippy -D warnings`, 122/122 en `chronos-native --lib`.
+
+**Lo que estaba mal.** Un tick fijo no es una latencia, es un **techo de eventos**: cada parada de
+ptrace cuesta al menos un tick, asi que la traza completa queda limitada a `1 / tick` eventos por
+segundo. Medido sobre la fixture `test_abort`, que segun `strace -c` hace **36 syscalls**, o sea **72
+paradas**: a 10 ms por parada hacen falta **720 ms** de reloj de pared para terminar un programa que se
+ejecuta en menos de un milisegundo. El volcado del ExecutionLog lo muestra sin ambiguedad:
+
+```
+id=0   +0         us  syscall_enter  brk
+id=1   +10437     us  syscall_exit   brk
+id=2   +20602     us  syscall_enter  mmap
+id=3   +30743     us  syscall_exit   mmap
+...
+id=50  +507030    us  syscall_enter  openat
+id=51  +517165    us  syscall_exit   openat
+id=52  +527450    us  signal_delivered  SIGKILL
+```
+
+Los deltas son de **10,1 ms constantes**: es el tick, no el programa. El programa no habia llegado
+todavia a su propio `abort()` dentro de la ventana de 500 ms del test, y por eso los dos tests de
+crash seguian viendo el SIGKILL del teardown en vez de la senal real.
+
+**Por que los tests de unidad no lo podian ver.** El defecto es de rendimiento contra un tracee real, no
+de logica. El test que fijaba el intervalo estaba comprobando exactamente la propiedad equivocada: que
+el coste de reposo coincidiera con el de la otra rama, sin ninguna pregunta sobre si ese coste estrangula
+una traza que esta produciendo. Solo la suite end-to-end de sandbox, con un proceso de verdad delante, lo
+hizo visible. Es la segunda vez en este bloque que un gate de Cronos pasa en verde sobre algo que el
+producto hace mal, y las dos veces la causa fue la misma: **un test que fija el numero en vez de la
+propiedad**.
+
+**El arreglo.** El tick ya no es fijo. Arranca en `TRACER_POLL_MIN` (100 us) y se duplica hasta
+`TRACER_POLL_MAX` (10 ms), y `tick` es local a la llamada de `wait_event`, asi que **devolver cualquier
+evento lo reinicia gratis**: un tracee que produce sondea a 100 us y no queda estrangulado, y uno que
+esta en silencio se estabiliza en 10 ms, que es el coste de reposo que este repositorio ya pagaba. Se
+aplico el mismo backoff a **las dos** ramas de `wait_event`, que ademas tenian el mismo techo, porque son
+la misma espera con banderas distintas y no deben divergir.
+
+El tiempo de reposo se mide con `Instant::now()`, no sumando ticks: un tick sumado subestima lo que
+durmo el `sleep`, y ese umbral es justo donde conviene ser pesimista y no optimista.
+
+**No-vacuidad.** `next_poll_tick` es una funcion pura y sus dos extremos estan fijados por separado,
+porque los dos son el defecto: una curva que no crece deja un tracer en reposo girando al minimo, y una
+que no topa crece sin limite y un tracee que se calla retrasa su propio siguiente evento sin techo. El
+test fija el crecimiento, el tope, la permanencia en el tope tras 32 duplicaciones, que un tick ya
+pasado del techo **baja** al techo en vez de duplicarse, y que `Duration::MAX` no desborda a algo mas
+pequeno que la entrada. Ese ultimo caso es el que un `checked_mul` ingenuo esconderia.
+
+**Lo que este arreglo demuestra sobre el metodo.** El A/B que hice al principio (revertir
+`ptrace_tracer.rs` a HEAD y ver que los dos tests seguian fallando) fue correcto y **no sirvio para
+detectar esto**: exoneraba a mi cambio de una causa que si era suya. Un A/B que demuestra "no lo
+introduje" no dice "no lo empeore"; aqui mi cambio empeoro la situacion de "rojo por otra causa" a "rojo
+por dos causas". Solo el volcado del log con los nombres de syscall reales revelo que el programa estaba
+avanzando a 10 ms por parada. La leccion operativa: cuando un test end-to-end sigue rojo despues de un
+arreglo, el arreglo no esta terminado, y la pregunta util no es "de quien es el fallo" sino "que sigue
+pasando en el log".
