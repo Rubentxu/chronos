@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/release-v0-10-1",
+  "cycle_id": "release-v0-10-1",
   "all_passed": true,
   "verdict": "PASS",
   "subject": {
@@ -12,62 +12,50 @@
   },
   "findings": [
     {
-      "id": "DEBT-SIGNAL-SUPPRESSED-01",
+      "id": "REL-CONTENIDO-TAG-01",
       "severity": "alta",
-      "status": "cerrada en esta release",
-      "detalle": "El live probe reanuda con ptrace::cont(pid,None), que suprime la senal. El programa ejecutaba abort(), chronos se lo tragaba y seguia vivo. Regla nueva: se consumen todas las senales de parada mas SIGTRAP, se entrega todo lo demas, en los dos bucles.",
-      "evidencia": "program_scenarios 11/11; los dos tests de crash en ok en local y en CI"
+      "status": "cerrada",
+      "detalle": "El tag debe contener todo el producto y no una parte. git diff v0.10.1..HEAD sobre crates/, chronos-sandbox/, Cargo.toml y Cargo.lock sale vacio.",
+      "evidencia": "git diff v0.10.1..HEAD -- crates/ chronos-sandbox/ Cargo.toml Cargo.lock sin salida"
     },
     {
-      "id": "DEBT-CRASH-TEARDOWN-SIGKILL-01",
+      "id": "REL-VERSION-AUTORIDAD-01",
+      "severity": "media",
+      "status": "cerrada",
+      "detalle": "La version se derivo del historial, no a mano: 12 commits desde v0.10.0 con 7 fix y sin feat ni breaking, luego PATCH bajo convencion 0.x. sddk release plan devolvio version_authority cross_checked.",
+      "evidencia": "sddk release plan version_authority=cross_checked; solo chrono-* en las 19 lineas de Cargo.lock"
+    },
+    {
+      "id": "REL-CI-INTEGRACION-01",
       "severity": "alta",
-      "status": "cerrada en esta release",
-      "detalle": "find_crash culpaba al programa del SIGKILL que chronos envia en su teardown. Ahora prioriza la senal fatal que el tracer no pudo fabricar y solo cae al SIGKILL si no hay ninguna, con un note que declara la ambiguedad del OOM killer.",
-      "evidencia": "3 mutaciones con ROJO; 613/613 en chronos-services"
+      "status": "cerrada",
+      "detalle": "La integracion la autoriza la CI remota, no el verde local. 6/6 workflows verdes sobre d0b146db: CI, Coverage, Architecture Contracts, Sandbox Debt Sentinel, Supply chain security y Vault Drift Sweep.",
+      "evidencia": "run 37261762580; job Test con Skip args vacio y cero test result: FAILED en 9755 lineas de log"
     },
     {
-      "id": "DEBT-SYSCALL-NR-FROM-RAX-01",
+      "id": "REL-TAG-PEEL-01",
       "severity": "media",
-      "status": "cerrada en esta release",
-      "detalle": "Las salidas de syscall publicaban el valor de retorno como numero: 18446744073709551614 y punteros. Ahora el numero sale de orig_rax y el retorno de rax, con cast a i64 en la frontera del dominio.",
-      "evidencia": "3 mutaciones con ROJO; el log paso a brk, mmap, access, openat, newfstatat, que es lo que da strace sobre esa fixture"
+      "status": "cerrada",
+      "detalle": "El peel local y el remoto del tag tienen que coincidir, y el objeto de tag se conserva para no reescribir historia publicada.",
+      "evidencia": "objeto e6990bb81e24506e4f20c7e2a2570eb37d1d0495, peel 2969d4a2 identico en local y remoto"
     },
     {
-      "id": "DEBT-POLL-TICK-CAP-01",
-      "severity": "alta",
-      "status": "cerrada en esta release",
-      "detalle": "Defecto introducido por el propio ciclo en f04efc00: un tick fijo de 10 ms limitaba la captura a 100 paradas/s, asi que un programa de 36 syscalls necesitaba 720 ms. Backoff 100 us..10 ms con reinicio por evento.",
-      "evidencia": "Deltas de 10,1 ms constantes en el volcado del log; strace -c dio las 36 syscalls del fixture"
-    },
-    {
-      "id": "DEBT-WAIT-EVENT-UNBOUNDED-01",
+      "id": "REL-RECEIPTS-01",
       "severity": "media",
-      "status": "cerrada con limitacion residual declarada",
-      "detalle": "La primera condicion de cierre NO se cumple y no puede cumplirse sin romper capturas legitimas: wait_event sigue bloqueando hasta el proximo evento. Lo que cambia es que el silencio se explica con un warn! al cruzar 30 s. El coste quedo medido: 16 sesiones en reposo = 1,1 % de un nucleo, lineal.",
-      "evidencia": "Tabla de medicion en el ledger con el metodo y la resolucion de jiffie"
-    },
-    {
-      "id": "DEBT-CRASH-VERDICT-SOURCE-01",
-      "severity": "media",
-      "status": "abierta, registrada y no abierta en este ciclo",
-      "detalle": "Restaurar el defecto de entrega de senales deja program_scenarios 11/11 en verde, asi que esos tests no distinguen el arreglo de su ausencia. Causa: find_crash decide sobre la entrega de la senal y no sobre la muerte del tracee.",
-      "evidencia": "Mutacion 16 de la auditoria; la reparacion de raiz exige que el veredicto se apoye en el evento de terminacion"
+      "status": "cerrada",
+      "detalle": "Push y tag los emitio SDDK, sin pasos manuales de Git y sin --no-verify.",
+      "evidencia": "receipts cap-git-push-65ba40988e2e y cap-git-tag-2017178f82d9; converged=true, applied=2"
     }
   ],
   "residual_limitations": [
-    "Un tracee parado legitimamente por SIGSTOP seguira ejecutandose: coste asumido y documentado, porque para un probe de fallos un livelock es peor.",
-    "Con un unico SIGKILL en el log, find_crash sigue devolviendo crash_found true, con note. La solucion de raiz exigiria marcar el kill como propio en el evento.",
-    "capture_registers:false con trace_syscalls:true sigue dando numero de syscall 0: defecto adyacente preexistente, registrado y no abierto.",
-    "El umbral de 30 s del aviso esta verificado por test unitario de la funcion pura, no con una sesion real de 30 s. La fixture test_sleep deja esa prueba a mano."
+    "Los 6 defectos de producto que motivation esta publicacion (5 cerrados y 1 abierto) se verifican en r6-9-tracer-truthfulness/verify-findings.json. Este artefacto verifica la publicacion, no el producto; duplicar aqui la lista de defectos haria que un mismo hecho pareciera dos verificaciones.",
+    "El verde local T2 (6 suites, 48/48) es necesario pero no suficiente para integrar: la autoridad de integracion es la CI remota sobre d0b146db.",
+    "DEBT-CRASH-VERDICT-SOURCE-01 sigue abierta al publicar la release: se registra y no se oculta, pero la release no declara haberla cerrado."
   ],
   "audit": {
-    "performed": true,
-    "mutations": 15,
-    "confirmed": "Los cuatro arreglos implementan lo que afirman.",
-    "refuted_by_audit": [
-      "El cableado del backoff no estaba fijado: restaurar el tick fijo dejaba 131/131 en verde.",
-      "Cuatro comentarios afirmaban cosas falsas, entre ellos que 100 us no limita el rendimiento (mide ~6,4k paradas/s frente a ~150k sin techo) y que la presencia de una senal fatal prueba la muerte (un sigaction con raise() la refuta)."
-    ],
-    "corrected_in": "53548731"
-  }
+    "performed": false,
+    "motivo": "La auditoria independiente de 15 mutaciones pertenece al ciclo de trabajo r6-9, que es donde se implementaron los arreglos. Reemitirla aqui la contaria dos veces.",
+    "referencia": "r6-9-tracer-truthfulness/verify-findings.json -> audit"
+  },
+  "product_findings_artifact": "r6-9-tracer-truthfulness/verify-findings.json"
 }

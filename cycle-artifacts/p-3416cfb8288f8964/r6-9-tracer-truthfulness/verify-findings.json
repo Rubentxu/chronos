@@ -1,41 +1,42 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/release-v0-10-1",
+  "cycle_id": "r6-9-tracer-truthfulness",
   "all_passed": true,
   "verdict": "PASS",
   "subject": {
-    "head_sha": "d0b146dba44489d39eb643478e99a783d0dcdd52",
+    "head_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
     "base_sha": "57c36040f29ffea2df11335324037a35d393641c",
     "base_tag": "v0.10.0",
-    "version": "0.10.1",
-    "tier": "T4_remote_ci",
-    "t4_authority": "La CI remota es la autoridad de integracion: 6/6 workflows verdes sobre esta revision, con el job Test completo y Skip args vacio. El verde local es T2 y no cuenta como integracion."
+    "tier": "T2_local_more_auditoria_independiente",
+    "product_tree_verified": "53548731c84553046951aea6f8af4f2379048f07",
+    "que_se_verifico": "La bateria T2 se ejecuto sobre el arbol de producto de 53548731, que es el ultimo commit de este rango que toca crates/. Los tres commits posteriores (ac605a8b ledger, d0b146db bump de version, 2969d4a2 artefactos) no tocan crates/ ni chronos-sandbox/, por lo que la evidencia T2 sigue siendo valida para el arbol de producto de este ciclo.",
+    "t4_authority": "La integracion no la verifica este artefacto: la autoriza la CI remota del ciclo release-v0-10-1, 6/6 workflows verdes sobre d0b146dba44489d39eb643478e99a783d0dcdd52. Ese veredicto pertenece a release-v0-10-1/verify-findings.json y no se reemite aqui como propio."
   },
   "findings": [
     {
       "id": "DEBT-SIGNAL-SUPPRESSED-01",
       "severity": "alta",
-      "status": "cerrada en esta release",
+      "status": "cerrada en este ciclo",
       "detalle": "El live probe reanuda con ptrace::cont(pid,None), que suprime la senal. El programa ejecutaba abort(), chronos se lo tragaba y seguia vivo. Regla nueva: se consumen todas las senales de parada mas SIGTRAP, se entrega todo lo demas, en los dos bucles.",
       "evidencia": "program_scenarios 11/11; los dos tests de crash en ok en local y en CI"
     },
     {
       "id": "DEBT-CRASH-TEARDOWN-SIGKILL-01",
       "severity": "alta",
-      "status": "cerrada en esta release",
+      "status": "cerrada en este ciclo",
       "detalle": "find_crash culpaba al programa del SIGKILL que chronos envia en su teardown. Ahora prioriza la senal fatal que el tracer no pudo fabricar y solo cae al SIGKILL si no hay ninguna, con un note que declara la ambiguedad del OOM killer.",
       "evidencia": "3 mutaciones con ROJO; 613/613 en chronos-services"
     },
     {
       "id": "DEBT-SYSCALL-NR-FROM-RAX-01",
       "severity": "media",
-      "status": "cerrada en esta release",
+      "status": "cerrada en este ciclo",
       "detalle": "Las salidas de syscall publicaban el valor de retorno como numero: 18446744073709551614 y punteros. Ahora el numero sale de orig_rax y el retorno de rax, con cast a i64 en la frontera del dominio.",
       "evidencia": "3 mutaciones con ROJO; el log paso a brk, mmap, access, openat, newfstatat, que es lo que da strace sobre esa fixture"
     },
     {
       "id": "DEBT-POLL-TICK-CAP-01",
       "severity": "alta",
-      "status": "cerrada en esta release",
+      "status": "cerrada en este ciclo",
       "detalle": "Defecto introducido por el propio ciclo en f04efc00: un tick fijo de 10 ms limitaba la captura a 100 paradas/s, asi que un programa de 36 syscalls necesitaba 720 ms. Backoff 100 us..10 ms con reinicio por evento.",
       "evidencia": "Deltas de 10,1 ms constantes en el volcado del log; strace -c dio las 36 syscalls del fixture"
     },

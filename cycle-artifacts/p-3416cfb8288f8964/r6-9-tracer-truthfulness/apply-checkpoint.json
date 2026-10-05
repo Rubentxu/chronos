@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/r6-9-tracer-truthfulness",
+  "cycle_id": "apply-checkpoint.json",
   "title": "R6.9: el tracer deja de mentir sobre el programa observado",
   "summary": "Cierra DEBT-WAIT-EVENT-UNBOUNDED-01 con su limitacion residual declarada y el coste medido, y\ncorrige cuatro defectos de veracidad del tracer. Este ciclo trabajo se publico como v0.10.1 en el\nciclo release-v0-10-1; aqui queda el rastro del trabajo y de lo que se completo despues, incluida\nuna correccion que solo una auditoria independiente encontro: el arreglo del sondeo no estaba fijado\nen ninguna parte y cuatro comentarios afirmaban cosas falsas.",
   "head_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",

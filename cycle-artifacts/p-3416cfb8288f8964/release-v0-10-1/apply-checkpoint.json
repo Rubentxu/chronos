@@ -1,5 +1,5 @@
 {
-  "cycle_id": "p-3416cfb8288f8964/release-v0-10-1",
+  "cycle_id": "apply-checkpoint.json",
   "title": "El tracer dice la verdad sobre lo que le paso al programa observado",
   "summary": "Cuatro defectos de veracidad cerrados y verificados end-to-end, mas el cierre de\nDEBT-WAIT-EVENT-UNBOUNDED-01 con su coste medido y su limitacion residual declarada. El live probe\nse tragaba las senales del tracee; find_crash culpaba al programa del SIGKILL de teardown; las\nsalidas de syscall publicaban el valor de retorno como numero; y el tick de sondeo estrangulaba la\ncaptura a 100 paradas por segundo.",
   "head_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
