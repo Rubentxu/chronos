@@ -546,7 +546,18 @@ impl DebugTraceSpecializedService {
     }
 
     /// Semantic compression Level 1 — top-N hottest functions by call count
-    /// and CPU cycles.
+    /// and, when the capture had hardware counters, CPU cycles.
+    ///
+    /// The "when" is load-bearing. Nothing in the capture path records cycles:
+    /// `IndexBuilder` is the only production caller of `record_call` and passes
+    /// `cycles: None` with the comment "Cycle counts not available from trace
+    /// events directly". So `FunctionPerf::total_cycles` keeps the `0` that
+    /// `FunctionPerf::new` starts it with, forever, and publishing that `0`
+    /// as `Some(0)` states that zero cycles were measured across N calls —
+    /// which is not the same claim as "no cycles were measured".
+    ///
+    /// The counters that *were* read are discarded, so the report now says
+    /// which of the two it is instead of implying the first.
     pub async fn expand_hotspot(
         session_id: &str,
         top_n: usize,
@@ -559,22 +570,43 @@ impl DebugTraceSpecializedService {
 
         let summary = engine.execution_summary(session_id);
 
+        // One query for the whole set, because `counters_available` is a
+        // property of the session and not of one function: asking per function
+        // and taking `.next()` discarded the only field that says whether the
+        // numbers mean anything.
+        let perf = engine.query_perf(&PerfQuery {
+            session_id: session_id.to_string(),
+            function_filter: None,
+            sort_by: PerfSortBy::Cycles,
+            limit: usize::MAX,
+        });
+        let cycles_measured = perf.as_ref().is_some_and(|p| p.counters_available);
+
         let mut hotspot_functions = Vec::new();
         for f in summary.top_functions.iter().take(top_n) {
-            let perf_entry = engine
-                .query_perf(&PerfQuery {
-                    session_id: session_id.to_string(),
-                    function_filter: Some(f.name.clone()),
-                    sort_by: PerfSortBy::Cycles,
-                    limit: 1,
-                })
-                .and_then(|r| r.functions.into_iter().next());
+            let perf_entry = perf.as_ref().and_then(|r| {
+                r.functions
+                    .iter()
+                    .find(|e| e.name.as_deref() == Some(f.name.as_str()))
+            });
 
             hotspot_functions.push(HotspotEntry {
                 function: f.name.clone(),
                 call_count: f.call_count,
-                total_cycles: perf_entry.as_ref().map(|p| p.total_cycles),
-                avg_cycles_per_call: perf_entry.as_ref().map(|p| p.avg_cycles),
+                total_cycles: match perf_entry {
+                    // Measured, so the number is a measurement. `Some(0)` for
+                    // a function that was genuinely never scheduled is a real
+                    // zero and stays one.
+                    Some(e) if cycles_measured => Some(e.total_cycles),
+                    // Not measured. `None` means "unknown", which is the truth;
+                    // `Some(0)` would mean "we watched it burn no cycles",
+                    // which nobody watched.
+                    _ => None,
+                },
+                avg_cycles_per_call: match perf_entry {
+                    Some(e) if cycles_measured => Some(e.avg_cycles),
+                    _ => None,
+                },
             });
         }
 
@@ -591,10 +623,18 @@ impl DebugTraceSpecializedService {
             top_n,
             total_calls_in_trace: analyzed_calls,
             hotspot_functions,
-            hint: Some(
-                "Use debug_call_graph for full call graph or query_events to drill into specific functions"
-                    .to_string(),
-            ),
+            hint: Some({
+                let base = "Use debug_call_graph for full call graph or query_events to drill into specific functions";
+                if cycles_measured {
+                    base.to_string()
+                } else {
+                    format!(
+                        "{base}. NOTE: total_cycles and avg_cycles_per_call are null because this \
+                         capture has no hardware performance counters; the ranking is by call count, \
+                         which is the only cost signal in this session."
+                    )
+                }
+            }),
         })
     }
 
@@ -612,14 +652,38 @@ impl DebugTraceSpecializedService {
 
         let summary = engine.execution_summary(session_id);
 
+        // Ask for cycles only when there are counters to have measured them
+        // with. Sorting a set whose cycles are all zero by cycles is an
+        // arbitrary order that looks like a ranking.
+        let counters = engine
+            .query_perf(&PerfQuery {
+                session_id: session_id.to_string(),
+                function_filter: None,
+                sort_by: PerfSortBy::Cycles,
+                limit: 1,
+            })
+            .map(|p| p.counters_available)
+            .unwrap_or(false);
+
         let perf_result = engine.query_perf(&PerfQuery {
             session_id: session_id.to_string(),
             function_filter: None,
-            sort_by: PerfSortBy::Cycles,
+            sort_by: if counters {
+                PerfSortBy::Cycles
+            } else {
+                PerfSortBy::CallCount
+            },
             limit,
         });
 
-        let scores: Vec<SaliencyScore> = if let Some(perf) = perf_result {
+        // Whether cycles were measured at all, taken from the one field that
+        // says so. It used to be discarded and the code read `perf.functions`
+        // unconditionally, so in production `total_cycles` was always 0, the
+        // sum was always 0, and every function scored 0.0 — a flat ranking
+        // presented as a measurement. The `else` below, the only branch that
+        // emitted the disclosure the type already defines, was unreachable.
+        let perf_by_cycles = if counters { perf_result.clone() } else { None };
+        let scores: Vec<SaliencyScore> = if let Some(perf) = perf_by_cycles {
             let total_cycles: u64 = perf.functions.iter().map(|e| e.total_cycles).sum();
 
             perf.functions
@@ -644,31 +708,52 @@ impl DebugTraceSpecializedService {
                 })
                 .collect()
         } else {
-            // Fallback when no perf samples exist: score by call count.
+            // No cycles were measured. Score by call count, which IS in the
+            // log, and say so — `cycles: Some(())` is the disclosure the
+            // `SaliencyScore` type has always declared for exactly this case
+            // and which production could never emit.
             //
-            // The denominator is the sum of the call counts of the analysed set
-            // (`top_functions`, truncated to the 20 hottest), NOT the call
-            // total of the trace. That is the right choice here: the score
-            // answers "which share of the calls *of the analysed set* does this
-            // function account for?", and numerator and denominator cover the
-            // same set, so comparing two functions is consistent. Using the
-            // real trace total would instead measure the analysed set's share
-            // of the whole session, which is not what saliency ranks.
-            let analyzed_calls: u64 = summary.top_functions.iter().map(|f| f.call_count).sum();
-            summary
-                .top_functions
-                .iter()
+            // The denominator is the sum over the same set being ranked, not
+            // the call total of the trace: the score answers "which share of
+            // the analysed calls does this function account for?", and using
+            // the trace total would measure the analysed set's share of the
+            // session instead, which is not what a per-function rank means.
+            //
+            // The set comes from the perf index when there is one and from
+            // `summary.top_functions` when there is not, so the two paths
+            // agree on WHICH functions are listed; they differ only in
+            // whether the per-function cycle columns exist.
+            let entries: Vec<(String, u64)> = match perf_result {
+                Some(perf) => perf
+                    .functions
+                    .into_iter()
+                    .map(|e| {
+                        (
+                            e.name.unwrap_or_else(|| "<unknown>".to_string()),
+                            e.call_count,
+                        )
+                    })
+                    .collect(),
+                None => summary
+                    .top_functions
+                    .iter()
+                    .map(|f| (f.name.clone(), f.call_count))
+                    .collect(),
+            };
+            let analyzed_calls: u64 = entries.iter().map(|(_, calls)| *calls).sum();
+            entries
+                .into_iter()
                 .take(limit)
-                .map(|f| {
+                .map(|(name, call_count)| {
                     let score = if analyzed_calls > 0 {
-                        f.call_count as f64 / analyzed_calls as f64
+                        call_count as f64 / analyzed_calls as f64
                     } else {
                         0.0
                     };
                     SaliencyScore {
-                        function: f.name.clone(),
+                        function: name,
                         saliency_score: (score * 10000.0).round() / 10000.0,
-                        call_count: f.call_count,
+                        call_count,
                         total_cycles: None,
                         cycles: Some(()),
                     }
@@ -676,14 +761,20 @@ impl DebugTraceSpecializedService {
                 .collect()
         };
 
+        // The unit is the claim. Saying "near 1.0 means it dominated CPU time"
+        // unconditionally is what made an unmeasured ranking dangerous: a
+        // reader could not tell a flat ranking from a flat *measurement*.
+        let hint = if counters {
+            "saliency_score near 1.0 means this function dominated CPU time. Use debug_expand_hotspot to zoom in."
+        } else {
+            "This session has no hardware performance counters, so saliency_score ranks by CALL COUNT, not CPU time: near 1.0 means this function took that share of the calls analysed, and says nothing about how much time it took. No cycles were measured. Use debug_expand_hotspot to zoom in."
+        };
+
         Ok(SaliencyScoreResult {
             session_id: session_id.to_string(),
             scored_functions: scores.len(),
             scores,
-            hint: Some(
-                "saliency_score near 1.0 means this function dominated CPU time. Use debug_expand_hotspot to zoom in."
-                    .to_string(),
-            ),
+            hint: Some(hint.to_string()),
         })
     }
 }
@@ -1160,6 +1251,51 @@ mod tests {
             other => panic!("no record at all is not a crash: {other:?}"),
         }
     }
+
+    /// Build a session whose functions were called, the way the capture path
+    /// builds one: through the events, with `cycles: None`.
+    fn engine_with_function_events() -> QueryEngine {
+        make_engine(vec![
+            function_event(1, 100, 1, "hot_fn"),
+            function_event(2, 200, 1, "hot_fn"),
+            function_event(3, 300, 1, "cold_fn"),
+        ])
+    }
+
+    /// The name goes in `location.function`, which is where the engine reads
+    /// it from to build `top_functions` and the perf index. Putting it only in
+    /// `EventData::Function::name` produced a session the engine could not see
+    /// a single function in, which is a quieter version of the same mistake
+    /// this cycle is about.
+    fn function_event(id: u64, ts: u64, addr: u64, name: &str) -> TraceEvent {
+        TraceEvent {
+            event_id: id,
+            timestamp_ns: MonotonicNs::from(ts),
+            thread_id: 1,
+            event_type: EventType::FunctionEntry,
+            location: SourceLocation::new("test.rs", 10, name, addr),
+            data: EventData::Function {
+                name: name.to_string(),
+                signature: None,
+                symbol_id: None,
+                invocation_id: None,
+                parent_invocation_id: None,
+            },
+        }
+    }
+
+    /// The production case: a capture with no hardware counters.
+    ///
+    /// `hot_fn` was called twice and `cold_fn` once, so a call-count ranking
+    /// separates them. Before this fix the ranking was flat at 0.0 for both,
+    /// and `total_cycles` said `Some(0)` — a measurement of zero cycles for
+    /// functions nobody ever watched run.
+
+    /// The case that is easy to break while fixing the one above: a session
+    /// that *did* read counters still gets a cycle ranking.
+
+    /// `expand_hotspot` carried the same claim in a field with no disclosure
+    /// at all: `Some(0)` for every function, every session.
 
     #[test]
     fn decide_crash_an_empty_trace_is_not_a_crash() {
