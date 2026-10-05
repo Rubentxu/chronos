@@ -1056,14 +1056,59 @@ mod tests {
     /// carries several `process_exit` markers. A worker leaving before the
     /// main thread then dies reads as "exit, then SIGSEGV", and calling that
     /// "handled the signal" turns a crash into a clean run.
+    #[test]
+    fn a_fatal_signal_after_the_exit_is_not_a_handled_signal() {
+        // exit first (event_id 1), then the fatal signal (event_id 2), which a
+        // log recorded before `terminated_tracee` existed cannot distinguish
+        // from a handled delivery.
+        let events: Vec<TraceEvent> = vec![
+            process_exit_event(1, 100, 1, 0),
+            signal_event(2, 200, 1, 11, "SIGSEGV"),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::Crashed { signal, .. } => assert_eq!(signal, "SIGSEGV"),
+            other => panic!("a fatal signal after the exit is still a death: {other:?}"),
+        }
+    }
 
     /// The same two events in the other order: that one really is a handled
     /// signal, and the test pair is what keeps the condition from becoming a
     /// blanket "an exit never proves survival".
+    #[test]
+    fn a_fatal_signal_before_the_exit_is_a_handled_signal() {
+        let events: Vec<TraceEvent> = vec![
+            signal_event(1, 100, 1, 11, "SIGSEGV"),
+            process_exit_event(2, 200, 1, 0),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::Survived { reason } => assert!(
+                reason.contains("handled the signal"),
+                "expected the handled reading, got: {reason}"
+            ),
+            other => panic!("signal then exit 0 is a handled signal: {other:?}"),
+        }
+    }
 
     /// Two fatal deaths: rule 1 takes the first one in log order, which is
     /// the one the user has to debug. Which one is "the" crash is only
     /// defined by the order, so the test states it rather than leaving it.
+    #[test]
+    fn the_first_of_two_fatal_deaths_is_the_crash_point() {
+        let events: Vec<TraceEvent> = vec![
+            signal_termination_event(1, 100, 1, 11, "SIGSEGV"),
+            signal_termination_event(2, 200, 1, 6, "SIGABRT"),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::Crashed { event, signal } => {
+                assert_eq!(signal, "SIGSEGV");
+                assert_eq!(event.event_id, 1);
+            }
+            other => panic!("a fatal death is a crash: {other:?}"),
+        }
+    }
 
     /// A fatal delivery that the teardown SIGKILL then ended.
     ///
@@ -1072,6 +1117,18 @@ mod tests {
     /// cleaning up. `session_explain` still answers `true` (a bool has
     /// nowhere to put the distinction) and this test pins that, so the loss
     /// of detail is declared rather than accidental.
+    #[test]
+    fn a_fatal_delivery_ended_by_teardown_is_a_death_not_a_crash() {
+        let events: Vec<TraceEvent> = vec![
+            signal_event(1, 100, 1, 11, "SIGSEGV"),
+            signal_termination_event(2, 200, 1, 9, "SIGKILL"),
+        ];
+        let facts = facts_from(&events);
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::KilledByTeardown { signal, .. } => assert_eq!(signal, "SIGKILL"),
+            other => panic!("only the teardown signal killed it: {other:?}"),
+        }
+    }
 
     /// A `process_exit` whose payload does not parse is not a termination
     /// record.
@@ -1079,6 +1136,30 @@ mod tests {
     /// Reading it as one would let a malformed marker stand as proof of a
     /// clean exit; refusing to read it falls through to the delivery rule,
     /// which fails toward reporting a crash on an unproven trace.
+    #[test]
+    fn a_malformed_exit_marker_is_not_a_termination_record() {
+        let malformed = TraceEvent {
+            event_id: 1,
+            timestamp_ns: MonotonicNs::from(100),
+            thread_id: 1,
+            event_type: EventType::Custom,
+            location: SourceLocation::default(),
+            data: EventData::Custom {
+                name: PROCESS_EXIT_MARKER.to_string(),
+                data_json: "not json at all".to_string(),
+            },
+        };
+        let events: Vec<TraceEvent> = vec![malformed];
+        let facts = facts_from(&events);
+        assert!(
+            facts.exit.is_none(),
+            "a marker that does not parse cannot prove a clean exit"
+        );
+        match decide_crash(&facts, TRACER_TEARDOWN_SIGNAL, &FATAL_SIGNALS) {
+            CrashVerdict::Survived { .. } => {}
+            other => panic!("no record at all is not a crash: {other:?}"),
+        }
+    }
 
     #[test]
     fn decide_crash_an_empty_trace_is_not_a_crash() {

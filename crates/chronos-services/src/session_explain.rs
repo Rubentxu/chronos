@@ -501,6 +501,14 @@ mod tests {
         let store = empty_arc_store();
         let mut events = vec![make_event(0, "main")];
         events.extend_from_slice(ending);
+        // Renumber by position so the log order is the order the test
+        // wrote. The event helpers each carry a fixed id, which silently
+        // contradicts a test that puts them in the other order — and the
+        // ordering of a signal against a `process_exit` is exactly what one
+        // of these tests is about.
+        for (position, event) in events.iter_mut().enumerate() {
+            event.event_id = position as u64 + 1;
+        }
         let meta = SessionMetadata {
             session_id: "sess".to_string(),
             created_at: 0,
@@ -605,6 +613,42 @@ mod tests {
     /// the process exited normally — so the only thing separating them from a
     /// crash is which of the two the tracee survived.
     #[test]
+    fn no_crash_when_the_tracee_handled_a_fatal_signal_and_exited_zero() {
+        let (store, _) = session_ending(&[signal_event("SIGSEGV", false), process_exit_event(0)]);
+
+        match explain_one(&store, SessionExplainKind::Facts) {
+            SessionExplainOutput::Facts { bundle, .. } => {
+                assert!(
+                    !bundle.crash_detected,
+                    "a tracee that handled SIGSEGV and exited 0 did not crash"
+                );
+                // The delivery is still reported: it is a fact about the
+                // session, kept apart from the verdict about its ending.
+                assert_eq!(
+                    bundle.signal_delivered.as_deref(),
+                    Some("SIGSEGV"),
+                    "the handled signal is still reported as delivered"
+                );
+            }
+            other => panic!("expected Facts, got {:?}", other),
+        }
+        match explain_one(&store, SessionExplainKind::Inferred) {
+            SessionExplainOutput::Inferred { bundle, .. } => assert!(
+                !bundle.inferences.contains(&InferredTag::CrashDetected),
+                "a handled SIGSEGV must not infer a crash, got {:?}",
+                bundle.inferences
+            ),
+            other => panic!("expected Inferred, got {:?}", other),
+        }
+    }
+
+    /// `signal_delivered` reports delivery, not survival.
+    ///
+    /// The signal that killed a tracee was also delivered to it, and the field
+    /// said so before this cycle. Narrowing it to the survivors would answer
+    /// `crash_detected: true` with no signal beside it — a bundle with less
+    /// in it than the one it replaces, for no stated reason.
+    #[test]
     fn the_fatal_signal_that_killed_the_tracee_is_still_reported_as_delivered() {
         let (store, _) = session_ending(&[signal_event("SIGSEGV", true)]);
         match explain_one(&store, SessionExplainKind::Facts) {
@@ -635,6 +679,11 @@ mod tests {
                 "handled SIGSEGV, exited 3",
                 vec![signal_event("SIGSEGV", false), process_exit_event(3)],
                 false,
+            ),
+            (
+                "exited 3, then SIGSEGV the log cannot date as a death",
+                vec![process_exit_event(3), signal_event("SIGSEGV", false)],
+                true,
             ),
             ("no signals at all", vec![], false),
         ] {
