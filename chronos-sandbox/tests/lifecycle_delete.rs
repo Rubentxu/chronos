@@ -262,12 +262,34 @@ async fn del_live_4_sibling_delete_does_not_perturb_live_a() {
         "deleting B must not perturb A's manifest byte-by-byte"
     );
 
-    // A's directory listing must be byte-identical (no spurious files
-    // appeared/disappeared).
+    // A's directory must not LOSE anything, and must not gain anything that
+    // belongs to B.
+    //
+    // This used to assert that the two listings were identical, which is a
+    // property A cannot have: it is live for the whole test, and a live
+    // session's execution log is still being written. The listing can
+    // legitimately grow — observed in CI run 37268219299, where a `-64.seg`
+    // segment appeared between the two snapshots of a session running a
+    // three-line `add` fixture, and the assertion failed on a delete of an
+    // unrelated sibling. Asserting "the directory never changes" made the
+    // test a coin flip on timing rather than a check of the delete path.
+    //
+    // The property that actually matters is one-directional: deleting B must
+    // not remove anything of A's, and must not move B's files into A's
+    // directory. Both are checked below; what is no longer checked is that
+    // A's own writer is idle, which was never the subject of the test.
     let dir_listing_after = list_dir(&root.join(&started_a));
-    assert_eq!(
-        dir_listing_before, dir_listing_after,
-        "deleting B must not perturb A's directory contents"
+    for name in &dir_listing_before {
+        assert!(
+            dir_listing_after.contains(name),
+            "deleting B removed {name} from A's directory; before {dir_listing_before:?} after {dir_listing_after:?}"
+        );
+    }
+    assert!(
+        !dir_listing_after
+            .iter()
+            .any(|name| name.contains(&started_b)),
+        "deleting B left B's files inside A's directory: {dir_listing_after:?}"
     );
 
     // A is still readable from the live probe.
@@ -293,7 +315,7 @@ async fn del_live_4_sibling_delete_does_not_perturb_live_a() {
 }
 
 /// Return sorted relative paths of every entry under `dir` so two
-/// snapshots can be compared byte-for-byte.
+/// snapshots can be compared.
 fn list_dir(dir: &std::path::Path) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
