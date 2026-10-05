@@ -1208,3 +1208,60 @@ asercion sigue detectando el defecto que busca.
 **Limite de la demostracion, declarado.** La no-vacuidad es **a nivel de asercion**, no de
 producto: para(mutarla) haria falta fabricar un defecto en el borrado entre sesiones que el
 producto no tiene. Se declara para que nadie la lea como mas de lo que es.
+### Cierre (2026-10-05) - cerrada por R6.11, con su no-vacuidad medida
+
+`CLOSED` en `6a41b31b` y `0b9262fb`. Los dos derivados existen ya no, pero no de la forma
+que la entrada suponia, y esa diferencia es el hallazgo.
+
+**No se arranco la pieza de R6.10.** El razonamiento de la entrada sigue en pie y se
+respeto: R6.11 es su propio ciclo con su propia verificacion.
+
+**Lo que resulto estar mal en el plan de cierre.** La entrada decia "que ambos consulten
+`terminated_tracee`". Eso no habria bastado. `terminated_tracee: false` significa dos
+cosas distintas —"el tracee manejo la senal" y "este log se grabo antes de que el campo
+existiera", porque va con `#[serde(default)]`— y la regla del fallback no puede
+separarlas. Una sesion moderna donde el tracee manejo SIGSEGV y salio con 0 habria
+caido igualmente en el fallback y habria seguido declarandose crash. El falso positivo
+no se habria cerrado: solo se habria movido.
+
+**La distincion que si funciona** es si el log registra *como* termino el tracee, no si
+registro una muerte. `find_crash` ya la tenia: `decide_crash` tiene cuatro reglas, y su
+regla 3 ("sin muerte pero con salida normal") es justamente la que separa una senal
+manejada de una muerte. El cierre reutiliza ese veredicto en vez de reimplementar una
+tercera lectura.
+
+**Lo que se hizo, mas alla del plan:**
+
+- `session_explain` deja de tener veredicto propio. Las dos rutas —`FactsBundle::
+  crash_detected` y `InferredTag::CrashDetected`— tenian reglas **distintas**, de modo
+  que el mismo trace podia responder "si crash" en `facts` y "no crash" en `inferred`.
+  Ahora las dos llaman a `crash_detected_for`, sobre los mismos `TerminationFacts`.
+- `query::engine` deja de puntuar por nombre de senal. La confianza pasa a seguir
+  `terminated_tracee` (0,95 / 0,85 si mata; 0,2 / 0,4 si solo se entrega), y la
+  descripcion dice cual de las dos ocurrio.
+- `CRASH_SIGNALS` era una segunda copia de `FATAL_SIGNALS`. Se elimino: alias del
+  conjunto unico. Dos copias de "que cuenta como fatal" es como dos llamantes acaban
+  discrepando sobre el mismo trace.
+- Se elimino una rama muerta en `session_explain`: `description.starts_with("signal=")`
+  nunca produjo nada, porque el engine escribe `"Signal received: X"`.
+
+**Correccion de una afirmacion de esta misma entrada.** Decia que el arreglo era "pequeno".
+No lo era: el fallback correcto exige saber si el log registra la salida del proceso, y
+eso obliga a mirar `Custom{name: "process_exit"}` ademas de las senales. La entrada
+subestimo el alcance; la no-vacuidad es la que lo destinationo.
+
+**No-vacuidad medida, en los dos sitios:**
+
+| Mutacion | Resultado |
+|---|---|
+| `crash_detected_for` vuelve a la regla por entrega | `14 passed, 2 FAILED` en `session_explain` |
+| `engine` vuelve a puntuar por nombre de senal | `90 passed, 2 FAILED` en `chronos-query` |
+
+Los mensajes de fallo nombran el caso real ("a tracee that handled SIGSEGV and exited 0
+did not crash"), no un simbolo. Restaurado en ambos: 16/16 y 92/92.
+
+**Lo que queda abierto de esta entrada:** nada. Las cuatro formas de terminar una sesion
+estan cubiertas por `facts_and_inferred_agree_on_every_way_a_session_can_end`, que es el
+test que impide que las dos rutas vuelvan a separarse.
+
+---
