@@ -1160,3 +1160,51 @@ ya existe y hoy solo ejercita `find_crash`.
 leian la entrega, y despues leen lo mismo. Lo que cambia es que ahora existe el dato para
 hacerlo bien, y no hacerlo deja dos veredictos con la misma debilidad que acabamos de
 corregir en el tercero.
+
+---
+
+## DEBT-CI-TIMING-01 — ampliada (2026-10-05): un segundo flake, y este SÍ era una asercion imposible
+
+**Estado:** `OPEN`, la entrada original sigue vigente para `uat_c2_01` y **no** se cierra aqui.
+Lo que se anade es un segundo caso, de la misma familia pero de una naturaleza distinta: no es
+"el test es lento bajo carga", es que **el test afirmaba una propiedad que su sujeto no puede
+cumplir**.
+
+**Que paso.** El push `2da2301c` dejo el job `Test` de la CI en rojo con
+`del_live_4_sibling_delete_does_not_perturb_live_a` (`chronos-sandbox/tests/lifecycle_delete.rs:268`).
+Lo detecto R6.10 al mirar el listado de workflows y no solo los de su propio push: es decir, el
+rojo llevaba **mas de una hora** a la vista sin que nadie lo mirara.
+
+**El fallo literal.** `left: [...-0.seg, execution-log.manifest.json]` contra
+`right: [...-0.seg, ...-64.seg, execution-log.manifest.json]`. Al borrar la sesion B aparecio un
+segmento nuevo en el directorio de A. El borrado de B no habia tocado nada de A: lo unico que
+cambio es que A escribio.
+
+**Por que la asercion era imposible.** El test deja a A **viva durante toda su duracion** — lo
+dice su propio nombre, `sibling_delete_does_not_perturb_**live**_a`, y lo confirma la ultima
+asercion, que vuelve a leer A del live probe. Su `ExecutionLog` sigue escribiendose, asi que el
+listado de su directorio puede crecer. Comparar los dos listados byte a byte y exigir igualdad
+solo puede pasar cuando A esta quieto, que no es una propiedad del codigo bajo prueba sino del
+momento en que se corra.
+
+**Evidencia, y por que no es solo "no se reprodujo".**
+
+1. No se reprodujo en local: 6 ejecuciones seguidas de `lifecycle_delete`, 3/3 cada vez.
+2. Al reproducir la condicion durante la no-vacuidad del arreglo aparecio **tambien en local** un
+   `-64.seg` en el listado de A. Osea que la rotacion del segmento es rutinaria, no un evento raro
+   del runner, y la asercion anterior era una loteria sobre el timing. Eso es mas fuerte que
+   "no lo vi pasar aqui".
+
+**Arreglo, y por que no es relajar el test.** La asercion nueva afirma la propiedad que el test
+si queria comprobar y que A si puede cumplir: **borrar B no quita nada de A**, y **no mete en el
+directorio de A nada que pertenezca a B**. Se sigue comprobando el manifest byte a byte y la
+lectura posterior de A. Lo que se deja de comprobar es que el escritor de A este parado, que
+nunca fue el objeto del test.
+
+**No-vacuidad medida.** Borrando a proposito un segmento de A entre las dos capturas, el test cae
+a ROJO con `deleting B removed 05755470-...-0.seg from A's directory`. Restaurado, en verde. La
+asercion sigue detectando el defecto que busca.
+
+**Limite de la demostracion, declarado.** La no-vacuidad es **a nivel de asercion**, no de
+producto: para(mutarla) haria falta fabricar un defecto en el borrado entre sesiones que el
+producto no tiene. Se declara para que nadie la lea como mas de lo que es.
