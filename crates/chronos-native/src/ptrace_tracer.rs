@@ -117,14 +117,35 @@ mod imp {
     use std::path::Path;
     use tracing::{debug, info, warn};
 
-    /// Tick of the `follow_children` wait loop
+    /// Smallest tick of the `follow_children` wait loop
     /// (`DEBT-WAIT-EVENT-UNBOUNDED-01`).
     ///
-    /// 10 ms, the same interval the non-`follow_children` branch of
-    /// `wait_event` already used for its `WNOHANG` loop, so the idle cost of
-    /// a tracer thread is a profile this crate already has rather than a new
-    /// one being introduced here. 100 wakeups per second per idle thread.
-    pub const TRACER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+    /// This is the cost floor, paid only by a tracee that is producing events
+    /// *right now*, and it exists so that a busy tracee is not throttled: see
+    /// the throughput argument in `wait_event`. 100 us caps the tracer at
+    /// roughly 10k ptrace stops per second, which is above anything a real
+    /// program reaches, so this is a latency floor and not a throughput one.
+    pub const TRACER_POLL_MIN: std::time::Duration = std::time::Duration::from_micros(100);
+
+    /// Largest tick of the `follow_children` wait loop, reached only after the
+    /// tracee has been quiet for several rounds.
+    ///
+    /// 10 ms, the interval the non-`follow_children` branch of `wait_event`
+    /// has always paid, so the settled idle cost of an idle tracer thread is
+    /// the one this repository already has rather than a new profile.
+    pub const TRACER_POLL_MAX: std::time::Duration = std::time::Duration::from_millis(10);
+
+    /// Next tick after `current`: doubled, clamped to [`TRACER_POLL_MAX`].
+    ///
+    /// Pure and separate from the loop so the backoff curve is testable
+    /// without sleeping through it, and so the clamp cannot drift away from
+    /// the constant that documents the idle cost.
+    pub fn next_poll_tick(current: std::time::Duration) -> std::time::Duration {
+        match current.checked_mul(2) {
+            Some(next) => next.min(TRACER_POLL_MAX),
+            None => TRACER_POLL_MAX,
+        }
+    }
 
     /// Idle time after which an `follow_children` tracer reports a stall.
     ///
@@ -583,17 +604,41 @@ mod imp {
                 // Polling keeps the same flags — __WALL still catches clone and
                 // syscall accounting, __WNOTHREAD still keeps a concurrent
                 // session's tracer from stealing these statuses — and trades an
-                // unbounded block for a bounded step. The cost is a 10 ms tick
-                // per idle tracer thread, which is the same cost the other
-                // branch of this function already pays with the same interval.
+                // unbounded block for a bounded step.
+                //
+                // The tick is NOT a fixed 10 ms, and that is a correctness
+                // requirement rather than a tuning preference. A fixed tick
+                // caps the whole capture at `1 / tick` events per second,
+                // because every stop costs at least one tick: a 36-syscall
+                // program is 72 ptrace stops, so a 10 ms tick needs 720 ms of
+                // wall clock to finish a program that runs in under a
+                // millisecond. That is not latency, it is a throughput ceiling
+                // applied to the tracee by the tracer, and it was measured
+                // doing exactly that: `test_abort` never reached its own
+                // `abort()` inside a 500 ms window and was still executing
+                // loader syscalls when the session was stopped.
+                //
+                // So the tick starts at `TRACER_POLL_MIN` and doubles up to
+                // `TRACER_POLL_MAX`, and **any** event resets it to the
+                // minimum. A tracee that is producing gets polled at 100 us and
+                // is not throttled; a tracee that is quiet settles at 10 ms,
+                // which is the same idle cost the non-`follow_children` branch
+                // of this function has always paid. `tick` is local to this
+                // call, so returning any event resets it for free — that is why
+                // there is no reset to forget here.
                 //
                 // The stall is reported, not fatal. A tracee running a long
                 // computation legitimately produces no events for minutes, so
                 // giving up on it would break working captures; what the
                 // operator needs is to be able to tell "quiet" from "wedged",
-                // and a warn! at the threshold is that signal.
-                let mut waited = std::time::Duration::ZERO;
+                // and a warn! at the threshold is that signal. The idle time is
+                // measured from a real clock rather than by summing ticks,
+                // because a summed tick undercounts however long the sleep
+                // actually took, and this threshold is exactly the one place
+                // where being optimistic is wrong.
+                let started = std::time::Instant::now();
                 let mut stall_warned = false;
+                let mut tick = TRACER_POLL_MIN;
                 loop {
                     let status = match waitpid(
                         Pid::from_raw(-1),
@@ -614,20 +659,26 @@ mod imp {
 
                     match status {
                         WaitStatus::StillAlive => {
-                            waited += TRACER_POLL_INTERVAL;
-                            if !stall_warned && stall_is_reportable(waited) {
+                            let idle = started.elapsed();
+                            if !stall_warned && stall_is_reportable(idle) {
                                 stall_warned = true;
                                 warn!(
-                                    "tracer idle for {:?} with a live tracee and no ptrace status: \\
-                                     the capture is not producing. Not giving up, because a tracee \\
-                                     computing for a while is legitimate, but this is the signature of \\
+                                    "tracer idle for {:?} with a live tracee and no ptrace status: \
+                                     the capture is not producing. Not giving up, because a tracee \
+                                     computing for a while is legitimate, but this is the signature of \
                                      a wedged one",
-                                    waited
+                                    idle
                                 );
                             }
-                            std::thread::sleep(TRACER_POLL_INTERVAL);
+                            std::thread::sleep(tick);
+                            tick = next_poll_tick(tick);
                         }
-                        other => return self.process_wait_status_impl(other),
+                        other => {
+                            // An event arrived, so the tracee is producing.
+                            // Returning here is also what resets the backoff:
+                            // `tick` is local to this call.
+                            return self.process_wait_status_impl(other);
+                        }
                     }
                 }
             }
@@ -640,6 +691,16 @@ mod imp {
 
             use nix::sys::signal::kill;
             let start = std::time::Instant::now();
+            // Same backoff as the `follow_children` path, and for the same
+            // reason: a fixed tick caps the capture at `1 / tick` events per
+            // second, which is a throughput ceiling the tracer imposes on the
+            // tracee. The two paths must not drift apart here — they are the
+            // same wait, asked with different flags.
+            //
+            // `tick` is local, so every call to `wait_event` starts back at the
+            // floor: that is what resets the backoff after an event, and it is
+            // why there is no explicit reset to keep in sync here.
+            let mut tick = TRACER_POLL_MIN;
 
             let status = loop {
                 if kill(pid, None).is_err() {
@@ -665,7 +726,8 @@ mod imp {
                                 }
                             }
                         }
-                        std::thread::sleep(TRACER_POLL_INTERVAL);
+                        std::thread::sleep(tick);
+                        tick = next_poll_tick(tick);
                     }
                     Ok(s) => break s,
                     Err(nix::errno::Errno::ECHILD) => {
@@ -1218,19 +1280,80 @@ mod imp {
             );
         }
 
-        /// The poll interval is a cost decision, not an arbitrary number: it is
-        /// the interval the other branch of `wait_event` already used, so an idle
-        /// `follow_children` tracer costs what an idle non-`follow_children`
-        /// tracer already costs. If this ever changes, this fails and the cost
-        /// claim in the release report has to be revisited with it.
+        /// The settled idle cost is a number with a claim attached, and the
+        /// backoff curve is the mechanism that keeps the two ends of it apart.
+        ///
+        /// This replaced a test that pinned a single 10 ms interval, and that
+        /// test was passing while the product was broken. A fixed tick caps the
+        /// capture at `1 / tick` events per second; `test_abort` needs 72
+        /// ptrace stops, so at 10 ms that is 720 ms of wall clock for a program
+        /// that runs in under a millisecond, and it never reached its own
+        /// `abort()`. Unit tests could not see it because the defect is
+        /// throughput against a real tracee, and only the end-to-end sandbox
+        /// run did. So the constants are pinned here *and* the curve that
+        /// escapes the ceiling is pinned next to them, so that neither end can
+        /// be changed without the other being re-examined.
         #[test]
-        fn poll_interval_matches_the_other_branch() {
+        fn poll_bounds_match_the_settled_idle_cost() {
             assert_eq!(
-                TRACER_POLL_INTERVAL,
+                TRACER_POLL_MAX,
                 std::time::Duration::from_millis(10),
-                "the poll interval is the CPU cost of this change; changing it changes the \
-                 cost claim recorded in the release report and the debt ledger"
+                "the settled tick is the idle CPU cost of this change; changing it changes the \
+                 cost claim recorded in the debt ledger and has to be re-measured, not assumed"
             );
+            assert_eq!(
+                TRACER_POLL_MIN,
+                std::time::Duration::from_micros(100),
+                "the floor is what keeps a producing tracee from being throttled. Raising it \
+                 lowers the capture's event ceiling by the same factor"
+            );
+            assert!(
+                TRACER_POLL_MIN < TRACER_POLL_MAX,
+                "a backoff that cannot grow is a fixed tick, which is the defect this replaced"
+            );
+        }
+
+        /// The backoff has to actually climb and actually stop climbing.
+        ///
+        /// Both ends are the defect: never growing leaves an idle tracer
+        /// spinning at the floor, and never clamping grows without bound, so a
+        /// tracee that goes quiet still delays its own next event by an
+        /// unbounded amount.
+        #[test]
+        fn poll_backoff_climbs_to_the_ceiling_and_stops() {
+            use std::time::Duration;
+
+            // Climbs.
+            assert_eq!(next_poll_tick(TRACER_POLL_MIN), Duration::from_micros(200));
+            assert_eq!(
+                next_poll_tick(Duration::from_micros(3_200)),
+                Duration::from_micros(6_400),
+                "the curve is a doubling, not a rounding to whole milliseconds: rounding here \
+                 would make the tick non-monotonic in a way nothing else would notice"
+            );
+
+            // Clamps, and stays clamped however long it is asked.
+            assert_eq!(next_poll_tick(TRACER_POLL_MAX), TRACER_POLL_MAX);
+            let mut tick = TRACER_POLL_MAX;
+            for _ in 0..32 {
+                tick = next_poll_tick(tick);
+            }
+            assert_eq!(
+                tick, TRACER_POLL_MAX,
+                "32 more doublings must not escape the ceiling"
+            );
+
+            // The clamp is the ceiling, not a value that happens to equal it.
+            // A tick already past the ceiling comes back down to it.
+            assert_eq!(
+                next_poll_tick(Duration::from_secs(5)),
+                TRACER_POLL_MAX,
+                "an over-large tick clamps to the ceiling rather than doubling further"
+            );
+
+            // Doubling must not overflow into something smaller than the input,
+            // which is what a naive `checked_mul` fallback would hide.
+            assert_eq!(next_poll_tick(Duration::MAX), TRACER_POLL_MAX);
         }
 
         #[test]
