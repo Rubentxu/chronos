@@ -1018,6 +1018,30 @@ impl McpSession {
     // Debug/Analysis Tools (Task 2.4)
     // =========================================================================
 
+    /// `session_explain` with an explicit `kind`, returned raw.
+    ///
+    /// Two different tools answer "did this session crash" — `trace_slice`
+    /// (`slice_kind=crash`) and `session_explain` (`kind=facts` /
+    /// `kind=inferred`) — and a trace that one calls clean the other used to
+    /// call a crash. A test that only exercises the first proves nothing
+    /// about the second, so the second gets its own path.
+    ///
+    /// The response is returned unparsed on purpose: the assertions that
+    /// matter read fields this harness has no reason to mirror, and a
+    /// deserialization struct here would be a second definition of the output
+    /// shape that could drift from the server's.
+    pub async fn session_explain(
+        &mut self,
+        session_id: &str,
+        kind: &str,
+    ) -> Result<serde_json::Value, McpSandboxError> {
+        let params = serde_json::json!({
+            "session_id": session_id,
+            "kind": kind,
+        });
+        self.rpc_client.call_tool("session_explain", params).await
+    }
+
     /// Debug find crash — identifies the crash point in a trace.
     ///
     /// C5.3.1 (REC-C5): now calls v2 `trace_slice` (`slice_kind=crash`).

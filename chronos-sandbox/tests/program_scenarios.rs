@@ -341,6 +341,114 @@ async fn test_handled_fatal_signal_is_not_reported_as_a_crash() {
     client.shutdown().await.ok();
 }
 
+/// PS5b: the same handled signal, asked of the OTHER crash reporter.
+///
+/// `test_handled_fatal_signal_is_not_reported_as_a_crash` above asks
+/// `trace_slice`, which reads the crash verdict through `find_crash`. This
+/// asks `session_explain`, which reads it through its own path — and before
+/// R6.11 through *two* different ones, `kind=facts` and `kind=inferred`, that
+/// could disagree with each other on the same session.
+///
+/// Without this test the defect survives in production while the suite stays
+/// green: `find_crash` was already correct, so every crash test passed.
+#[tokio::test]
+async fn session_explain_does_not_call_a_handled_fatal_signal_a_crash() {
+    let fixture = McpSession::fixture_path("test_handled_signal")
+        .expect("test_handled_signal fixture not found - run cargo build first");
+
+    // `session_explain` reads the `SessionStore`, while `trace_slice` reads
+    // the in-memory engine map. A probe session lives in the second until it
+    // is saved, so this client gets an explicit store to prove the session
+    // reaches the first.
+    let dir = std::env::temp_dir().join(format!(
+        "chronos-explain-crash-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("failed to create store dir");
+
+    let mut client = McpTestClient::start_with_db_path(dir.join("sessions.redb"))
+        .await
+        .expect("Failed to start MCP server");
+
+    let session_id = client
+        .probe_start(fixture.to_str().unwrap())
+        .await
+        .expect("probe_start failed");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let _drained = client.probe_drain(&session_id).await;
+
+    let stop = client
+        .probe_stop(&session_id)
+        .await
+        .expect("probe_stop failed");
+    assert!(
+        stop.total_events > 0,
+        "the probe captured nothing, so there is no session to judge"
+    );
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // `probe_stop` is the v1 shim: it drains the durable log but persists
+    // nothing. `session_explain` reads the `SessionStore`, so the session has
+    // to be saved and loaded before it can answer. Skipping this is not a
+    // test-harness detail — it is the same path a user takes after a live
+    // probe, and it is where a session either becomes queryable or does not.
+    client
+        .save_session(&session_id, "handled_signal")
+        .await
+        .expect("save_session failed");
+    client
+        .load_session(&session_id)
+        .await
+        .expect("load_session failed");
+
+    let response = client
+        .session_explain(&session_id, "facts")
+        .await
+        .expect("session_explain{kind=facts} failed");
+    let facts = response
+        .get("bundle")
+        .unwrap_or_else(|| panic!("no bundle in {response:?}"));
+    assert_eq!(
+        facts.get("crash_detected").and_then(|v| v.as_bool()),
+        Some(false),
+        "the program handled SIGSEGV and SIGABRT and returned 0; reporting a \
+         crash from the delivery means the verdict is reading a signal as a \
+         death. Got: {facts:?}"
+    );
+
+    // The delivery is still visible: it is a fact about the session, and the
+    // fix separates it from the verdict rather than hiding it.
+    let delivered = facts.get("signal_delivered").and_then(|v| v.as_str());
+    assert!(
+        delivered.is_some(),
+        "the handled signal is still worth reporting as delivered. Got: {facts:?}"
+    );
+
+    let response = client
+        .session_explain(&session_id, "inferred")
+        .await
+        .expect("session_explain{kind=inferred} failed");
+    let inferences = response
+        .get("bundle")
+        .and_then(|b| b.get("inferences"))
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("no inferences array in {response:?}"));
+    assert!(
+        !inferences.iter().any(|tag| tag == "CrashDetected"),
+        "the two output kinds answered differently about the same session: \
+         facts said no crash and inferred said yes. Got: {inferences:?}"
+    );
+
+    client.shutdown().await.ok();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// PS6: test_crash_thread_crash_in_non_main_thread
 /// Probe test_crash_thread, debug_find_crash, assert response is valid.
 #[tokio::test]
