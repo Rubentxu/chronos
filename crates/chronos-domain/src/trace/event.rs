@@ -393,6 +393,30 @@ pub enum EventData {
     Signal {
         signal_number: i32,
         signal_name: String,
+        /// `true` only when this signal is what actually ended the tracee.
+        ///
+        /// A `SignalDelivered` event records the *delivery* of a signal, which
+        /// is not the same as the tracee dying from it. A tracee that installs
+        /// a `sigaction` handler and then `raise()`s the signal records a
+        /// delivery and can still exit 0, so a delivery alone is not proof of
+        /// a crash. The tracer does know the difference, because a death
+        /// arrives as `WaitStatus::Signaled` rather than as a stop; this flag
+        /// carries that distinction into the log so a verdict can rest on the
+        /// death instead of on the delivery.
+        ///
+        /// `false` is the default on read, so events written before this field
+        /// existed still load.
+        ///
+        /// The field is deliberately NOT marked `skip_serializing_if`. That
+        /// attribute on a field of an enum variant produces a stream that
+        /// cannot be read back: `SessionStore` persists events with bincode,
+        /// and a serialized `Signal` then fails to deserialize with
+        /// `unexpected end of file`, which takes down every session load that
+        /// contains a signal. Measured: 23 bytes written, undecodable. With
+        /// the plain `default`, the same event round-trips at 24 bytes. The
+        /// cost is one extra key in the JSON encoding of a delivered signal.
+        #[serde(default)]
+        terminated_tracee: bool,
     },
 
     /// Breakpoint hit data.
@@ -702,7 +726,12 @@ impl TraceEvent {
         }
     }
 
-    /// Create a signal event.
+    /// Create a signal event for a signal the tracee *received* and survived.
+    ///
+    /// Use [`Self::signal_termination`] when the signal is the one that ended
+    /// the tracee. Getting this distinction wrong is what makes a crash
+    /// verdict unfalsifiable: a handled signal looks identical to a fatal one
+    /// here.
     pub fn signal(
         event_id: EventId,
         timestamp_ns: TimestampNs,
@@ -710,6 +739,49 @@ impl TraceEvent {
         signal_number: i32,
         signal_name: impl Into<String>,
         address: u64,
+    ) -> Self {
+        Self::signal_inner(
+            event_id,
+            timestamp_ns,
+            thread_id,
+            signal_number,
+            signal_name,
+            address,
+            false,
+        )
+    }
+
+    /// Create a signal event for the signal that *ended* the tracee.
+    ///
+    /// `terminated_tracee: true` is the only evidence in the log that the
+    /// tracee died, as opposed to having merely received a signal.
+    pub fn signal_termination(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        signal_number: i32,
+        signal_name: impl Into<String>,
+        address: u64,
+    ) -> Self {
+        Self::signal_inner(
+            event_id,
+            timestamp_ns,
+            thread_id,
+            signal_number,
+            signal_name,
+            address,
+            true,
+        )
+    }
+
+    fn signal_inner(
+        event_id: EventId,
+        timestamp_ns: TimestampNs,
+        thread_id: ThreadId,
+        signal_number: i32,
+        signal_name: impl Into<String>,
+        address: u64,
+        terminated_tracee: bool,
     ) -> Self {
         Self {
             event_id,
@@ -720,6 +792,7 @@ impl TraceEvent {
             data: EventData::Signal {
                 signal_number,
                 signal_name: signal_name.into(),
+                terminated_tracee,
             },
         }
     }
@@ -1057,9 +1130,14 @@ mod tests {
             EventData::Signal {
                 signal_number,
                 signal_name,
+                terminated_tracee,
             } => {
                 assert_eq!(*signal_number, 11);
                 assert_eq!(signal_name, "SIGSEGV");
+                assert!(
+                    !*terminated_tracee,
+                    "`signal` records a delivery, not a death"
+                );
             }
             _ => panic!("Expected Signal data"),
         }

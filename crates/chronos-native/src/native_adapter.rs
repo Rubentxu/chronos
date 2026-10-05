@@ -179,7 +179,7 @@ mod imp {
                     signal,
                     signal_name,
                     core_dumped: _,
-                } => Some(TraceEvent::signal(
+                } => Some(TraceEvent::signal_termination(
                     event_id,
                     timestamp_ns,
                     *pid as u64,
@@ -339,9 +339,16 @@ mod imp {
                 EventData::Signal {
                     signal_number,
                     signal_name,
+                    terminated_tracee,
                 } => {
                     assert_eq!(*signal_number, 11);
                     assert_eq!(signal_name, "SIGSEGV");
+                    // A `Stopped` is a delivery the tracee may survive, so it
+                    // must not claim to have killed it.
+                    assert!(
+                        !*terminated_tracee,
+                        "a stop is not a death: the tracee is still running when it is reported"
+                    );
                 }
                 _ => panic!("Expected Signal data"),
             }
