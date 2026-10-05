@@ -104,6 +104,7 @@ mod imp {
                     pid,
                     syscall_nr,
                     is_entry,
+                    return_value,
                 } => {
                     let event_type = if *is_entry {
                         EventType::SyscallEnter
@@ -121,7 +122,12 @@ mod imp {
                             name: resolve_syscall(*syscall_nr),
                             number: *syscall_nr,
                             args: Vec::new(),
-                            return_value: 0,
+                            // Raw `rax` reinterpreted as signed: on x86-64 a
+                            // negative return is the errno in two's complement
+                            // (2^64-2 is ENOENT, not a huge number). At entry
+                            // the tracer already delivers 0, because there is
+                            // no return value yet.
+                            return_value: *return_value as i64,
                         },
                     ))
                 }
@@ -349,6 +355,7 @@ mod imp {
                 pid: 5678,
                 syscall_nr: 1,
                 is_entry: true,
+                return_value: 0,
             };
             let trace_evt = adapter
                 .ptrace_event_to_trace_event(&ptrace_evt, 3, MonotonicNs::from(3000))
@@ -360,11 +367,87 @@ mod imp {
                 pid: 5678,
                 syscall_nr: 1,
                 is_entry: false,
+                return_value: 7,
             };
             let trace_evt_exit = adapter
                 .ptrace_event_to_trace_event(&ptrace_evt_exit, 4, MonotonicNs::from(4000))
                 .expect("should convert");
             assert_eq!(trace_evt_exit.event_type, EventType::SyscallExit);
+        }
+
+        /// `return_value` was a constant `0`: the field that should carry the
+        /// return value carried nothing, so half of the "which syscall / what
+        /// did it return" tuple was lost at the boundary. And publishing it as
+        /// `i64` without the cast would turn a negative errno (`rax = 2^64-2`)
+        /// into a huge positive number instead of `-2`.
+        #[test]
+        fn test_syscall_return_value_reaches_the_domain_signed() {
+            let adapter = NativeAdapter::new();
+
+            // Ordinary exit: the return value travels as it is.
+            let exit = PtraceEvent::Syscall {
+                pid: 42,
+                syscall_nr: 1, // write
+                is_entry: false,
+                return_value: 4096,
+            };
+            let evt = adapter
+                .ptrace_event_to_trace_event(&exit, 7, MonotonicNs::from(7000))
+                .expect("should convert");
+            match &evt.data {
+                EventData::Syscall {
+                    name,
+                    number,
+                    return_value,
+                    ..
+                } => {
+                    assert_eq!(name, "write", "the name comes from the orig_rax number");
+                    assert_eq!(*number, 1);
+                    assert_eq!(
+                        *return_value, 4096,
+                        "the exit return value reaches the domain, not a constant 0"
+                    );
+                }
+                other => panic!("Expected Syscall data, got {:?}", other),
+            }
+
+            // Negative errno: 2^64-2 is -ENOENT when signed, not a huge
+            // positive number.
+            let erro = PtraceEvent::Syscall {
+                pid: 42,
+                syscall_nr: 257, // openat
+                is_entry: false,
+                return_value: u64::MAX - 1,
+            };
+            let evt_err = adapter
+                .ptrace_event_to_trace_event(&erro, 8, MonotonicNs::from(8000))
+                .expect("should convert");
+            match &evt_err.data {
+                EventData::Syscall { return_value, .. } => assert_eq!(
+                    *return_value, -2,
+                    "a negative x86-64 return is -errno, not 2^64-2"
+                ),
+                other => panic!("Expected Syscall data, got {:?}", other),
+            }
+
+            // Entry: the tracer delivers 0 and the domain must receive 0, not
+            // a number invented out of rax.
+            let entry = PtraceEvent::Syscall {
+                pid: 42,
+                syscall_nr: 0, // read
+                is_entry: true,
+                return_value: 0,
+            };
+            let evt_entry = adapter
+                .ptrace_event_to_trace_event(&entry, 9, MonotonicNs::from(9000))
+                .expect("should convert");
+            assert_eq!(evt_entry.event_type, EventType::SyscallEnter);
+            match &evt_entry.data {
+                EventData::Syscall { return_value, .. } => {
+                    assert_eq!(*return_value, 0, "on entry there is no return value yet")
+                }
+                other => panic!("Expected Syscall data, got {:?}", other),
+            }
         }
 
         #[test]

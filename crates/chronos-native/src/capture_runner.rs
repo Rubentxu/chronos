@@ -633,6 +633,7 @@ mod imp {
                     pid,
                     syscall_nr,
                     is_entry: _,
+                    return_value,
                 } => {
                     let is_entry = syscall_is_entry.entry(*pid).or_insert(true);
                     let current = *is_entry;
@@ -641,6 +642,7 @@ mod imp {
                         pid: *pid,
                         syscall_nr: *syscall_nr,
                         is_entry: current,
+                        return_value: *return_value,
                     }
                 }
                 other => other.clone(),

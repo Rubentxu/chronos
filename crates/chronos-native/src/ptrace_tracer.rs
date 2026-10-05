@@ -61,6 +61,9 @@ mod bridge {
             pid: i32,
             syscall_nr: u64,
             is_entry: bool,
+            /// Raw `rax` at the exit stop; `0` at entry, where no return value
+            /// exists yet.
+            return_value: u64,
         },
         /// Tracee exited normally with an exit code.
         Exited { pid: i32, exit_code: i32 },
@@ -157,8 +160,12 @@ mod imp {
         /// Tracee hit a syscall entry or exit.
         Syscall {
             pid: i32,
+            /// Syscall number, read from the tracee's `orig_rax`.
             syscall_nr: u64,
             is_entry: bool,
+            /// Raw `rax` at the exit stop, which on x86-64 *is* the return
+            /// value; `0` at entry, where the call has not returned yet.
+            return_value: u64,
         },
         /// Tracee exited normally with an exit code.
         Exited { pid: i32, exit_code: i32 },
@@ -192,6 +199,30 @@ mod imp {
                 PtraceEvent::Registers { pid, .. } => *pid,
             }
         }
+    }
+
+    /// Decide `(syscall_nr, return_value)` from the raw x86-64 register pair
+    /// of a syscall stop.
+    ///
+    /// The two values live in different registers, and reading the wrong one
+    /// is a silent lie rather than a failure: on syscall **entry** `orig_rax`
+    /// holds the syscall number while `rax` still holds whatever the previous
+    /// call left there; on syscall **exit** `orig_rax` still holds the number
+    /// and `rax` holds the **return value**. So `rax` coincides with the
+    /// number only by accident at entry, and at exit it *is* the return
+    /// value — which is exactly how a tracer ends up publishing
+    /// `syscall_139675268489216` (a pointer) or `18446744073709551614` (an
+    /// errno in two's complement) as if they were syscall numbers.
+    ///
+    /// At entry the call has not returned yet, so this reports `0` instead of
+    /// inventing a return value out of the stale `rax`.
+    ///
+    /// Split out as a pure function so the contract is testable against
+    /// register pairs that a real tracee cannot be made to produce on demand,
+    /// and so the answer cannot drift from the call site that reads registers.
+    fn syscall_number_and_return(orig_rax: u64, rax: u64, is_entry: bool) -> (u64, u64) {
+        let return_value = if is_entry { 0 } else { rax };
+        (orig_rax, return_value)
     }
 
     /// Configuration for a ptrace tracing session.
@@ -704,16 +735,35 @@ mod imp {
                     } else {
                         self.syscall_entry_pids.remove(&pid_raw);
                     }
-                    let regs = if self.config.capture_registers {
-                        self.read_registers(pid).ok()
+                    // The raw `user_regs_struct` is required here: the syscall
+                    // number lives in `orig_rax` and the return value in `rax`,
+                    // and `RegisterState` (a domain type) carries no
+                    // `orig_rax`. Reading `rax` as the number is what made a
+                    // syscall exit publish its return value disguised as a
+                    // syscall.
+                    let (syscall_nr, return_value) = if self.config.capture_registers {
+                        match ptrace::getregs(pid) {
+                            Ok(regs) => {
+                                syscall_number_and_return(regs.orig_rax, regs.rax, is_entry)
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "PTRACE_GETREGS failed for PID {} at syscall {}: {}",
+                                    pid,
+                                    if is_entry { "entry" } else { "exit" },
+                                    e
+                                );
+                                (0, 0)
+                            }
+                        }
                     } else {
-                        None
+                        (0, 0)
                     };
-                    let syscall_nr = regs.as_ref().map(|r| r.rax).unwrap_or(0);
                     Some(PtraceEvent::Syscall {
                         pid: pid_raw,
                         syscall_nr,
                         is_entry,
+                        return_value,
                     })
                 }
 
@@ -994,6 +1044,151 @@ mod imp {
     mod tests {
         use super::*;
 
+        /// The syscall number is taken from `orig_rax`, never from `rax`.
+        ///
+        /// On x86-64 `rax` coincides with `orig_rax` only by accident (at the
+        /// entry of the first call, or when the return value happens to match
+        /// numerically). Reading `rax` as the number is what fed names like
+        /// `syscall_139675268489216` into the log: return values published as
+        /// if they were real syscalls. This test is built from the values
+        /// actually measured in a real ExecutionLog, where `orig_rax` and `rax`
+        /// disagree, plus a healthy sibling case where they agree: both must
+        /// yield the SAME number, and that number must be the one in
+        /// `orig_rax`.
+        #[test]
+        fn syscall_number_comes_from_orig_rax_and_not_from_rax() {
+            // A `read` exit that returned a pointer: `orig_rax = 0` (read),
+            // `rax = 139675268489216` (the pointer). Measured, not invented.
+            let (nr_exit, _) = syscall_number_and_return(0, 139_675_268_489_216, false);
+            assert_eq!(
+                nr_exit, 0,
+                "on a read exit the number is still 0 (orig_rax), not the pointer in rax"
+            );
+
+            // A negative errno in two's complement: `orig_rax = 60` (exit),
+            // `rax = u64::MAX - 1`. x86-64 has 334 syscalls, so 2^64-2 cannot
+            // be a syscall number.
+            let (nr_exit2, _) = syscall_number_and_return(60, u64::MAX - 1, false);
+            assert_eq!(
+                nr_exit2, 60,
+                "on an exit exit the number is 60 (orig_rax), not 2^64-2 (rax)"
+            );
+
+            // Entry: `rax` carries the remains of the previous call. Every one
+            // of these values is garbage as a syscall number.
+            for stale_rax in [0u64, 1, 585_826_304, 139_675_268_489_216, u64::MAX] {
+                let (nr, _) = syscall_number_and_return(257, stale_rax, true);
+                assert_eq!(
+                    nr, 257,
+                    "on entry the number is 257 (orig_rax) even when rax is {}",
+                    stale_rax
+                );
+            }
+
+            // Healthy sibling case: `orig_rax` and `rax` agree and the result
+            // does not change. Without it, a fix that ignored `orig_rax`
+            // whenever it happened to be in its favour could pass the case
+            // above by luck.
+            let (nr_healthy, _) = syscall_number_and_return(0, 0, true);
+            assert_eq!(nr_healthy, 0);
+            let (nr_healthy_exit, ret_healthy) = syscall_number_and_return(1, 1, false);
+            assert_eq!(
+                nr_healthy_exit, 1,
+                "when both registers agree, the number does not change"
+            );
+            assert_eq!(ret_healthy, 1, "and the return value is that same value");
+        }
+
+        /// The return value is taken from `rax` on a syscall exit.
+        ///
+        /// The three values are the ones that showed up as `number` on
+        /// `syscall_exit` events of a real ExecutionLog before the fix: a
+        /// small number, a pointer, and a negative errno in two's complement.
+        /// All three are impossible as syscall numbers on x86-64 (334
+        /// syscalls), and all three have to travel as the return value.
+        #[test]
+        fn syscall_exit_return_value_comes_from_rax() {
+            let (_, r) = syscall_number_and_return(0, 585_826_304, false);
+            assert_eq!(r, 585_826_304);
+
+            let (_, r2) = syscall_number_and_return(0, 139_675_268_489_216, false);
+            assert_eq!(r2, 139_675_268_489_216);
+
+            let (_, r3) = syscall_number_and_return(60, u64::MAX - 1, false);
+            assert_eq!(
+                r3,
+                u64::MAX - 1,
+                "the negative errno is delivered raw; the cast to i64 happens in the adapter"
+            );
+        }
+
+        /// A syscall entry never invents a return value: the call has not come
+        /// back yet, and `rax` holds the remains of the previous one.
+        /// Reporting those remains as the return value would be a second form
+        /// of the same lie.
+        #[test]
+        fn syscall_entry_never_invents_a_return_value() {
+            for stale_rax in [
+                0u64,
+                1,
+                42,
+                585_826_304,
+                139_675_268_489_216,
+                u64::MAX - 1,
+                u64::MAX,
+            ] {
+                let (_, ret) = syscall_number_and_return(0, stale_rax, true);
+                assert_eq!(
+                    ret, 0,
+                    "on entry there is no return value to report even when rax is {}",
+                    stale_rax
+                );
+            }
+        }
+
+        /// The boundary of the function, in both directions.
+        ///
+        /// `is_entry` decides the return value and nothing else: the number
+        /// always comes from `orig_rax`. And the exit return value is `rax`
+        /// verbatim, extremes included (0, all-ones), because truncating it
+        /// here would lose the negative errno.
+        #[test]
+        fn syscall_number_and_return_boundaries() {
+            let extremes = [0u64, 1, 334, u64::MAX / 2, u64::MAX - 1, u64::MAX];
+
+            for orig_rax in extremes {
+                // Entry: number from orig_rax, return 0 whatever rax is.
+                for rax in extremes {
+                    let (nr, ret) = syscall_number_and_return(orig_rax, rax, true);
+                    assert_eq!(nr, orig_rax, "the number never comes from rax (entry)");
+                    assert_eq!(ret, 0, "entry does not invent a return value");
+                }
+                // Exit: number from orig_rax, return = rax exactly.
+                for rax in extremes {
+                    let (nr, ret) = syscall_number_and_return(orig_rax, rax, false);
+                    assert_eq!(nr, orig_rax, "the number never comes from rax (exit)");
+                    assert_eq!(ret, rax, "the exit return value is rax, untruncated");
+                }
+            }
+        }
+
+        /// The syscall number never comes from `rax` and never the other way
+        /// round, for any pair of registers: if the two were swapped, one of
+        /// the tests above would stop holding.
+        #[test]
+        fn syscall_number_and_return_never_confuses_rax_with_orig_rax() {
+            for orig_rax in [0u64, 1, 59, 60, 257, 334] {
+                for rax in [0u64, 1, 59, 60, 257, 334, u64::MAX] {
+                    if orig_rax == rax {
+                        continue;
+                    }
+                    let (nr, ret) = syscall_number_and_return(orig_rax, rax, false);
+                    assert_eq!(nr, orig_rax, "orig_rax={} rax={}", orig_rax, rax);
+                    assert_eq!(ret, rax, "orig_rax={} rax={}", orig_rax, rax);
+                }
+            }
+        }
+
         /// DEBT-WAIT-EVENT-UNBOUNDED-01: the stall threshold is a boundary,
         /// and a boundary that cannot be crossed on either side is not a
         /// threshold. Both directions are pinned here because both are the
@@ -1086,6 +1281,7 @@ mod imp {
                 pid: 9012,
                 syscall_nr: 1,
                 is_entry: true,
+                return_value: 0,
             };
             assert_eq!(event.pid(), 9012);
 
