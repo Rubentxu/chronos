@@ -1,0 +1,44 @@
+{
+  "base_tag": "v0.10.0",
+  "base_commit": "57c36040f29ffea2df11335324037a35d393641c",
+  "head_commit": "193f048cb626898500e390c78c62118a8d20f524",
+  "head_tree": "628de41f8c74f7e540d8454804165713714a995d",
+  "commits_in_range": 9,
+  "files_changed": 32,
+  "diff_digest": "sha256:0aae3e7a586b90633cf8520b5443bbfdf375e0905488c580541ad82be827c6ff",
+  "cycle_id": "p-3416cfb8288f8964/r6-9-tracer-truthfulness",
+  "path": "B-direct",
+  "phase": "build",
+  "status": "success",
+  "argv": "git log --format=%s v0.10.0..HEAD | sed -E 's/^([a-z]+)(\\(.*\\))?!?:.*/\\1/' | sort | uniq -c | sort -rn",
+  "exit_code": 0,
+  "commit_mix": {
+    "fix": 5,
+    "chore": 2,
+    "test": 1,
+    "docs": 1
+  },
+  "headline_capabilities": [
+    "R6.9 cierra DEBT-WAIT-EVENT-UNBOUNDED-01 con la limitacion residual declarada: wait_event mantiene su contrato de bloquear hasta el proximo evento, y lo que cambia es que el silencio se explica con un warn! unico al cruzar 30 s.",
+    "El coste de sondeo quedo MEDIDO, no supuesto, como pedia la condicion de cierre: 16 sesiones en reposo cuestan 0,11 CPU-s por 10 s (1,1 % de un nucleo), con pendiente de 0,005-0,007 CPU-s por segundo y sesion y crecimiento lineal en N.",
+    "56139384: el live probe entrega las senales al tracee en vez de tragarselas. DEBT-SIGNAL-SUPPRESSED-01, severidad alta. La regla es 'se consumen todas las senales de parada y se entregan todas las demas', aplicada a los dos bucles de probe_backend.rs.",
+    "015cd72e: find_crash no atribuye al programa el SIGKILL que chronos envia en su propio teardown. DEBT-CRASH-TEARDOWN-SIGKILL-01, severidad alta. Un SIGKILL genuine sin otra senal (OOM killer) se sigue detectando, y el veredicto lleva un note que declara la ambiguedad.",
+    "7a8660eb: el numero de syscall sale de orig_rax y el valor de retorno es real. DEBT-SYSCALL-NR-FROM-RAX-01. Antes, las salidas de syscall publicaban el valor de retorno como si fuera el numero: 18446744073709551614 y punteros como 139675268489216.",
+    "1f935900: el tick de sondeo pasa de fijo a backoff 100 us..10 ms con reinicio por evento, en las dos ramas de wait_event. DEBT-POLL-TICK-CAP-01, encontrado por el propio R6.9 contra si mismo.",
+    "53fcbffc: fixture test_sleep, la primera que puede mantener un tracer en el estado de 'vivo y sin producir', que es el estado para el que existe el aviso de estancamiento y el unico en el que se puede medir su coste.",
+    "193f048c: el ledger cierra la deuda con su limitacion residual y registra los cuatro defectos, incluido el adyacente de capture_registers: false con trace_syscalls: true, que se anota y NO se abre otro frente."
+  ],
+  "evidence": {
+    "end_to_end": "chronos-sandbox program_scenarios 11/11 en 331,57 s con el binario reconstruido. Los dos tests que fallaban antes (test_abort_crash_detected_sigabrt y test_divide_by_zero_crash_detected) pasan, y es la primera vez que se ve el crash real en vez del SIGKILL de teardown.",
+    "end_to_end_before": "Con solo los tres arreglos de Finder y sin el backoff, program_scenarios daba 9 passed / 2 failed: los tests unitarios pasaban y el producto seguia roto.",
+    "static": "cargo fmt --all --check limpio; cargo clippy --workspace --all-targets -- -D warnings sin errores ni avisos.",
+    "unit": "chronos-native --lib 131/131; chronos-services --lib 613/613.",
+    "gates": "vault-drift-sweep PASS (50 python CCs, 7 bash CCs); validate_cycle_artifacts.py PASSED on 34 cycles.",
+    "cc4": "CC#4 quedo rojo por el cambio legitimo de probe_backend.rs y se remedyo con la herramienta de diseno, regen_manifest_index_shas.py, no relajando el gate."
+  },
+  "method_notes": [
+    "El A/B inicial (revertir ptrace_tracer.rs a HEAD y comprobar que los dos tests seguian fallando) exoneraba correctamente al cambio pero NO detecto que lo empeoraba: un A/B que demuestra 'no lo introduje' no dice 'no lo empeore'.",
+    "El defecto del tick fijo solo se hizo visible volcando el ExecutionLog de una sesion real y mirando los deltas entre eventos: 10,1 ms constantes, que son el tick y no el programa. strace -c sobre la fixture dio las 36 syscalls, o sea 72 paradas, y a 10 ms por parada hacen falta 720 ms para un programa que se ejecuta en menos de un milisegundo.",
+    "La unica forma de saber si el arreglo funciona es el test end-to-end con un proceso de verdad delante. Los 131 tests unitarios estaban en verde mientras la captura no podia trazar un programa normal."
+  ]
+}

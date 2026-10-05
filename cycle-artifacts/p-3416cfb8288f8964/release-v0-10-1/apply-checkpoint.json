@@ -1,0 +1,25 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/release-v0-10-1",
+  "title": "El tracer dice la verdad sobre lo que le paso al programa observado",
+  "summary": "Cuatro defectos de veracidad cerrados y verificados end-to-end, mas el cierre de\nDEBT-WAIT-EVENT-UNBOUNDED-01 con su coste medido y su limitacion residual declarada. El live probe\nse tragaba las senales del tracee; find_crash culpaba al programa del SIGKILL de teardown; las\nsalidas de syscall publicaban el valor de retorno como numero; y el tick de sondeo estrangulaba la\ncaptura a 100 paradas por segundo.",
+  "head_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "base_sha": "57c36040f29ffea2df11335324037a35d393641c",
+  "main_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "remote_tag": "v0.10.1",
+  "remote_tag_peel": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "peel_match": true,
+  "status": "CLOSED",
+  "path": "B-direct",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "archived",
+  "created_at": "2026-10-05T05:00:00Z",
+  "tag_object": "e6990bb81e24506e4f20c7e2a2570eb37d1d0495",
+  "findings_introduced": {
+    "no_action": [],
+    "count": 0,
+    "self_inflicted": "Este ciclo SI introdujo un defecto, DEBT-POLL-TICK-CAP-01 en f04efc00, y lo encontro y\ncorrigio el propio ciclo en 1f935900. Queda constancia porque los 131 tests de unidad estaban en\nverde mientras la captura no podia trazar un programa de 36 syscalls. Una auditoria independiente\nencontro ademas que el arreglo no estaba fijado en ninguna parte: restaurar el tick fijo dejaba\n131/131 en verde, lo que se corrigio en 53548731 con un test de tasa contra un tracee real."
+  },
+  "tag_contains_product": "git diff v0.10.1..HEAD -- crates/ chronos-sandbox/ Cargo.toml Cargo.lock sale vacio: el tag\ncontiene todo el producto y no una parte.",
+  "t4_authority": "La CI remota es la autoridad de integracion: 6/6 workflows verdes sobre\nd0b146dba44489d39eb643478e99a783d0dcdd52, con el job Test completo, Skip args vacio y cero\ntest result: FAILED en el log. El verde local de T2 (6 suites, 48/48) es necesario pero no\nsuficiente para integrar."
+}

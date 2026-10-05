@@ -1,0 +1,24 @@
+{
+  "cycle_id": "p-3416cfb8288f8964/r6-9-tracer-truthfulness",
+  "title": "R6.9: el tracer deja de mentir sobre el programa observado",
+  "summary": "Cierra DEBT-WAIT-EVENT-UNBOUNDED-01 con su limitacion residual declarada y el coste medido, y\ncorrige cuatro defectos de veracidad del tracer. Este ciclo trabajo se publico como v0.10.1 en el\nciclo release-v0-10-1; aqui queda el rastro del trabajo y de lo que se completo despues, incluida\nuna correccion que solo una auditoria independiente encontro: el arreglo del sondeo no estaba fijado\nen ninguna parte y cuatro comentarios afirmaban cosas falsas.",
+  "head_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "base_sha": "57c36040f29ffea2df11335324037a35d393641c",
+  "main_sha": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "remote_tag": "v0.10.1",
+  "remote_tag_peel": "2969d4a2d4de15e8071bc579086b158eac78c436",
+  "peel_match": true,
+  "status": "CLOSED",
+  "path": "B-direct",
+  "verify_status": "passed",
+  "release_status": "released",
+  "archive_status": "complete",
+  "created_at": "2026-10-05T05:00:00Z",
+  "published_as": "v0.10.1, cuyo ciclo de release es p-3416cfb8288f8964/release-v0-10-1",
+  "findings_introduced": {
+    "no_action": [],
+    "count": 0,
+    "self_inflicted": "DEBT-POLL-TICK-CAP-01 lo introdujo f04efc00 en este mismo ciclo y lo corrigio 1f935900. Se deja constancia porque los 131 tests de unidad estaban en verde mientras la captura no podia trazar un programa de 36 syscalls."
+  },
+  "t4_authority": "La publicacion quedo bajo la CI remota de d0b146db, 6/6 workflows verdes. Este ciclo es el del trabajo; el de la release es release-v0-10-1."
+}
