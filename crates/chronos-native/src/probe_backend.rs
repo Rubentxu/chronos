@@ -375,6 +375,106 @@ impl Default for NativeProbeBackend {
     }
 }
 
+/// How the live probe loop must resume the tracee after handling an event.
+///
+/// Kept apart from the `Result` because the decision is made before the
+/// process is touched: that lets the rule be pinned in a test without
+/// needing a real tracee.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResumeAction {
+    /// `PTRACE_SYSCALL` with no signal: the event was a syscall stop.
+    Syscall,
+    /// `PTRACE_CONT` with no signal: the signal is consumed by us.
+    Suppressed,
+    /// `PTRACE_CONT` re-injecting the signal into the tracee.
+    Delivered(nix::sys::signal::Signal),
+}
+
+#[cfg(target_os = "linux")]
+impl ResumeAction {
+    /// Name of the ptrace call this action performs, for the failed-resume
+    /// warning.
+    fn op_name(self) -> &'static str {
+        match self {
+            ResumeAction::Syscall => "syscall_continue",
+            ResumeAction::Suppressed => "continue_execution",
+            ResumeAction::Delivered(_) => "continue_with_signal",
+        }
+    }
+}
+
+/// Is this a signal whose default action is to **stop** the process?
+///
+/// These, and only these, are never re-injected into the tracee. The reason is
+/// single and does not depend on the number: the default action of all four is
+/// to stop, so re-injecting one with `PTRACE_CONT` guarantees zero progress —
+/// the tracee resumes, stops again, the kernel reports it back to us as
+/// `Stopped`, and the loop repeats the delivery indefinitely without ever
+/// executing a single instruction. Enumerating only SIGSTOP and leaving
+/// SIGTSTP/SIGTTIN/SIGTTOU out would be an accidental pattern with the same
+/// cause under three other numbers, not a decision.
+///
+/// The common SIGSTOP case never even reaches the loop: under
+/// `PTRACE_O_TRACECLONE` a freshly created child is born stopped with it, and
+/// `PtraceTracer::process_wait_status_impl` already resumes it with
+/// `ptrace::syscall`/`ptrace::cont` and `None`, consuming that first stop. The
+/// ones that do arrive (a group stop, an external `kill -STOP`) are not a
+/// signal the program expects to process either: consuming them lets the tracee
+/// make progress, which is what a crash probe needs.
+#[cfg(target_os = "linux")]
+fn is_stop_signal(sig: i32) -> bool {
+    use nix::sys::signal::Signal;
+
+    matches!(
+        Signal::try_from(sig).ok(),
+        Some(Signal::SIGSTOP | Signal::SIGTSTP | Signal::SIGTTIN | Signal::SIGTTOU)
+    )
+}
+
+/// Decide how to resume the tracee, replicating the dispatch order already
+/// proven in `capture_runner`: the syscall branch first (only for `Syscall`
+/// events), then the signal branch, then `PtraceEvent`.
+///
+/// The rule: **every stop signal is consumed and everything else is
+/// delivered.** `is_stop_signal` is consumed (the default action is to stop;
+/// re-injecting one would be a loop with no progress), and so is SIGTRAP,
+/// which is not a stop signal but is not the program's either: ptrace itself
+/// generates it (syscall stops, breakpoints, `PTRACE_EVENT_*`) and by
+/// definition there is nobody to hand it back to. Everything else is delivered
+/// so the tracee can process it and die cleanly.
+///
+/// The defect this corrects: always resuming with the signal suppressed
+/// (`None`) made the tracee record SIGABRT but never receive it. The program
+/// called `abort()`, chronos swallowed the signal and the process stayed alive
+/// until teardown SIGKILLed it, so the capture then reported SIGKILL instead of
+/// the signal the program actually died from.
+///
+/// Deliberate divergence from `capture_runner`: there only SIGTRAP is
+/// suppressed and these four are re-injected. Not here, for the reason
+/// [`is_stop_signal`] gives. `capture_runner` keeps its own rule because its
+/// own tests cover it; the two capture paths differ on purpose.
+#[cfg(target_os = "linux")]
+fn resume_action(trace_syscalls: bool, event: &crate::ptrace_tracer::PtraceEvent) -> ResumeAction {
+    use crate::ptrace_tracer::PtraceEvent;
+    use nix::sys::signal::Signal;
+
+    match event {
+        PtraceEvent::Syscall { .. } if trace_syscalls => ResumeAction::Syscall,
+        PtraceEvent::Stopped { signal, .. } => match Signal::try_from(*signal) {
+            Ok(Signal::SIGTRAP) => ResumeAction::Suppressed,
+            Ok(_) if is_stop_signal(*signal) => ResumeAction::Suppressed,
+            Ok(sig) => ResumeAction::Delivered(sig),
+            // A signal number we do not know: there is nothing to re-inject.
+            Err(_) => ResumeAction::Suppressed,
+        },
+        // `process_wait_status_impl` already resumes the freshly created child;
+        // here only the parent is resumed.
+        PtraceEvent::PtraceEvent { .. } => ResumeAction::Suppressed,
+        _ => ResumeAction::Suppressed,
+    }
+}
+
 impl NativeProbeBackend {
     /// Create a new native probe backend.
     ///
@@ -1178,10 +1278,14 @@ impl NativeProbeBackend {
                     crate::ptrace_tracer::PtraceEvent::Signaled { .. }
                 )
             {
-                let continue_result = if ptrace_config.trace_syscalls {
-                    tracer.syscall_continue(event_pid)
-                } else {
-                    tracer.continue_execution(event_pid)
+                let action = resume_action(ptrace_config.trace_syscalls, &ptrace_event);
+                let continue_result = match action {
+                    ResumeAction::Syscall => tracer.syscall_continue(event_pid),
+                    ResumeAction::Suppressed => tracer.continue_execution(event_pid),
+                    ResumeAction::Delivered(sig) => {
+                        debug!("Probe: resuming PID {} with {}", event_pid, sig);
+                        tracer.continue_with_signal(event_pid, sig)
+                    }
                 };
                 if let Err(e) = continue_result {
                     // R6.5: this is `warn!`, not `debug!`, on purpose. A failed
@@ -1195,11 +1299,7 @@ impl NativeProbeBackend {
                         "Failed to continue PID {} ({}): {}. The tracee may be left \
                          stopped and this capture may stop producing events.",
                         event_pid,
-                        if ptrace_config.trace_syscalls {
-                            "syscall_continue"
-                        } else {
-                            "continue_execution"
-                        },
+                        action.op_name(),
                         e
                     );
                 }
@@ -1342,10 +1442,16 @@ impl NativeProbeBackend {
                     crate::ptrace_tracer::PtraceEvent::Signaled { .. }
                 )
             {
-                let continue_result = if ptrace_config.trace_syscalls {
-                    tracer.syscall_continue(event_pid)
-                } else {
-                    tracer.continue_execution(event_pid)
+                // Same dispatch rule as the spawn loop: without this, an
+                // attach would swallow the tracee's SIGABRT too.
+                let action = resume_action(ptrace_config.trace_syscalls, &ptrace_event);
+                let continue_result = match action {
+                    ResumeAction::Syscall => tracer.syscall_continue(event_pid),
+                    ResumeAction::Suppressed => tracer.continue_execution(event_pid),
+                    ResumeAction::Delivered(sig) => {
+                        debug!("Attach: resuming PID {} with {}", event_pid, sig);
+                        tracer.continue_with_signal(event_pid, sig)
+                    }
                 };
                 if let Err(e) = continue_result {
                     debug!("Failed to continue PID {}: {}", event_pid, e);
@@ -2204,6 +2310,173 @@ mod tests {
                 "worker {state:?} + tracee {tracee:?}"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Signal dispatch when resuming the tracee
+    // ------------------------------------------------------------------
+
+    /// A tracee stop that is not ours must be delivered back to it.
+    ///
+    /// This is the measured defect: always resuming with `None` (signal
+    /// suppressed) made the loop record SIGABRT but never deliver it, so the
+    /// program called `abort()`, chronos swallowed it, the process stayed
+    /// alive, and the capture ended up reporting the teardown SIGKILL. The
+    /// healthy sibling case is the same event with `trace_syscalls` off: the
+    /// signal is delivered either way, because the syscall branch only
+    /// applies to `Syscall` events.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn signal_dispatch_delivers_a_stop_the_probe_does_not_own() {
+        use crate::ptrace_tracer::PtraceEvent;
+        use nix::sys::signal::Signal;
+        use ResumeAction::{Delivered, Suppressed, Syscall};
+
+        let stopped = |signal: i32| PtraceEvent::Stopped {
+            pid: 4242,
+            signal,
+            signal_name: String::new(),
+        };
+
+        // The real failures of `abort()` and divide-by-zero, with syscall
+        // tracing on (the probe's default configuration).
+        for (num, expected) in [
+            (6, Signal::SIGABRT),
+            (8, Signal::SIGFPE),
+            (11, Signal::SIGSEGV),
+            (9, Signal::SIGKILL),
+        ] {
+            for trace_syscalls in [true, false] {
+                assert_eq!(
+                    resume_action(trace_syscalls, &stopped(num)),
+                    Delivered(expected),
+                    "signal {expected} (no {num}) must go back to the tracee \
+                     (trace_syscalls={trace_syscalls}): if it is suppressed, the \
+                     program records the failure but does not die from it"
+                );
+            }
+        }
+
+        // Dispatch order: the syscall branch only wins for `Syscall`. The
+        // construction lives here rather than inline so that a new event
+        // field is a one-place fix.
+        fn syscall_event() -> PtraceEvent {
+            PtraceEvent::Syscall {
+                pid: 4242,
+                syscall_nr: 60,
+                is_entry: true,
+                return_value: 0,
+            }
+        }
+        let syscall = syscall_event();
+        assert_eq!(
+            resume_action(true, &syscall),
+            Syscall,
+            "with trace_syscalls a syscall stop resumes through PTRACE_SYSCALL"
+        );
+        assert_eq!(
+            resume_action(false, &syscall),
+            Suppressed,
+            "without trace_syscalls a syscall stop resumes through PTRACE_CONT"
+        );
+
+        // A `PtraceEvent` must not fall into the syscall branch either: with
+        // trace_syscalls on, the freshly created child is resumed without a
+        // signal (`process_wait_status_impl` already did that with its first
+        // SIGSTOP).
+        assert_eq!(
+            resume_action(
+                true,
+                &PtraceEvent::PtraceEvent {
+                    pid: 4242,
+                    event_code: 3,
+                    new_pid: Some(4243),
+                }
+            ),
+            Suppressed,
+            "a clone event is not a syscall stop"
+        );
+    }
+
+    /// Every stop signal is consumed, and so is SIGTRAP.
+    ///
+    /// The complete rule: the four signals whose default action is to stop
+    /// (SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU) are consumed, plus SIGTRAP, which
+    /// ptrace itself generates. Enumerating only SIGSTOP and leaving the
+    /// other three out would be the same cause under different numbers:
+    /// re-injecting one makes the tracee resume, stop again, be reported back
+    /// to us by the kernel, and the loop delivers the same signal forever
+    /// without executing an instruction.
+    ///
+    /// The healthy sibling case is the reverse, and it pins the half of the
+    /// rule that matters: failure signals and non-stopping signals are still
+    /// delivered, so the suppression has not swallowed the original defect.
+    /// The other sibling is an out-of-table number, which has no valid value
+    /// to re-inject.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn signal_dispatch_consumes_every_stop_signal_and_nothing_else() {
+        use crate::ptrace_tracer::PtraceEvent;
+        use nix::sys::signal::Signal;
+        use ResumeAction::{Delivered, Suppressed};
+
+        let stopped = |signal: i32| PtraceEvent::Stopped {
+            pid: 4242,
+            signal,
+            signal_name: String::new(),
+        };
+
+        // The complete stop set. Each row is one of the four; all four have
+        // to be present, not just the first.
+        for (num, name) in [
+            (Signal::SIGSTOP, "SIGSTOP"),
+            (Signal::SIGTSTP, "SIGTSTP"),
+            (Signal::SIGTTIN, "SIGTTIN"),
+            (Signal::SIGTTOU, "SIGTTOU"),
+        ] {
+            assert_eq!(
+                resume_action(true, &stopped(num as i32)),
+                Suppressed,
+                "{name} is not re-injected: the tracee would stop again without \
+                 making progress and the loop would keep delivering the same \
+                 signal forever"
+            );
+        }
+
+        assert_eq!(
+            resume_action(true, &stopped(5)),
+            Suppressed,
+            "ptrace itself generates SIGTRAP and it is never re-injected"
+        );
+
+        // Healthy sibling: anything that is not a stop is still delivered.
+        // Without this half, "consume too much" would pass the test.
+        for (num, expected) in [
+            (Signal::SIGABRT, "SIGABRT"),
+            (Signal::SIGSEGV, "SIGSEGV"),
+            (Signal::SIGFPE, "SIGFPE"),
+            (Signal::SIGCHLD, "SIGCHLD"),
+        ] {
+            assert_eq!(
+                resume_action(true, &stopped(num as i32)),
+                Delivered(num),
+                "{expected} is not a stop signal and must go back to the tracee"
+            );
+        }
+
+        // An out-of-table number cannot be re-injected, but it also proves
+        // nothing: it is not a valid signal.
+        assert_eq!(
+            resume_action(true, &stopped(99)),
+            Suppressed,
+            "an out-of-table signal number cannot be re-injected"
+        );
+        assert_eq!(
+            Signal::try_from(99),
+            Err(nix::errno::Errno::EINVAL),
+            "the healthy sibling: 99 is not a valid signal, so the previous \
+             assertion is not testing a shortcut"
+        );
     }
 }
 
