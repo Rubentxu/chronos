@@ -1007,3 +1007,87 @@ dicho en el codigo, no solo en el informe de la auditoria.
 siga devolviendo SIGABRT. Eso exige que el producto pueda decir "el tracee termino con SIGABRT" y no
 "recibio SIGABRT", que es exactamente el trabajo de raiz de arriba. La mutacion de la auditoria queda
 como la prueba de no-vacuidad que ese test debera tener y hoy no tiene.
+
+---
+
+## Correccion a DEBT-CRASH-VERDICT-SOURCE-01 (2026-10-05, al cerrar R6.9): el alcance era mayor del necesario
+
+La entrada de arriba dice que la reparacion "toca la forma del evento en `chronos-domain`". **Eso es
+incorrecto, y un mapeo de impacto posterior lo desmiente.** Se conserva el texto original (§0.4) y se
+anota la correccion con su evidencia.
+
+**Lo que la entrada afirmaba.** Que hacer que el veredicto se apoye en la muerte del tracee exige anadir
+una variante a `EventType` en `chronos-domain`, con el riesgo de romper un `match` exhaustivo y tres
+consumidores en silencio.
+
+**Lo que se comprobo.** El dato de terminacion **ya viaja end-to-end** y no por un canal que haya que
+inventar:
+
+- `crates/chronos-native/src/native_adapter.rs:161-175` convierte `PtraceEvent::Exited` en
+  `EventType::Custom` + `EventData::Custom { name: "process_exit", ... }`. El canal existe y ya se usa.
+- `chronos-sandbox/tests/program_scenarios.rs:395-419` lo lee de una captura real, con su `exit_code`.
+- La perdida ocurre en **un solo brazo**: `native_adapter.rs:177-189`, donde `PtraceEvent::Signaled`
+  (la MUERTE) se aplana en la misma representacion que `PtraceEvent::Stopped` (la ENTREGA). A partir de
+  ahi el log no puede distinguirlas. Toda la deuda cabe en ese brazo.
+
+**Por que anadir la variante habria sido el error caro.** Anadir `EventType::TraceeExit = 19` no compra
+informacion: compra una rotura de compilacion en `event.rs:205-231` (unico `match` exhaustivo) mas
+tres regresiones silenciosas que no habria pedido permiso:
+
+| Sitio | Efecto silencioso de la variante nueva |
+|---|---|
+| `crates/chronos-domain/src/trace/event.rs:190` | `from_snake_case` devuelve `None` sin error |
+| `crates/chronos-domain/src/property.rs:1644` | `event_type_label` cae en `_ => "other"`, y como `scan_predicate_domain` compara por etiqueta, `PropertyExistencePredicate::EventTypeEquals` no podria seleccionar jamas el evento nuevo |
+| `crates/chronos-services/src/session_lifecycle.rs:533-545` | la capacidad no lo anuncia |
+
+Ademas `crates/chronos-mcp/src/server.rs:4410` afirma `all.len() == 21`: si la variante se anade a la
+lista de test (lo correcto) el assert falla, y si no se anade la variante nueva nunca se prueba el
+round-trip. Una bomba de relojería que solo dispara cuando se hace bien.
+
+**Ademas hay una segunda via de veredicto con el mismo defecto**, que esta entrada no menciona y que
+si se arregla hay que arreglar junto o knowingly dejar rota: `crates/chronos-services/src/
+session_explain.rs:160-186` y `crates/chronos-query/src/engine.rs:420-434` derivan `crash_detected` y
+`potential_issues` de `EventData::Signal`. Los dos leen la entrega, no la muerte.
+
+**Y el dato que agrava el vacio de los tests**, que la entrada subestima: en
+`chronos-sandbox/src/client/tools.rs:1056-1070`, `debug_find_crash` devuelve `Ok(None)`
+**exactamente cuando `crash_found == false`**. Osea que en esos tests `None` no significa "no lo se",
+significa el veredicto definido "no hubo crash", y el test lo acepta como aprobado sobre una fixture que
+crashea por definicion. El test no distingue el arreglo de su ausencia porque tal como esta, no puede.
+
+**Estado de la correccion:** la entrada sigue `OPEN` y su primera condicion de cierre sigue sin
+cumplirse. Lo que cambia es el camino, que es bastante mas corto de lo aqui descrito.
+
+## DEBT-VAULT-NODE-ID-DUP-01 (2026-10-05) - el grafo de knowledge tiene el id de nodo `tasks` repetido
+
+**Estado:** `OPEN`, registrada al archivar R6.9 · **Severidad:** baja. No hace fallar ninguna puerta del
+repositorio; estropea la desambiguacion del indice de knowledge.
+
+**Como se encontro.** Al cerrar el ciclo R6.9 habia que firmar el gate `vault-index-current`, asi que se
+corrio la comprobacion que el gate no ejecuta: `sddk vault validate --vault .sddk-knowledge`.
+
+**Que dice exactamente.** **268 errores `VAULT002`**: el id de nodo `tasks` lo usan por mas de un
+fichero, en 19 cambios: `m9-77-attach-runtime`, `m9-80-property-policy-ownership`,
+`m9-81-counterexample-table-classifier`, `m9-82-degraded-store-disclosure`, `m9-83-cc39-total-cycles`,
+`m9-84`..`m9-88`, `m9-89-cascade-cc-cleanup-m9-77-87`, `m9-90-stale-branches-cleanup`,
+`m9-91-counterexample-bundle-events-mcp-tool`, `m9-92-cc34-cc42-cleanup`,
+`m9-93-trace-event-json-schema`, `m9-94-cc001-test-split`, `m9-95-services-test-split`,
+`m9-96-cc001-housekeeping`, `m9-97-cc004-implicit-io-toctou`. El conflicto es siempre el mismo: cada uno
+de esos `changes/*/tasks.md` declara su nodo con el id `tasks`.
+
+**Que NO es.** No es una regresion de R6.9 y no lo introdujo este bloque. El primer fichero implicado lo
+creo `6900395d` (ciclo m9-92), muy anterior a R6.9, y ningun commit del rango `260eb5ce..HEAD` toco
+ninguno de esos 19 ficheros: `git log --oneline 260eb5ce..HEAD -- '.sddk-knowledge/*/changes/m9-7*/tasks.md'
+'.sddk-knowledge/*/changes/m9-8*/tasks.md' '.sddk-knowledge/*/changes/m9-9*/tasks.md'` sale **vacio**.
+
+**Por que no rompe la puerta del repositorio.** La bateria que CI ejecuta es
+`bash scripts/check_vault_drift.sh` (que corre el meta-check CC#48 sobre los 50 CCs de python) mas
+`python3 scripts/validate_cycle_artifacts.py`. Ninguna de las dos consulta `sddk vault validate`. Y la
+prueba de que el **indice** esta al dia es otra y si pasa: `CC#4` responde `clean (104 manifest(s)
+checked)` con `scripts/regen_manifest_index_shas.py --check`, y el drift sweep responde `PASS`.
+
+**Como se cerraria.** Dar a cada `tasks.md` un id de nodo derivado del cambio en lugar del literal
+`tasks`, y reindexar. Es trabajo mecanico de 19 ficheros, del mismo tipo que el que ya hizo
+`m9-93-trace-event-json-schema` con el esquema JSON, y **no se abre aqui**: R6.9 ya tiene su propio
+frente, y mezclar nineteen cambios de ids con la reparacion de raiz de
+`DEBT-CRASH-VERDICT-SOURCE-01` haria que ninguno de los dos se pudiera atribuir con claridad.
