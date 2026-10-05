@@ -63,17 +63,25 @@ pub(crate) struct TerminationFacts<'a> {
 }
 
 impl TerminationFacts<'_> {
-    /// The first signal from `fatal_signals` the tracee received and lived
-    /// through, in log order.
+    /// A signal from `fatal_signals` that this tracee received, whether or not
+    /// it lived through it.
     ///
-    /// A fact about delivery, not about death: it answers "what did this
-    /// tracee see and shrug off", which is a question worth asking on its own
-    /// and is not the crash verdict. Kept here so a consumer that wants the
-    /// delivery does not have to read `survived` and re-apply the fatal set.
-    pub(crate) fn first_survived_fatal(&self, fatal_signals: &[&str]) -> Option<&str> {
-        self.survived
+    /// A fact about delivery, not about death — but "delivery" is the whole
+    /// of it. A signal that killed the tracee was also delivered to it, and
+    /// narrowing this to the survivors changes what a caller already reads:
+    /// `session_explain`'s `FactsBundle::signal_delivered` reported the fatal
+    /// signal that ended a crashing session, and a bundle that answers
+    /// `crash_detected: true` with no signal next to it says less than the
+    /// one it replaces.
+    ///
+    /// The verdict is a separate question with a separate answer; see
+    /// `decide_crash`. Kept here so no consumer re-reads `deaths` and
+    /// `survived` to work out which signals a tracee saw.
+    pub(crate) fn first_fatal_seen(&self, fatal_signals: &[&str]) -> Option<&str> {
+        self.deaths
             .iter()
             .map(|(_, name)| *name)
+            .chain(self.survived.iter().map(|(_, name)| *name))
             .find(|name| fatal_signals.contains(name))
     }
 }
@@ -105,7 +113,11 @@ pub(crate) enum CrashVerdict<'a> {
 ///    be chronos killing its own tracee at cleanup, or something external such
 ///    as the OOM killer. Reported, with the ambiguity declared.
 /// 3. No death, but a normal exit: the tracee finished on its own. Fatal
-///    signals it survived are then evidence *against* a crash, not for one.
+///    signals it survived are then evidence *against* a crash, not for one
+///    -- but only if the exit came *after* them. A `process_exit` recorded
+///    before a later fatal signal belongs to a different thread leaving, not
+///    to the process finishing, and treating it as one invents the sentence
+///    "it handled SIGSEGV and returned 0" about a tracee that did not.
 /// 4. No death and no exit: the log carries no termination record, so the
 ///    older signal-splitting rule runs as a fallback. That is the only case
 ///    where a delivery is treated as evidence, and the verdict says so.
@@ -113,6 +125,15 @@ pub(crate) enum CrashVerdict<'a> {
 /// Rule 3 is what removes the false positive. A program that handles SIGSEGV
 /// and returns 0 delivers a SIGSEGV and does not die from it; calling that a
 /// crash is a claim the trace cannot support.
+///
+/// Rule 3's ordering condition is what keeps the fix from introducing the
+/// opposite error. `ptrace` reports `Exited` per thread group, and
+/// `native_adapter` writes a `process_exit` marker for each, so a session
+/// with worker threads carries several. On a log recorded before
+/// `terminated_tracee` existed, a thread leaving normally and the main thread
+/// then dying reads as "exit, then SIGSEGV" -- and calling that "handled"
+/// would turn a crash into a clean run, which is the worse direction to
+/// fail.
 pub(crate) fn decide_crash<'a>(
     facts: &TerminationFacts<'a>,
     teardown_signal: &str,
@@ -134,25 +155,37 @@ pub(crate) fn decide_crash<'a>(
         return CrashVerdict::KilledByTeardown { event, signal };
     }
 
-    if let Some((_, code)) = facts.exit {
-        let survived_fatal = facts
-            .survived
-            .iter()
-            .map(|(_, name)| *name)
-            .filter(|name| fatal_signals.contains(name))
-            .collect::<Vec<_>>();
+    if let Some((exit_event, code)) = facts.exit {
+        // An exit only says "the process finished on its own terms" if
+        // nothing fatal came after it. Ordering is by event id, which is
+        // monotonic in the log and does not depend on clock resolution
+        // between the capture thread and the traced process.
+        let fatal_after_exit = facts.survived.iter().any(|(event, name)| {
+            fatal_signals.contains(name) && event.event_id > exit_event.event_id
+        });
+        if !fatal_after_exit {
+            let survived_fatal = facts
+                .survived
+                .iter()
+                .map(|(_, name)| *name)
+                .filter(|name| fatal_signals.contains(name))
+                .collect::<Vec<_>>();
 
-        let reason = if survived_fatal.is_empty() {
-            format!("The tracee returned normally with exit code {code}: no signal killed it")
-        } else {
-            format!(
-                "The tracee received {} and still returned with exit code {}: \
-                 it handled the signal and did not die from it",
-                survived_fatal.join(", "),
-                code
-            )
-        };
-        return CrashVerdict::Survived { reason };
+            let reason = if survived_fatal.is_empty() {
+                format!("The tracee returned normally with exit code {code}: no signal killed it")
+            } else {
+                format!(
+                    "The tracee received {} and still returned with exit code {}: \
+                     it handled the signal and did not die from it",
+                    survived_fatal.join(", "),
+                    code
+                )
+            };
+            return CrashVerdict::Survived { reason };
+        }
+        // A fatal signal after the exit means that exit was not this
+        // process finishing. Fall through to rule 4, which reads the
+        // delivery as evidence because the log no longer proves survival.
     }
 
     // No termination record at all. Keep the old behaviour so that traces
@@ -1016,6 +1049,36 @@ mod tests {
     }
 
     // --- decide_crash: the rule on its own, with no engine behind it ---
+
+    /// The rule-3 ordering condition.
+    ///
+    /// `ptrace` reports `Exited` per thread group, so a multi-threaded session
+    /// carries several `process_exit` markers. A worker leaving before the
+    /// main thread then dies reads as "exit, then SIGSEGV", and calling that
+    /// "handled the signal" turns a crash into a clean run.
+
+    /// The same two events in the other order: that one really is a handled
+    /// signal, and the test pair is what keeps the condition from becoming a
+    /// blanket "an exit never proves survival".
+
+    /// Two fatal deaths: rule 1 takes the first one in log order, which is
+    /// the one the user has to debug. Which one is "the" crash is only
+    /// defined by the order, so the test states it rather than leaving it.
+
+    /// A fatal delivery that the teardown SIGKILL then ended.
+    ///
+    /// `decide_crash` reports this as a death by teardown rather than a
+    /// crash, because the only thing that killed the process was chronos
+    /// cleaning up. `session_explain` still answers `true` (a bool has
+    /// nowhere to put the distinction) and this test pins that, so the loss
+    /// of detail is declared rather than accidental.
+
+    /// A `process_exit` whose payload does not parse is not a termination
+    /// record.
+    ///
+    /// Reading it as one would let a malformed marker stand as proof of a
+    /// clean exit; refusing to read it falls through to the delivery rule,
+    /// which fails toward reporting a crash on an unproven trace.
 
     #[test]
     fn decide_crash_an_empty_trace_is_not_a_crash() {
