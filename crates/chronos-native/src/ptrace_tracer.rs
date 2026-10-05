@@ -114,6 +114,37 @@ mod imp {
     use std::path::Path;
     use tracing::{debug, info, warn};
 
+    /// Tick of the `follow_children` wait loop
+    /// (`DEBT-WAIT-EVENT-UNBOUNDED-01`).
+    ///
+    /// 10 ms, the same interval the non-`follow_children` branch of
+    /// `wait_event` already used for its `WNOHANG` loop, so the idle cost of
+    /// a tracer thread is a profile this crate already has rather than a new
+    /// one being introduced here. 100 wakeups per second per idle thread.
+    pub const TRACER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+
+    /// Idle time after which an `follow_children` tracer reports a stall.
+    ///
+    /// Reportable, never fatal: see `stall_is_reportable`.
+    pub const TRACER_STALL_REPORT_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// Whether a tracer that has seen no ptrace status for this long should say so.
+    ///
+    /// Split out as a pure function so the threshold is testable without
+    /// sleeping for it, and so the answer cannot drift away from the call site
+    /// that reports the stall. The boundary is inclusive: exactly at the
+    /// threshold counts as reportable, because a tracer that has just crossed
+    /// it is precisely the one whose silence the operator needs explained.
+    ///
+    /// Returning `false` forever would be the tempting "never warn" answer and
+    /// it is wrong in the same way the old blocking `waitpid` was wrong: it
+    /// makes "quiet" and "wedged" indistinguishable, which is the whole defect
+    /// this replaces. Returning `true` unconditionally would be worse — it
+    /// would make a normal long computation look like a failure.
+    pub fn stall_is_reportable(idle: std::time::Duration) -> bool {
+        idle >= TRACER_STALL_REPORT_AFTER
+    }
+
     /// Events produced by the ptrace event loop.
     #[derive(Debug, Clone)]
     pub enum PtraceEvent {
@@ -509,27 +540,65 @@ mod imp {
             // belt-and-braces: without it a second concurrent session's tracer
             // thread can reap this session's statuses and starve it forever.
             if self.config.follow_children || self.main_pid.is_none() {
-                // Use BLOCKING waitpid for reliability — clone events are delivered
-                // immediately and we don't want to miss them with polling.
-                // The caller must ensure probe_stop interrupts us (e.g., by killing
-                // the traced process or sending PTRACE_INTERRUPT).
-                let status = match waitpid(
-                    Pid::from_raw(-1),
-                    Some(WaitPidFlag::__WALL | WaitPidFlag::__WNOTHREAD),
-                ) {
-                    Ok(s) => s,
-                    Err(nix::errno::Errno::ECHILD) => {
-                        debug!("No more traced processes");
-                        return Ok(None);
+                // DEBT-WAIT-EVENT-UNBOUNDED-01. This used to be a BLOCKING
+                // `waitpid`: clone events are delivered immediately, so the
+                // argument for blocking was "don't miss them with polling".
+                // But blocking has no end. A tracee that stays alive and stops
+                // producing leaves this thread parked in a syscall that nothing
+                // can observe and nothing can time out, and the only escape was
+                // an external kill from `probe_stop`. The session then looked
+                // exactly like a healthy quiet one.
+                //
+                // Polling keeps the same flags — __WALL still catches clone and
+                // syscall accounting, __WNOTHREAD still keeps a concurrent
+                // session's tracer from stealing these statuses — and trades an
+                // unbounded block for a bounded step. The cost is a 10 ms tick
+                // per idle tracer thread, which is the same cost the other
+                // branch of this function already pays with the same interval.
+                //
+                // The stall is reported, not fatal. A tracee running a long
+                // computation legitimately produces no events for minutes, so
+                // giving up on it would break working captures; what the
+                // operator needs is to be able to tell "quiet" from "wedged",
+                // and a warn! at the threshold is that signal.
+                let mut waited = std::time::Duration::ZERO;
+                let mut stall_warned = false;
+                loop {
+                    let status = match waitpid(
+                        Pid::from_raw(-1),
+                        Some(WaitPidFlag::WNOHANG | WaitPidFlag::__WALL | WaitPidFlag::__WNOTHREAD),
+                    ) {
+                        Ok(s) => s,
+                        Err(nix::errno::Errno::ECHILD) => {
+                            debug!("No more traced processes");
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            return Err(TraceError::CaptureFailed(format!(
+                                "waitpid(-1, WNOHANG | __WALL | __WNOTHREAD) error: {}",
+                                e
+                            )));
+                        }
+                    };
+
+                    match status {
+                        WaitStatus::StillAlive => {
+                            waited += TRACER_POLL_INTERVAL;
+                            if !stall_warned && stall_is_reportable(waited) {
+                                stall_warned = true;
+                                warn!(
+                                    "tracer idle for {:?} with a live tracee and no ptrace status: \\
+                                     the capture is not producing. Not giving up, because a tracee \\
+                                     computing for a while is legitimate, but this is the signature of \\
+                                     a wedged one",
+                                    waited
+                                );
+                            }
+                            std::thread::sleep(TRACER_POLL_INTERVAL);
+                        }
+                        other => return self.process_wait_status_impl(other),
                     }
-                    Err(e) => {
-                        return Err(TraceError::CaptureFailed(format!(
-                            "waitpid(-1, __WALL | __WNOTHREAD) error: {}",
-                            e
-                        )));
-                    }
-                };
-                return self.process_wait_status_impl(status);
+                }
             }
 
             // No follow_children: wait on the main PID specifically.
@@ -565,7 +634,7 @@ mod imp {
                                 }
                             }
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        std::thread::sleep(TRACER_POLL_INTERVAL);
                     }
                     Ok(s) => break s,
                     Err(nix::errno::Errno::ECHILD) => {
@@ -924,6 +993,50 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// DEBT-WAIT-EVENT-UNBOUNDED-01: the stall threshold is a boundary,
+        /// and a boundary that cannot be crossed on either side is not a
+        /// threshold. Both directions are pinned here because both are the
+        /// failure modes: report always, and a long-but-legitimate computation
+        /// gets reported as a failure; report never, and a wedged capture is
+        /// indistinguishable from a quiet one, which is the defect this whole
+        /// change exists to remove.
+        #[test]
+        fn stall_is_reportable_crosses_at_the_threshold() {
+            use std::time::Duration;
+            let t = TRACER_STALL_REPORT_AFTER;
+            assert!(
+                !stall_is_reportable(Duration::ZERO),
+                "a tracer that has just polled is not stalled"
+            );
+            assert!(
+                !stall_is_reportable(t - Duration::from_millis(1)),
+                "one tick below the threshold must stay silent"
+            );
+            assert!(
+                stall_is_reportable(t),
+                "exactly at the threshold is reportable: the boundary is inclusive"
+            );
+            assert!(
+                stall_is_reportable(t * 10),
+                "past the threshold stays reportable"
+            );
+        }
+
+        /// The poll interval is a cost decision, not an arbitrary number: it is
+        /// the interval the other branch of `wait_event` already used, so an idle
+        /// `follow_children` tracer costs what an idle non-`follow_children`
+        /// tracer already costs. If this ever changes, this fails and the cost
+        /// claim in the release report has to be revisited with it.
+        #[test]
+        fn poll_interval_matches_the_other_branch() {
+            assert_eq!(
+                TRACER_POLL_INTERVAL,
+                std::time::Duration::from_millis(10),
+                "the poll interval is the CPU cost of this change; changing it changes the \
+                 cost claim recorded in the release report and the debt ledger"
+            );
+        }
 
         #[test]
         fn test_ptrace_config_default() {
